@@ -71,6 +71,7 @@ export class AppComponent implements OnInit {
   private static readonly CITY_SCOPED: RegExp[] = [
     /^\/pricing\b/,
     /^\/vehicles\b/,
+    /^\/operations\b/,
     /^\/vehicle-seat-layouts\b/,
     /^\/promotions\/coupons\b/,
     /^\/subscriptions\b/,
@@ -78,7 +79,7 @@ export class AppComponent implements OnInit {
     /^\/fixed-routes\b/,
     /^\/shuttle-bookings\b/,
     /^\/rides\b/,
-    /^\/settings\/(cities|city|app-assets|fleets|vehicle-types|operator)\b/,
+    /^\/settings\/(cities|city|fleets|vehicle-types|operator)\b/,
   ];
 
   private url = signal(this.router.url);
@@ -140,11 +141,15 @@ export class AppComponent implements OnInit {
     // fixed routes, route groups, drivers and seat layouts — the concerns that
     // used to sprawl across several pages. Everything is edited in place.
     if (can('city_settings'))          citySetup.push({ label: 'Cities',        icon: 'map-marker', route: '/settings/cities' });
-    if (can('vehicles'))          citySetup.push({ label: 'Vehicles',      icon: 'car', route: '/vehicles' });
+    if (can('vehicles')) citySetup.push({
+      label: 'Master', icon: 'grid',
+      children: [
+        { label: 'Routes', icon: 'road', route: '/operations/routes' },
+        { label: 'Vehicle Configuration', icon: 'car', route: '/operations/vehicle-configuration' },
+      ],
+    });
     if (can('pricing'))
                                        citySetup.push({ label: 'Pricing',       icon: 'tag', route: '/pricing' });
-    // App Assets temporarily hidden (not part of the first release). Re-enable by uncommenting.
-    // if (can('app_assets'))             citySetup.push({ label: 'App Assets',    icon: 'upload', route: '/settings/app-assets' });
     if (can('city_settings'))          citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
 
     if (can('coupons')) {
@@ -214,6 +219,7 @@ export class AppComponent implements OnInit {
     }
 
     // --- Platform (global, not city-scoped) ---
+    if (can('app_assets')) platform.push({ label: 'App Assets', icon: 'upload', route: '/settings/app-assets' });
     if (can('operator_settings')) platform.push({ label: 'Operator Settings',  icon: 'cog',    route: '/settings/operator' });
     if (can('managers')) platform.push({ label: 'Managers',           icon: 'users',  route: '/managers' });
     if (can('roles_permissions'))    platform.push({ label: 'Roles & Permissions', icon: 'shield', route: '/roles-permissions' });

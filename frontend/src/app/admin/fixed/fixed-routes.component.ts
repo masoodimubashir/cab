@@ -1701,6 +1701,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.cityCtx.ensureCitiesLoaded().subscribe();
     this.subs.push(
       this.cityCtx.cityId$.subscribe((id) => {
+        if (this.cityId !== id) this.pendingEditRouteId = null;
         this.cityId = id;
         this.loadVehicleTypes();
         this.loadCityMeta();
@@ -2763,15 +2764,23 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   }
 
   fetchRoutes(): void {
-    if (this.cityId == null) { this.routes = []; return; }
+    const cityId = this.cityId;
+    if (cityId == null) { this.routes = []; this.pendingEditRouteId = null; return; }
     this.loading = true;
-    this.api.get<{ data: FixedRouteRow[] }>(`/admin/cities/${this.cityId}/fixed-routes`).subscribe({
-      next: (res) => { this.routes = res?.data || []; this.loading = false; this.routesChanged.emit(); },
-      error: (err) => { this.loading = false; this.toast.error(err?.error?.message || 'Failed to load fixed routes'); },
+    this.api.get<{ data: FixedRouteRow[] }>(`/admin/cities/${cityId}/fixed-routes`).subscribe({
+      next: (res) => {
+        if (this.cityId !== cityId) return;
+        this.routes = res?.data || []; this.loading = false; this.routesChanged.emit();
+        const pendingId = this.pendingEditRouteId;
+        this.pendingEditRouteId = null;
+        if (pendingId !== null) this.openEditById(pendingId);
+      },
+      error: (err) => { if (this.cityId !== cityId) return; this.pendingEditRouteId = null; this.loading = false; this.toast.error(err?.error?.message || 'Failed to load fixed routes'); },
     });
   }
 
   openCreate(): void {
+    this.pendingEditRouteId = null;
     this.editingId = null;
     this.originalStopBookable.clear();
     this.removedStops = [];
@@ -2798,9 +2807,11 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   }
 
   /** Open the map editor for a route by id — the host list only has a lite row. */
+  private pendingEditRouteId: number | null = null;
   openEditById(id: number): void {
     const row = this.routes.find((r) => r.id === id);
-    if (row) this.openEdit(row);
+    if (row) { this.pendingEditRouteId = null; this.openEdit(row); }
+    else if (this.loading) this.pendingEditRouteId = id;
   }
 
   openEdit(r: FixedRouteRow): void {

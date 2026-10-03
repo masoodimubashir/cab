@@ -33,6 +33,8 @@ interface DriverRow {
   last_seen_at: string | null;
   status: 'free' | 'busy' | 'inactive';
   inactive_reason?: 'offline' | 'no_location' | 'stale_location';
+  map_marker_url?: string | null;
+  image_url?: string | null;
   current_trip?: TaskRow | null;
 }
 
@@ -46,7 +48,7 @@ interface TaskRow {
   drop_lat: number | null;
   drop_lng: number | null;
   estimated_fare: number | null;
-  customer: { id: number; name: string | null; phone: string | null } | null;
+  customer: { id: number; name: string | null; phone: string | null; avatar_url?: string | null } | null;
   driver: { id: number; name: string | null; phone: string | null } | null;
   ride_type: string | null;
   ride_mode: 'private' | 'fixed' | 'shuttle' | string | null;
@@ -1677,6 +1679,8 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
   private unsubscribeDispatchLive: (() => void) | null = null;
   private driverAnimations = new Map<number, number>();
   private hasFitBounds = false;
+  private avatarIconCache = new Map<string, google.maps.Icon>();
+  private avatarLoadingUrls = new Set<string>();
 
   constructor(
     private api: ApiService,
@@ -1981,22 +1985,34 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
       strokeWeight: 2,
     });
 
+    const getDriverMarkerIcon = (d: DriverRow, color: string): google.maps.Icon | google.maps.Symbol => {
+      if (d.map_marker_url) {
+        return {
+          url: d.map_marker_url,
+          scaledSize: new google.maps.Size(30, 30),
+          anchor: new google.maps.Point(15, 15),
+        };
+      }
+      return driverIcon(color);
+    };
+
     // ---------- Drivers ----------
     const presentDriverIds = new Set<number>();
     const upsertDriver = (d: DriverRow, color: string) => {
       if (d.lat == null || d.lng == null) return;
       presentDriverIds.add(d.user_id);
       const position = { lat: d.lat, lng: d.lng };
+      const icon = getDriverMarkerIcon(d, color);
       let marker = this.driverMarkerMap.get(d.user_id);
       if (marker) {
         this.animateDriverMarker(d.user_id, marker, position);
-        marker.setIcon(driverIcon(color));
+        marker.setIcon(icon);
         marker.setTitle(d.name || 'Driver');
       } else {
         marker = new google.maps.Marker({
           position,
           map: this.map!,
-          icon: driverIcon(color),
+          icon,
           title: d.name || 'Driver',
           optimized: true,
         });
@@ -2032,25 +2048,41 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
       if (t.pickup_lat == null || t.pickup_lng == null) return;
       presentTaskIds.add(t.id);
       const position = { lat: t.pickup_lat, lng: t.pickup_lng };
+      const avatarUrl = t.customer?.avatar_url;
+      const initialIcon = avatarUrl
+        ? (this.getTaskAvatarIcon(avatarUrl, color, (avatarIcon) => {
+            const m = this.taskMarkerMap.get(t.id);
+            if (m) m.setIcon(avatarIcon);
+          }) ?? taskIcon(color))
+        : taskIcon(color);
+
       let marker = this.taskMarkerMap.get(t.id);
       if (marker) {
         marker.setPosition(position);
-        marker.setIcon(taskIcon(color));
-        marker.setTitle(`Trip #${t.id}`);
+        marker.setIcon(initialIcon);
+        marker.setTitle("Trip #" + t.id);
       } else {
         marker = new google.maps.Marker({
           position,
           map: this.map!,
-          icon: taskIcon(color),
-          title: `Trip #${t.id}`,
-          optimized: true,
+          icon: initialIcon,
+          title: "Trip #" + t.id,
+          optimized: !avatarUrl,
         });
-        marker.addListener('click', () => {
+        marker.addListener("click", () => {
+          const avatarImg = t.customer?.avatar_url
+            ? `<img src="${t.customer.avatar_url}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;margin-right:8px;border:1.5px solid ${color}" alt="" />`
+            : "";
           this.infoWindow?.setContent(
             `<div style="font-family: 'Plus Jakarta Sans', sans-serif; min-width:180px">
-               <div style="font-weight:800; font-size:13px; color:#0F1419">Trip #${t.id}</div>
-               <div style="font-size:12px; color:#6B7785; margin-top:2px">${t.customer?.name || ''}</div>
-               <div style="font-size:12px; color:#0F1419; margin-top:4px">${t.pickup_address || ''}</div>
+               <div style="display:flex; align-items:center; margin-bottom:4px">
+                 ${avatarImg}
+                 <div>
+                   <div style="font-weight:800; font-size:13px; color:#0F1419">Trip #${t.id}</div>
+                   <div style="font-size:12px; color:#6B7785">${t.customer?.name || ""}</div>
+                 </div>
+               </div>
+               <div style="font-size:12px; color:#0F1419; margin-top:4px">${t.pickup_address || ""}</div>
                <div style="font-size:11px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:#16A34A; margin-top:6px">${t.status}</div>
              </div>`,
           );
@@ -2060,7 +2092,7 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     };
 
-    this.snapshot.tasks.unassigned.forEach((t) => upsertTask(t, COLORS.task));
+        this.snapshot.tasks.unassigned.forEach((t) => upsertTask(t, COLORS.task));
     this.snapshot.tasks.assigned.forEach((t) => upsertTask(t, COLORS.taskAssigned));
 
     for (const [id, marker] of this.taskMarkerMap) {
@@ -2076,6 +2108,70 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
       this.hasFitBounds = true;
     }
   }
+
+  private getTaskAvatarIcon(
+    avatarUrl: string,
+    color: string,
+    onLoaded?: (icon: google.maps.Icon) => void,
+  ): google.maps.Icon | null {
+    const cacheKey = avatarUrl + '::' + color;
+    if (this.avatarIconCache.has(cacheKey)) {
+      return this.avatarIconCache.get(cacheKey)!;
+    }
+
+    if (this.avatarLoadingUrls.has(cacheKey)) {
+      return null;
+    }
+
+    this.avatarLoadingUrls.add(cacheKey);
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      this.avatarLoadingUrls.delete(cacheKey);
+      try {
+        const size = 36;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = color;
+          ctx.stroke();
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, size / 2 - 3, 0, Math.PI * 2);
+          ctx.closePath();
+          ctx.clip();
+          ctx.drawImage(img, 3, 3, size - 6, size - 6);
+          ctx.restore();
+
+          const icon: google.maps.Icon = {
+            url: canvas.toDataURL(),
+            scaledSize: new google.maps.Size(size, size),
+            anchor: new google.maps.Point(size / 2, size / 2),
+          };
+          this.avatarIconCache.set(cacheKey, icon);
+          onLoaded?.(icon);
+        }
+      } catch {
+        // Fallback remains taskIcon
+      }
+    };
+    img.onerror = () => {
+      this.avatarLoadingUrls.delete(cacheKey);
+    };
+    img.src = avatarUrl;
+
+    return null;
+  }
+
 
   private onDispatchDriverLocation(payload: DispatchDriverLocationPayload): void {
     const lat = Number(payload.location?.lat);

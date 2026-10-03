@@ -51,14 +51,23 @@
 
         <div class="fb-empty" *ngIf="!visibleRoutes.length">
           <ion-icon name="git-branch-outline"></ion-icon>
-          <p>{{ error || 'No matching fixed routes found.' }}</p>
+          <p *ngIf="!routeSearch && radiusFilterActive && userCoords && routes.length">No pickup stops within 1 km. <button type="button" class="fb-inline-link" (click)="setRadiusFilter(false)">View all {{ routes.length }} routes</button></p>
+          <p *ngIf="routeSearch || !radiusFilterActive || !userCoords || !routes.length">{{ error || 'No matching fixed routes found.' }}</p>
         </div>
 
         <button type="button" class="fb-card dc-press" *ngFor="let r of visibleRoutes" (click)="pickRoute(r)">
+          <span class="fb-card__vehicle-image" *ngIf="r.image_url">
+            <img [src]="r.image_url" alt="Route vehicle" (error)="r.image_url = null" />
+          </span>
           <div class="fb-card__main">
-            <span class="fb-card__sub">{{ r.origin_name }} → {{ r.dest_name }}</span>
+            <span class="fb-card__title">{{ r.name }}</span>
+            <span class="fb-card__sub">
+              <span>{{ r.origin_name }} → {{ r.dest_name }}</span>
+              <span class="fb-route-stops-tag">{{ (r.stops || []).length }} stops</span>
+            </span>
             <span class="fb-route-nearest" *ngIf="r.nearest_pickup_stop">
-              <ion-icon name="walk-outline"></ion-icon> Nearest: <b>{{ r.nearest_pickup_stop.name }}</b> ({{ formatDistance(r.nearest_pickup_stop.distance_meters) }})
+              <ion-icon name="walk-outline"></ion-icon>
+              <span class="fb-route-nearest__txt">Nearest: <b>{{ r.nearest_pickup_stop.name }}</b> ({{ formatDistance(r.nearest_pickup_stop.distance_meters) }})</span>
             </span>
           </div>
           <div class="fb-card__right">
@@ -90,6 +99,10 @@
         </div>
 
         <button type="button" class="fb-card fb-vehicle-card dc-press" *ngFor="let d of departures" [disabled]="d.seats_remaining <= 0" (click)="pickDeparture(d)">
+          <span class="fb-card__vehicle-image">
+            <img *ngIf="d.image_url" [src]="d.image_url" [alt]="d.vehicle_name || 'Vehicle'" (error)="d.image_url = null" />
+            <ion-icon *ngIf="!d.image_url" name="car-outline" aria-hidden="true"></ion-icon>
+          </span>
           <div class="fb-card__main">
             <span class="fb-card__title">{{ departureVehicleName(d) }}</span>
             <span class="fb-card__sub">{{ d.vehicle_type_name || d.vehicle_name || departureVehicleName(d) }} · {{ departureDriverName(d) }}</span>
@@ -326,9 +339,6 @@
         </div>
       </div>
       <div class="sheet-foot">
-        <button type="button" class="fb-cta fb-cta--test dc-press" [disabled]="!canConfirm" (click)="testPay()">
-          {{ booking ? 'Confirming…' : (hold?.status === 'ACCEPTED' ? 'Pay test' : 'Request & test pay') }}
-        </button>
         <button type="button" class="fb-cta dc-press" [disabled]="!canConfirm" (click)="confirm()">
           {{ booking ? 'Requesting…' : (hold?.status === 'ACCEPTED' ? ('Pay ₹' + (payableTotal | number: '1.0-2')) : ('Request Seats · ₹' + (payableTotal | number: '1.0-2'))) }}
         </button>
@@ -437,7 +447,7 @@
         </div>
       </div>
       <div class="sheet-foot">
-        <button type="button" class="fb-cta fb-cta--test dc-press" routerLink="/customer-tabs/fixed-rides">Fixed ride details</button>
+        <button type="button" class="fb-cta fb-cta--secondary dc-press" routerLink="/customer-tabs/fixed-rides">Fixed ride details</button>
         <button type="button" class="fb-cta dc-press" (click)="done()">Fixed ride details</button>
       </div>
     </div>

@@ -104,6 +104,24 @@ class FixedStopAutomationTest extends TestCase
         ]);
     }
 
+    public function test_vehicles_still_boarding_do_not_start_automatic_no_show_timers(): void
+    {
+        $reservation = $this->createReservation();
+        $service = $this->automation();
+        foreach (['FORMING', 'DISPATCHED'] as $status) {
+            $this->departure->update(['status' => $status]);
+            $service->processDriverLocation($this->driver->id, 34.0001000, 74.0001000,
+                Carbon::parse('2026-06-19 10:00:00'));
+            $service->processDriverLocation($this->driver->id, 34.0001000, 74.0001000,
+                Carbon::parse('2026-06-19 10:10:00'));
+            $reservation->refresh();
+            $this->assertSame('CONFIRMED', $reservation->status);
+            $this->assertNull($reservation->fixed_stop_arrival_started_at);
+            $this->assertNull($reservation->fixed_stop_arrived_at);
+            $this->assertNull($reservation->fixed_no_show_after_at);
+        }
+    }
+
     public function test_driver_arrival_and_wait_expiry_marks_customer_no_show_and_releases_capacity(): void
     {
         $reservation = $this->createReservation(['seats' => 2, 'extra_luggage_count' => 1]);

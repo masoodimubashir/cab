@@ -1285,9 +1285,9 @@ ion-content.is-map-fullscreen {
 
 /* Floating Re-center FAB on Map */
 .dc-map-recenter-fab {
-  position: absolute;
-  top: 130px;
-  right: 14px;
+  position: static;
+  align-self: flex-end;
+  flex-shrink: 0;
   width: 42px;
   height: 42px;
   border-radius: 50%;
@@ -1464,6 +1464,177 @@ ion-content.is-map-fullscreen {
       }
     }
   }
+}
+
+/* Live Nearest Customer Proximity HUD */
+.dc-customer-proximity-row {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:active {
+    transform: scale(0.98);
+    background: rgba(15, 23, 42, 0.95);
+  }
+
+  .dc-cprox-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .dc-cprox-avatar {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #94A3B8;
+
+    ion-icon {
+      font-size: 24px;
+    }
+
+    &.is-live {
+      background: rgba(16, 185, 129, 0.25);
+      color: #10B981;
+    }
+
+    .dc-cprox-live-pulse {
+      position: absolute;
+      inset: -3px;
+      border-radius: 50%;
+      border: 2px solid #10B981;
+      animation: cprox-pulse 1.8s infinite;
+    }
+  }
+
+  .dc-cprox-text {
+    min-width: 0;
+    flex: 1;
+
+    .dc-cprox-title {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      line-height: 1.2;
+
+      .dc-cprox-badge {
+        font-size: 8px;
+        font-weight: 850;
+        text-transform: uppercase;
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.15);
+        color: #E2E8F0;
+        letter-spacing: 0.3px;
+
+        &.is-live {
+          background: rgba(16, 185, 129, 0.25);
+          color: #34D399;
+          border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+      }
+
+      .dc-cprox-name {
+        font-size: 13px;
+        font-weight: 850;
+        color: #FFFFFF;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .dc-cprox-seats {
+        font-size: 11px;
+        color: #94A3B8;
+        font-weight: 700;
+      }
+    }
+
+    .dc-cprox-sub {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 11px;
+      color: #CBD5E1;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+
+      ion-icon {
+        font-size: 12px;
+        color: #38BDF8;
+      }
+    }
+  }
+
+  .dc-cprox-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+
+    .dc-cprox-dist-bubble {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: rgba(56, 189, 248, 0.2);
+      border: 1px solid rgba(56, 189, 248, 0.5);
+      border-radius: 20px;
+      padding: 3px 8px;
+      color: #38BDF8;
+
+      ion-icon {
+        font-size: 12px;
+      }
+
+      .dc-cprox-dist-val {
+        font-size: 13px;
+        font-weight: 900;
+        letter-spacing: 0.2px;
+      }
+
+      &.is-near {
+        background: rgba(16, 185, 129, 0.25);
+        border-color: #10B981;
+        color: #34D399;
+      }
+    }
+
+    .dc-cprox-dist-status {
+      font-size: 8.5px;
+      font-weight: 850;
+      color: #94A3B8;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+  }
+}
+
+@keyframes cprox-pulse {
+  0% { transform: scale(0.9); opacity: 0.9; }
+  70% { transform: scale(1.4); opacity: 0; }
+  100% { transform: scale(1.4); opacity: 0; }
 }
 
 /* ─── 3. Floating Bottom Bar on Map ─── */
@@ -2149,6 +2320,66 @@ ion-content.is-map-fullscreen {
     }
   }
 
+  /* Live Distance & Location Row */
+  .dc-pcard-dist-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 10px;
+    padding: 6px 10px;
+
+    .dc-pcard-dist-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #0284C7;
+
+      ion-icon {
+        font-size: 15px;
+      }
+
+      .dc-pcard-dist-num {
+        font-size: 13px;
+        font-weight: 850;
+        color: #0F172A;
+      }
+
+      .dc-pcard-dist-tag {
+        font-size: 11px;
+        color: #64748B;
+        font-weight: 600;
+      }
+
+      .dc-pcard-live-pill {
+        font-size: 9.5px;
+        font-weight: 800;
+        background: rgba(16, 185, 129, 0.15);
+        color: #059669;
+        border: 1px solid rgba(16, 185, 129, 0.35);
+        padding: 1px 6px;
+        border-radius: 10px;
+        letter-spacing: 0.2px;
+      }
+
+      &.is-live {
+        color: #059669;
+      }
+    }
+
+    .dc-pcard-dist-loc {
+      font-size: 11px;
+      color: #64748B;
+      font-weight: 600;
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+
   /* Actions */
   .dc-pcard-actions {
     display: flex;
@@ -2502,17 +2733,6 @@ ion-content.is-map-fullscreen {
   &--locked { color: #D97706; }
 }
 
-.otp-dev-hint {
-  text-align: center;
-  font-size: 11px;
-  color: #059669;
-  background: #ECFDF5;
-  padding: 4px 8px;
-  border-radius: 6px;
-  margin-bottom: 10px;
-  font-weight: 700;
-}
-
 .otp-submit-btn {
   width: 100%;
   height: 42px;
@@ -2743,6 +2963,21 @@ ion-content.is-map-fullscreen {
 
           strong { font-size: 11.5px; font-weight: 850; color: #0F172A; }
           span { font-size: 10px; color: #64748B; }
+
+          .stop-mini-dist {
+            font-size: 9.5px;
+            font-weight: 750;
+            color: #0284C7;
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            margin-top: 1px;
+
+            .stop-mini-live {
+              color: #059669;
+              font-weight: 800;
+            }
+          }
         }
 
         .p-mini-status {
@@ -3017,6 +3252,17 @@ ion-content.is-map-fullscreen {
       background: rgba(255, 255, 255, 0.2);
       padding: 1px 3px;
       border-radius: 3px;
+    }
+
+    .person-tag-dist {
+      font-size: 9px;
+      font-weight: 800;
+      background: rgba(56, 189, 248, 0.22);
+      border: 1px solid rgba(56, 189, 248, 0.5);
+      padding: 0 4px;
+      border-radius: 3px;
+      color: #38BDF8;
+      letter-spacing: 0.2px;
     }
   }
 }

@@ -161,7 +161,7 @@
                 (click)="onSelectProduct(p)"
               >
                 <span class="pc-img" [class.is-empty]="!p.image_url">
-                  <img *ngIf="p.image_url" [src]="p.image_url" [alt]="p.label" />
+                  <img *ngIf="p.image_url" [src]="p.image_url" [alt]="p.label" (error)="p.image_url = null" />
                   <ion-icon *ngIf="!p.image_url" [name]="p.icon" aria-hidden="true"></ion-icon>
                 </span>
                 <span class="pc-name">{{ p.label }}</span>
@@ -323,14 +323,21 @@
             class="rt-chip dc-press"
             [class.active]="selectedVehicleTypeId === null"
             (click)="selectRideVehicle(null)"
-          >All</button>
+          >
+            <ion-icon name="car-outline"></ion-icon>
+            <span>All</span>
+          </button>
           <button
             type="button"
             *ngFor="let v of vehicleTypes"
             class="rt-chip dc-press"
             [class.active]="selectedVehicleTypeId === v.id"
             (click)="selectRideVehicle(v.id)"
-          >{{ v.name }}</button>
+          >
+            <img *ngIf="v.image_url" [src]="v.image_url" class="rt-chip__img" [alt]="v.name" (error)="v.image_url = null" />
+            <ion-icon *ngIf="!v.image_url" name="car-sport-outline"></ion-icon>
+            <span>{{ v.name }}</span>
+          </button>
         </div>
 
         <div class="shuttle-preview" *ngIf="isShuttleSelected">

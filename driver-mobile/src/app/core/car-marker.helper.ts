@@ -8,6 +8,7 @@ export interface CarMarkerOptions {
   label?: string;
   width?: number;
   height?: number;
+  markerUrl?: string | null;
 }
 
 export function buildReusableCarMarkerElement(options: CarMarkerOptions = {}): HTMLElement {
@@ -15,6 +16,7 @@ export function buildReusableCarMarkerElement(options: CarMarkerOptions = {}): H
   const label = options.label;
   const width = options.width ?? 28;
   const height = options.height ?? 54;
+  const markerUrl = options.markerUrl?.trim() || null;
 
   const root = document.createElement('div');
   root.className = 'fixed-driver-car-marker';
@@ -24,44 +26,39 @@ export function buildReusableCarMarkerElement(options: CarMarkerOptions = {}): H
   carWrap.style.transform = `translate(-50%, -50%) rotate(${bearing}deg)`;
 
   carWrap.innerHTML = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 68" width="${width}" height="${height}" class="vector-car-svg">
-      <!-- 1. Headlight Beams (Front Projection) -->
-      <polygon points="7,8 2,0 12,0 10,8" fill="rgba(254, 240, 138, 0.45)" />
-      <polygon points="26,8 24,0 34,0 29,8" fill="rgba(254, 240, 138, 0.45)" />
-
-      <!-- 2. Tires (4 Wheels) -->
-      <rect x="2" y="14" width="4" height="10" rx="2" fill="#0F172A" stroke="#334155" stroke-width="0.5" />
-      <rect x="30" y="14" width="4" height="10" rx="2" fill="#0F172A" stroke="#334155" stroke-width="0.5" />
-      <rect x="2" y="44" width="4" height="10" rx="2" fill="#0F172A" stroke="#334155" stroke-width="0.5" />
-      <rect x="30" y="44" width="4" height="10" rx="2" fill="#0F172A" stroke="#334155" stroke-width="0.5" />
-
-      <!-- 3. Side Mirrors -->
-      <path d="M4 22 C2 22 2 25 5 26 L6 25 Z" fill="#0E8543" stroke="#064E3B" stroke-width="0.5" />
-      <path d="M32 22 C34 22 34 25 31 26 L30 25 Z" fill="#0E8543" stroke="#064E3B" stroke-width="0.5" />
-
-      <!-- 4. Aerodynamic Chassis (Body) -->
-      <path d="M9 14 C9 8, 14 6, 18 6 C22 6, 27 8, 27 14 L27 52 C27 58, 24 60, 18 60 C12 60, 9 58, 9 52 Z" fill="#12B35B" stroke="#0E8543" stroke-width="1.4" />
-
-      <!-- 5. Front Windshield -->
-      <path d="M11 20 C11 18, 13 16, 18 16 C23 16, 25 18, 25 20 L24 26 L12 26 Z" fill="#0F172A" stroke="#38BDF8" stroke-width="0.8" />
-      <path d="M13 18 L15 25" stroke="#38BDF8" stroke-width="0.8" stroke-linecap="round" opacity="0.8" />
-
-      <!-- 6. Roof & Taxi Top Beacon -->
-      <rect x="11.5" y="27" width="13" height="17" rx="2" fill="#0E8543" stroke="#064E3B" stroke-width="0.5" />
-      <rect x="15" y="32" width="6" height="5" rx="1.5" fill="#FEF08A" stroke="#CA8A04" stroke-width="0.6" />
-
-      <!-- 7. Rear Windshield -->
-      <path d="M12 45 L24 45 L25 50 C23 52, 13 52, 11 50 Z" fill="#0F172A" stroke="#38BDF8" stroke-width="0.8" />
-
-      <!-- 8. Headlights -->
-      <rect x="8.5" y="8.5" width="3.5" height="2" rx="1" fill="#FEF08A" stroke="#CA8A04" stroke-width="0.4" />
-      <rect x="24" y="8.5" width="3.5" height="2" rx="1" fill="#FEF08A" stroke="#CA8A04" stroke-width="0.4" />
-
-      <!-- 9. Taillights -->
-      <rect x="9.5" y="58.5" width="3.5" height="1.8" rx="0.8" fill="#EF4444" stroke="#991B1B" stroke-width="0.4" />
-      <rect x="23" y="58.5" width="3.5" height="1.8" rx="0.8" fill="#EF4444" stroke="#991B1B" stroke-width="0.4" />
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="28" height="28" class="vector-car-svg vehicle-dot-fallback">
+      <!-- 1. Soft glowing outer pulse ring -->
+      <circle cx="16" cy="16" r="14" fill="rgba(18, 179, 91, 0.2)" />
+      <!-- 2. White outer border ring -->
+      <circle cx="16" cy="16" r="10" fill="#FFFFFF" />
+      <!-- 3. Vibrant green core vehicle dot -->
+      <circle cx="16" cy="16" r="7.5" fill="#12B35B" />
+      <!-- 4. Directional heading arrow (points forward along bearing) -->
+      <path d="M16 2.5 L20.5 10.5 L11.5 10.5 Z" fill="#12B35B" stroke="#FFFFFF" stroke-width="0.75" stroke-linejoin="round" />
     </svg>
   `;
+
+  if (markerUrl) {
+    const svgEl = carWrap.querySelector('.vector-car-svg') as SVGElement | null;
+    const img = document.createElement('img');
+    img.className = 'vector-car-img';
+    img.alt = label || 'Vehicle';
+    img.style.width = `${width}px`;
+    img.style.height = `${height}px`;
+    img.style.objectFit = 'contain';
+    img.style.display = 'none';
+
+    img.addEventListener('load', () => {
+      img.style.display = 'block';
+      if (svgEl) svgEl.style.display = 'none';
+    });
+    img.addEventListener('error', () => {
+      if (svgEl) svgEl.style.display = 'block';
+      img.remove();
+    });
+    img.src = markerUrl;
+    carWrap.appendChild(img);
+  }
 
   root.appendChild(carWrap);
 
@@ -88,50 +85,97 @@ export interface PassengerMarkerOptions {
   name?: string;
   count?: number;
   isLive?: boolean;
+  distanceText?: string | null;
   label?: string;
+  avatarUrl?: string | null;
+  assetIcon?: string | null;
 }
 
 /**
- * Builds the unified passenger avatar marker with cap avatar, drop pin, seat count,
- * and live walking pulsing ring.
+ * Builds the unified passenger avatar marker with dynamic avatar/asset support,
+ * drop pin, seat count, and live walking pulsing ring.
+ *
+ * Uses avatarUrl first, falls back to assetIcon, then to clean SVG figure.
+ * Fallback SVG remains displayed while images load to prevent blank markers.
  */
 export function buildPassengerMarkerElement(options: PassengerMarkerOptions = {}): HTMLElement {
   const kind = options.kind || 'pickup';
   const name = options.name || 'Passenger';
   const count = options.count ?? 1;
   const isLive = !!options.isLive;
+  const avatarUrl = options.avatarUrl?.trim() || null;
+  const assetIcon = options.assetIcon?.trim() || null;
 
   const el = document.createElement('div');
   el.className = `fixed-driver-person-marker fixed-driver-person-marker--${kind} ${isLive ? 'is-live-walking' : ''}`;
 
-  const iconHtml = kind === 'pickup'
-    ? `<div class="person-avatar-wrap">
-         <svg viewBox="0 0 24 32" width="28" height="38" fill="#2563EB" stroke="#FFFFFF" stroke-width="1.2" stroke-linejoin="round" class="person-avatar-svg">
-           <!-- Head -->
-           <circle cx="12" cy="5" r="3.5" />
-           <!-- Full Body: Torso, Arms, Legs -->
-           <path d="M15 10.5h-6c-1.1 0-2 .9-2 2v5.5c0 .6.45 1 1 1s1-.4 1-1V13.5h1V28c0 .6.45 1 1 1s1-.4 1-1v-8h2v8c0 .6.45 1 1 1s1-.4 1-1V13.5h1v4.5c0 .6.45 1 1 1s1-.4 1-1v-5.5c0-1.1-.9-2-2-2z" />
-         </svg>
-       </div>`
-    : `<div class="person-avatar-wrap person-avatar-wrap--drop">
-         <svg viewBox="0 0 24 32" width="26" height="36" fill="#F59E0B" stroke="#FFFFFF" stroke-width="1.2" class="person-avatar-svg">
-           <path d="M12 2C7.58 2 4 5.58 4 10c0 6 8 16 8 16s8-10 8-16c0-4.42-3.58-8-8-8zm0 11c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/>
-         </svg>
-       </div>`;
+  const wrap = document.createElement('div');
+  wrap.className = `person-avatar-wrap ${kind === 'drop' ? 'person-avatar-wrap--drop' : ''}`;
+
+  const fallbackSvgHtml = kind === 'pickup'
+    ? `<svg viewBox="0 0 24 32" width="28" height="38" fill="#2563EB" stroke="#FFFFFF" stroke-width="1.2" stroke-linejoin="round" class="person-avatar-svg">
+         <!-- Head -->
+         <circle cx="12" cy="5" r="3.5" />
+         <!-- Full Body: Torso, Arms, Legs -->
+         <path d="M15 10.5h-6c-1.1 0-2 .9-2 2v5.5c0 .6.45 1 1 1s1-.4 1-1V13.5h1V28c0 .6.45 1 1 1s1-.4 1-1v-8h2v8c0 .6.45 1 1 1s1-.4 1-1V13.5h1v4.5c0 .6.45 1 1 1s1-.4 1-1v-5.5c0-1.1-.9-2-2-2z" />
+         </svg>`
+    : `<svg viewBox="0 0 24 32" width="26" height="36" fill="#F59E0B" stroke="#FFFFFF" stroke-width="1.2" class="person-avatar-svg">
+         <path d="M12 2C7.58 2 4 5.58 4 10c0 6 8 16 8 16s8-10 8-16c0-4.42-3.58-8-8-8zm0 11c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/>
+       </svg>`;
+
+  wrap.innerHTML = fallbackSvgHtml;
+  const svgEl = wrap.querySelector('.person-avatar-svg') as SVGElement | null;
+
+  const targetImgUrl = avatarUrl || assetIcon;
+  if (targetImgUrl) {
+    const img = document.createElement('img');
+    img.className = 'person-avatar-img';
+    img.alt = name || 'Passenger';
+    img.style.display = 'none';
+
+    let attemptedAsset = false;
+    img.addEventListener('load', () => {
+      img.style.display = 'block';
+      if (svgEl) svgEl.style.display = 'none';
+    });
+
+    img.addEventListener('error', () => {
+      if (!attemptedAsset && avatarUrl && assetIcon && img.src !== assetIcon) {
+        attemptedAsset = true;
+        img.src = assetIcon;
+      } else {
+        img.style.display = 'none';
+        if (svgEl) svgEl.style.display = 'block';
+      }
+    });
+
+    img.src = targetImgUrl;
+    wrap.appendChild(img);
+  }
+
+  el.appendChild(wrap);
+
+  if (isLive) {
+    const pulse = document.createElement('div');
+    pulse.className = 'person-walking-pulse';
+    el.appendChild(pulse);
+  }
 
   const safeName = (name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const seatBadge = count > 1 ? `<span class="person-tag-seats">${count}s</span>` : '';
+  const distBadge = options.distanceText ? `<span class="person-tag-dist">${options.distanceText}</span>` : '';
   const liveDot = isLive ? `<span class="person-live-dot" title="Live Walking">●</span>` : '';
 
-  const labelHtml = `
-    <div class="person-tag-pill">
-      <span class="person-tag-name">${safeName}</span>
-      ${seatBadge}
-      ${liveDot}
-    </div>
+  const pill = document.createElement('div');
+  pill.className = 'person-tag-pill';
+  pill.innerHTML = `
+    <span class="person-tag-name">${safeName}</span>
+    ${seatBadge}
+    ${distBadge}
+    ${liveDot}
   `;
+  el.appendChild(pill);
 
-  el.innerHTML = `${iconHtml}${labelHtml}`;
   return el;
 }
 

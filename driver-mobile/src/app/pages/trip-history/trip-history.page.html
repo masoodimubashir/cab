@@ -41,6 +41,7 @@
       <div *ngFor="let t of filteredTrips" class="dc-card dc-card--tap th-trip dc-press">
         <!-- Top: badges. -->
         <div class="th-badges">
+          <img *ngIf="t.image_url" class="th-vehicle-photo" [src]="t.image_url" [alt]="t.vehicle_name || 'Vehicle'" loading="lazy" (error)="t.image_url = null" />
           <span class="dc-badge" [ngClass]="statusBadgeClass(t)">{{ statusLabel(t) }}</span>
           <span *ngIf="paymentBadge(t) as pb" class="dc-badge" [ngClass]="paymentBadgeClass(pb.color)">{{ pb.label }}</span>
         </div>

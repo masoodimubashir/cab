@@ -14,6 +14,8 @@ interface TripPayment {
 }
 
 interface TripRow {
+  image_url?: string | null;
+  vehicle_name?: string | null;
   id: number;
   status: string;
   pickup_address?: string | null;

@@ -26,11 +26,17 @@ interface TripDriver {
   name?: string | null;
   phone?: string | null;
   avatar_path?: string | null;
+  vehicle_reg_no?: string | null;
+  vehicle?: any;
 }
 
 interface TripDetail {
   id: number;
   status: string;
+  vehicle_name?: string | null;
+  image_url?: string | null;
+  map_marker_url?: string | null;
+  ride_type?: { id: number; name: string } | null;
   pickup_address?: string | null;
   drop_address?: string | null;
   pickup_lat?: number | null;

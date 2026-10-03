@@ -2336,11 +2336,9 @@ export class CustomerDetailComponent implements OnInit, AfterViewInit, OnDestroy
   sendOtp(): void {
     if (!this.customerId) return;
     this.otpSending = true;
-    this.api.post<{ message?: string; dev_code?: string }>(`/admin/customers/${this.customerId}/send-otp`, {}).subscribe({
+    this.api.post<{ message?: string }>(`/admin/customers/${this.customerId}/send-otp`, {}).subscribe({
       next: (res) => {
-        const msg = res?.dev_code
-          ? `OTP sent: ${res.dev_code}`
-          : (res?.message || 'OTP sent successfully');
+        const msg = res?.message || 'OTP sent successfully';
         this.toast.success(msg);
         this.otpSending = false;
       },
@@ -2386,7 +2384,7 @@ export class CustomerDetailComponent implements OnInit, AfterViewInit, OnDestroy
     if (!this.customerId || !this.adminNewPhone.trim()) return;
     this.adminPhoneError = null;
     this.adminPhoneBusy = true;
-    this.api.post<{ ok: boolean; resend_in?: number; dev_code?: string; message?: string }>(
+    this.api.post<{ ok: boolean; resend_in?: number; message?: string }>(
       `/admin/customers/${this.customerId}/phone/start`,
       { phone: this.adminNewPhone.trim() }
     ).subscribe({

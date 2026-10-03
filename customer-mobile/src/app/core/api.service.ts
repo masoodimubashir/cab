@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
@@ -25,6 +26,9 @@ export class ApiService {
   private jsonHeaders(): HttpHeaders {
     const token = this.auth.getToken();
     let h = new HttpHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' });
+    // Web uses the API's default image platform. Keep local browser requests
+    // compatible with servers that have not yet allowed X-Platform in CORS.
+    if (Capacitor.getPlatform() !== 'web') h = h.set('X-Platform', Capacitor.getPlatform());
     if (token) {
       h = h.set('Authorization', `Bearer ${token}`);
     }
@@ -34,6 +38,7 @@ export class ApiService {
   private multipartHeaders(): HttpHeaders {
     const token = this.auth.getToken();
     let h = new HttpHeaders({ Accept: 'application/json' });
+    if (Capacitor.getPlatform() !== 'web') h = h.set('X-Platform', Capacitor.getPlatform());
     if (token) {
       h = h.set('Authorization', `Bearer ${token}`);
     }

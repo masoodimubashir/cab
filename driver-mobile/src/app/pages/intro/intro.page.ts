@@ -1,11 +1,9 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
-import { FirebaseMessaging } from '@capacitor-firebase/messaging';
-import { GeolocationService } from '../../core/geolocation.service';
 
 /**
  * Driver-app welcome screen — mirrors customer-app/intro.
- * Shows once until permissions have been granted.
+ * Automatically bypassed so users are not blocked by permission disclosure screens.
  */
 @Component({
   selector: 'app-intro',
@@ -17,35 +15,16 @@ export class IntroPage implements OnInit {
   loading = false;
   error: string | null = null;
 
-  constructor(private router: Router, private geo: GeolocationService) {}
+  constructor(private router: Router) {}
 
   ngOnInit(): void {
-    if (localStorage.getItem('dreamcabs_permissions_intro_done') === '1') {
-      void this.router.navigateByUrl('/auth/login', { replaceUrl: true });
-    }
+    localStorage.setItem('dreamcabs_permissions_intro_done', '1');
+    void this.router.navigateByUrl('/auth/login', { replaceUrl: true });
   }
 
   async grant(): Promise<void> {
-    this.error = null;
-    this.loading = true;
-    try {
-      try {
-        await this.geo.requestPermissions();
-      } catch {
-        /* ignore */
-      }
-      try {
-        await FirebaseMessaging.requestPermissions();
-      } catch {
-        /* ignore */
-      }
-      localStorage.setItem('dreamcabs_permissions_intro_done', '1');
-      await this.router.navigateByUrl('/auth/login', { replaceUrl: true });
-    } catch (e) {
-      this.error = (e as Error)?.message || 'Could not proceed.';
-    } finally {
-      this.loading = false;
-    }
+    localStorage.setItem('dreamcabs_permissions_intro_done', '1');
+    await this.router.navigateByUrl('/auth/login', { replaceUrl: true });
   }
 
   async skip(): Promise<void> {

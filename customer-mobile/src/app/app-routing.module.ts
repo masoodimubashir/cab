@@ -11,8 +11,8 @@ const routes: Routes = [
   },
   {
     path: 'intro',
-    loadChildren: () => import('./pages/intro/intro.module').then((m) => m.IntroPageModule),
-    canActivate: [GuestGuard],
+    redirectTo: 'auth/login',
+    pathMatch: 'full',
   },
   {
     path: 'auth/login',

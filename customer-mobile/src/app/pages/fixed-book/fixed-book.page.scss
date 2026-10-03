@@ -376,28 +376,83 @@
 .fb-card {
   width: 100%;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 13px 14px;
   border-radius: 16px;
   border: 1.5px solid var(--dc-hairline, #EEF0F2);
   background: var(--dc-surface-2, #FAFBFC);
   cursor: pointer;
   text-align: left;
+  flex-shrink: 0;
+  box-sizing: border-box;
 
   &:disabled { opacity: 0.55; cursor: default; }
-  .fb-card__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .fb-card__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
   .fb-card__meta { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; min-height: 20px; padding: 3px 7px; border-radius: 999px; background: var(--dc-green-tint, #E7F8EF); color: var(--dc-green, #12B35B); font-size: 10.5px; font-weight: 900; text-transform: uppercase; }
   .fb-card__meta ion-icon { color: currentColor; font-size: 13px; }
-  .fb-card__title { font-size: 15px; font-weight: 800; color: var(--dc-ink, #0D1B2A); }
-  .fb-card__sub { font-size: 12.5px; color: var(--dc-ink-soft, #6C757D); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .fb-card__right { display: flex; align-items: center; gap: 8px; }
+  .fb-card__title { font-size: 15px; font-weight: 800; line-height: 1.35; color: var(--dc-ink, #0D1B2A); word-break: break-word; overflow-wrap: break-word; margin: 0; }
+  .fb-card__sub {
+    font-size: 12.5px;
+    color: var(--dc-ink-soft, #6C757D);
+    line-height: 1.4;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    margin: 0;
+
+    .fb-route-stops-tag {
+      display: inline-flex;
+      align-items: center;
+      font-size: 10.5px;
+      font-weight: 750;
+      color: #64748B;
+      background: #F1F5F9;
+      border: 1px solid #E2E8F0;
+      padding: 1px 6px;
+      border-radius: 5px;
+      margin-left: 5px;
+      vertical-align: middle;
+    }
+  }
+  .fb-card__right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; align-self: flex-start; padding-top: 2px; }
   ion-icon { color: var(--dc-ink-faint, #9AA3AE); font-size: 18px; }
 }
 
 .fb-vehicle-card {
   align-items: stretch;
   padding: 14px;
+}
+
+.fb-card__vehicle-image {
+  width: 72px !important;
+  min-width: 72px !important;
+  max-width: 72px !important;
+  height: 52px !important;
+  min-height: 52px !important;
+  max-height: 52px !important;
+  flex: 0 0 72px !important;
+  align-self: flex-start !important;
+  margin-top: 1px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: var(--dc-surface-2, #F8FAFC) !important;
+  border: 1px solid var(--dc-hairline-strong, #E2E8F0) !important;
+  border-radius: 10px !important;
+  padding: 4px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+
+  img {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    object-fit: contain !important;
+    object-position: center !important;
+    display: block !important;
+    margin: auto !important;
+  }
 }
 
 .fb-vehicle-card .fb-card__main {
@@ -560,7 +615,7 @@
   &:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
 }
 
-.fb-cta--test {
+.fb-cta--secondary {
   margin-bottom: 8px;
   background: var(--dc-surface-2, #FAFBFC);
   color: var(--dc-ink, #0D1B2A);
@@ -674,11 +729,14 @@
 
 .fb-card {
   min-height: 64px;
+  height: auto;
   padding: 12px;
   border-radius: 12px;
   border-color: #E8ECF0;
   background: #FFFFFF;
   box-shadow: 0 6px 16px rgba(13, 27, 42, 0.04);
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .fb-card__meta {
@@ -774,7 +832,7 @@
   box-shadow: 0 8px 20px rgba(18, 179, 91, 0.22);
 }
 
-.fb-cta--test {
+.fb-cta--secondary {
   margin-bottom: 7px;
   box-shadow: none;
 }
@@ -1449,15 +1507,38 @@
 /* Nearest Pickup Point styles */
 .fb-route-nearest {
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--dc-green, #12B35B);
-  font-weight: 600;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #15803D;
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  padding: 3px 8px;
+  border-radius: 6px;
   margin-top: 3px;
+  max-width: 100%;
+  box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: break-word;
 
   ion-icon {
-    font-size: 13px;
+    font-size: 13.5px;
+    color: #16A34A;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .fb-route-nearest__txt {
+    flex: 1 1 auto;
+    min-width: 0;
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+
+  b {
+    font-weight: 750;
+    color: #166534;
   }
 }
 
@@ -1581,4 +1662,3 @@
     }
   }
 }
-

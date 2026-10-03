@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Events\DriverVerificationUpdated;
 use App\Models\Document;
 use App\Models\Driver;
+use App\Models\RouteGroup;
+use App\Models\CityVehicleType;
 use App\Models\DriverDocument;
 use App\Models\DriverSubscription;
 use App\Models\Trip;
@@ -46,11 +48,21 @@ class AdminDriversController
             (int) ($request->query('per_page') ?? 50)
         );
 
-        $drivers->getCollection()->transform(function (Driver $d) {
-            return $this->shapeRow($d);
+        $userIds = $drivers->getCollection()->pluck('user_id');
+        $groups = RouteGroup::query()
+            ->whereHas('drivers', fn ($q) => $q->whereIn('users.id', $userIds))
+            ->when($request->integer('city_id'), fn ($q, $cityId) => $q->where('city_id', $cityId))
+            ->with(['drivers:id', 'routes:id', 'city:id,name'])->orderBy('name')->get();
+        $drivers->getCollection()->transform(function (Driver $d) use ($groups) {
+            $assigned = $groups->filter(fn ($g) => $g->drivers->contains('id', $d->user_id));
+            return $this->shapeRow($d) + [
+                'route_groups' => $assigned->map(fn ($g) => ['id' => $g->id, 'name' => $g->name,
+                    'city_name' => $g->city?->name, 'is_active' => $g->is_active])->values(),
+                'allocated_route_count' => $assigned->flatMap(fn ($g) => $g->routes->pluck('id'))->unique()->count(),
+            ];
         });
 
-        return response()->json(['data' => $drivers]);
+        return response()->json(['data' => $drivers, 'allocation_filters_supported' => true]);
     }
 
     /**
@@ -481,7 +493,6 @@ class AdminDriversController
 
         return response()->json([
             'message' => 'OTP sent successfully.',
-            'dev_code' => $res['dev_code'] ?? null,
         ]);
     }
 
@@ -1165,7 +1176,6 @@ class AdminDriversController
             'message' => 'Verification code sent to ' . $normalized . '.',
             'phone' => $normalized,
             'resend_in' => (int) config('services.msg91.resend_cooldown_sec', 30),
-            'dev_code' => $result['dev_code'] ?? null,
         ], static fn ($v) => $v !== null));
     }
 
@@ -1374,6 +1384,35 @@ class AdminDriversController
             $query->where('vehicle_type', $vehicleType);
         }
 
+        if ($cityId = $request->integer('city_id')) {
+            $query->forCity($cityId);
+        }
+        if ($vehicleId = $request->integer('city_vehicle_type_id')) {
+            $vehicle = CityVehicleType::find($vehicleId);
+            if (!$vehicle || ($request->integer('city_id') && $vehicle->city_id !== $request->integer('city_id'))) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->forCity($vehicle->city_id)->where(function ($q) use ($vehicle) {
+                    $q->where('drivers.city_vehicle_type_id', $vehicle->id);
+                    if ($vehicle->vehicle_type_id !== null) $q->orWhere('drivers.vehicle_type_id', $vehicle->vehicle_type_id);
+                    $q->orWhereExists(function ($g) use ($vehicle) {
+                        $g->selectRaw('1')->from('driver_route_group as drg')
+                            ->join('route_groups as rg', 'rg.id', '=', 'drg.route_group_id')
+                            ->whereColumn('drg.driver_user_id', 'drivers.user_id')
+                            ->where('rg.city_id', $vehicle->city_id)
+                            ->where(function ($bound) use ($vehicle) {
+                                $bound->where('rg.city_vehicle_type_id', $vehicle->id)
+                                    ->orWhereExists(function ($routes) use ($vehicle) {
+                                        $routes->selectRaw('1')->from('route_group_route as rgr')
+                                            ->join('routes as r', 'r.id', '=', 'rgr.route_id')
+                                            ->whereColumn('rgr.route_group_id', 'rg.id')
+                                            ->where('r.city_vehicle_type_id', $vehicle->id);
+                                    });
+                            });
+                    });
+                });
+            }
+        }
         // ?has_documents=1 → drivers with at least one driver_documents row
         // ?has_documents=0 → drivers with zero uploads
         if ($request->has('has_documents') && $request->query('has_documents') !== '') {

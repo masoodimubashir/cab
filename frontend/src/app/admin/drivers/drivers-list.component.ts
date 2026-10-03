@@ -15,6 +15,9 @@ import $ from 'jquery';
 import moment from 'moment';
 import 'daterangepicker';
 import { ApiService } from '../../core/api.service';
+import { Subscription } from 'rxjs';
+import { CityContextService } from '../../core/city-context.service';
+import { DriverRouteGroupsPanelComponent } from './driver-route-groups-panel.component';
 import { ToastService } from '../../core/toast.service';
 import {
   ButtonComponent,
@@ -35,6 +38,8 @@ type ApprovalFilter = 'all' | 'approved' | 'pending' | 'rejected';
 
 interface DriverRow {
   id: number;
+  route_groups?: { id: number; name: string; city_name: string | null; is_active: boolean }[];
+  allocated_route_count?: number;
   approval_status: 'pending' | 'approved' | 'rejected';
   vehicle_type: string | null;
   vehicle_reg_no: string | null;
@@ -72,6 +77,7 @@ interface DriverRow {
     InputComponent,
     ModalComponent,
     DriversInsightsComponent,
+    DriverRouteGroupsPanelComponent,
   ],
   template: `
     <div class="page">
@@ -291,6 +297,7 @@ interface DriverRow {
         </article>
       </section>
 
+      <tm-modal [open]="!!allocationDriver" [title]="(allocationDriver?.user?.name || 'Driver') + ' — Route assignments'" (closed)="allocationDriver = null"><div slot="body"><app-driver-route-groups-panel *ngIf="allocationDriver as driver" [driverId]="driver.id" (saved)="refreshAllocations()" /></div></tm-modal>
       <!-- =================== Reusable table =================== -->
       <tm-data-table
         *ngIf="view === 'table'"
@@ -316,6 +323,12 @@ interface DriverRow {
 
         <!-- Toolbar: filters on the RIGHT -->
         <ng-container slot="filters">
+          <select *ngIf="allocationFiltersSupported" class="allocation-filter" aria-label="Driver city" [(ngModel)]="cityScope" (ngModelChange)="changeAllocationFilter()">
+            <option value="all">All cities</option><option value="selected" *ngIf="allocationCityId">{{ allocationCityName || 'Selected city' }}</option>
+          </select>
+          <select *ngIf="allocationFiltersSupported" class="allocation-filter" aria-label="Driver vehicle" [(ngModel)]="allocationVehicleId" (ngModelChange)="changeAllocationVehicle()" [disabled]="!allocationCityId">
+            <option [ngValue]="null">All vehicles</option><option *ngFor="let vehicle of allocationVehicles" [ngValue]="vehicle.id">{{ vehicle.display_name }}</option>
+          </select>
           <!-- State select (Active / Deactivated / All) — custom dropdown for full CSS control -->
           <div class="state-select" [class.has-value]="state !== 'all'" [class.is-open]="stateOpen">
             <button
@@ -542,6 +555,12 @@ interface DriverRow {
           </ng-template>
         </tm-column>
 
+                <tm-column key="route_groups" label="Route groups" width="230">
+          <ng-template let-row><div class="allocation-groups"><button type="button" *ngFor="let group of row.route_groups" (click)="allocationDriver = row" [title]="group.city_name || ''">{{ group.name }}<span *ngIf="!group.is_active"> · Disabled</span></button><span class="muted" *ngIf="row.route_groups && !row.route_groups.length">Unassigned</span><button type="button" *ngIf="!row.route_groups" (click)="allocationDriver = row">View groups</button></div></ng-template>
+        </tm-column>
+        <tm-column key="allocated_routes" label="Route access" width="140">
+          <ng-template let-row><button type="button" class="allocation-manage" (click)="allocationDriver = row">{{ row.allocated_route_count === undefined ? 'Manage routes' : row.allocated_route_count + ' routes' }} <tm-icon name="edit" [size]="13" /></button></ng-template>
+        </tm-column>
         <tm-column key="registered_on" label="Registered" width="140">
           <ng-template let-row>
             <span class="mono">
@@ -892,6 +911,9 @@ interface DriverRow {
     </div>
   `,
   styles: [`
+    .allocation-filter { padding: 8px 10px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-sm); background: var(--tm-surface); color: var(--tm-text); font: inherit; font-size: 12px; max-width: 170px; }
+    .allocation-groups { display: flex; flex-wrap: wrap; gap: 5px; }.allocation-groups button { border: 0; border-radius: var(--tm-radius-pill); padding: 4px 8px; background: var(--tm-green-tint); color: var(--tm-green-deep); font: inherit; font-size: 11px; cursor: pointer; }
+    .allocation-manage { display: inline-flex; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--tm-green-deep); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
     :host { display: block; }
 
     .page {
@@ -1930,6 +1952,35 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
   private insightsCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private refreshInFlight = false;
+  allocationCityId: number | null = null;
+  allocationCityName = '';
+  allocationFiltersSupported = false;
+  private allocationReads = new Subscription();
+  private allocationGroupLoading = new Set<number>();
+  private allocationGroupCache = new Map<number, NonNullable<DriverRow['route_groups']>>();
+  cityScope: 'all' | 'selected' = 'all';
+  allocationVehicleId: number | null = null;
+  allocationVehicles: { id: number; display_name: string; vehicle_type_id: number | null }[] = [];
+  allocationDriver: DriverRow | null = null;
+  private allocationCitySub?: Subscription;
+  private listRequest?: Subscription;
+  private loadLegacyGroupSummary(row: DriverRow): void {
+    const cached = this.allocationGroupCache.get(row.id);
+    if (cached) { row.route_groups = cached; return; }
+    if (this.allocationGroupLoading.has(row.id)) return;
+    this.allocationGroupLoading.add(row.id);
+    this.allocationReads.add(this.api.get<{ assigned_group_ids: number[]; groups: NonNullable<DriverRow['route_groups']> }>(`/admin/drivers/${row.id}/route-groups`).subscribe({
+      next: res => { const ids = new Set(res.assigned_group_ids || []); const groups = (res.groups || []).filter(group => ids.has(group.id)); this.allocationGroupCache.set(row.id, groups); this.allocationGroupLoading.delete(row.id); this.rows.filter(current => current.id === row.id).forEach(current => current.route_groups = groups); },
+      error: () => { this.allocationGroupLoading.delete(row.id); },
+    }));
+  }
+  refreshAllocations(): void { this.allocationGroupCache.clear(); this.reload(); }
+  changeAllocationFilter(): void { if (this.cityScope === 'all') this.allocationVehicleId = null; this.page = 1; this.reload(); }
+  changeAllocationVehicle(): void { if (this.allocationVehicleId) this.cityScope = 'selected'; this.page = 1; this.reload(); }
+  private allocationParams(params: URLSearchParams): void {
+    if (this.cityScope === 'selected' && this.allocationCityId) params.set('city_id', String(this.allocationCityId));
+    if (this.allocationVehicleId) params.set('city_vehicle_type_id', String(this.allocationVehicleId));
+  }
 
   constructor(
     private api: ApiService,
@@ -1937,11 +1988,22 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
     private zone: NgZone,
     private router: Router,
     private route: ActivatedRoute,
+    private cityCtx: CityContextService,
   ) {}
 
   ngOnInit(): void {
     this.reload();
     this.startLiveRefresh();
+    this.allocationCitySub = this.cityCtx.cityId$.subscribe(cityId => {
+      this.allocationCityId = cityId; this.allocationVehicleId = null; this.allocationVehicles = []; this.allocationDriver = null;
+      this.cityCtx.ensureCitiesLoaded().subscribe(cities => { if (this.allocationCityId === cityId) this.allocationCityName = cities.find(city => city.id === cityId)?.name || ''; });
+      if (cityId) this.api.get<{ data: { id: number; display_name: string; vehicle_type_id: number | null }[] }>(`/admin/cities/${cityId}/vehicle-types`).subscribe({
+        next: res => { if (this.allocationCityId !== cityId) return; const names = new Set<string>(); this.allocationVehicles = (res.data || []).filter(vehicle => { if (names.has(vehicle.display_name)) return false; names.add(vehicle.display_name); return true; }); },
+        error: () => { if (this.allocationCityId === cityId) this.allocationVehicles = []; },
+      });
+      else this.cityScope = 'all';
+      if (this.cityScope === 'selected') { this.page = 1; this.reload(); }
+    });
     // Deep-link support: /drivers?insights=leaderboard|performance opens the
     // drawer pre-selected (used by the sidebar nav and redirected legacy URLs).
     this.route.queryParamMap.subscribe((q) => {
@@ -1957,6 +2019,7 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.allocationReads.unsubscribe(); this.allocationCitySub?.unsubscribe(); this.listRequest?.unsubscribe();
     this.destroyDateRangePicker();
     if (this.refreshTimer) clearInterval(this.refreshTimer);
     if (this.insightsCloseTimer) clearTimeout(this.insightsCloseTimer);
@@ -2030,14 +2093,18 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.online !== 'all') params.set('is_online', this.online === 'online' ? '1' : '0');
     if (this.approval !== 'all') params.set('approval_status', this.approval);
 
-    if (this.refreshInFlight) return;
+    if (silent && this.refreshInFlight) return;
+    this.listRequest?.unsubscribe();
+    this.allocationParams(params);
     this.refreshInFlight = true;
     if (!silent) this.loading = true;
-    this.api.get<{ data: { data: DriverRow[]; total: number } }>(
+    this.listRequest = this.api.get<{ data: { data: DriverRow[]; total: number }; allocation_filters_supported?: boolean }>(
       `/admin/drivers?${params.toString()}`,
     ).subscribe({
       next: (res) => {
         this.rows = res?.data?.data ?? [];
+        this.allocationFiltersSupported = !!res.allocation_filters_supported;
+        if (!this.allocationFiltersSupported) this.rows.filter(row => !row.route_groups).forEach(row => this.loadLegacyGroupSummary(row));
         this.total = res?.data?.total ?? 0;
         this.loading = false;
         this.refreshInFlight = false;
@@ -2671,6 +2738,7 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.online !== 'all') params.set('is_online', this.online === 'online' ? '1' : '0');
     if (this.approval !== 'all') params.set('approval_status', this.approval);
 
+    this.allocationParams(params);
     this.api.getBlob(`/admin/drivers/export?${params.toString()}`).subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);

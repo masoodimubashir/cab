@@ -320,11 +320,11 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     }
   }
 
-  /** Server-side OTP request (MSG91). In mock mode the code comes back and is auto-filled. */
+  /** Request a login code from the SMS gateway. */
   private async sendServerOtp(normalized: string): Promise<void> {
     try {
-      const res = await this.api
-        .post<{ ok: boolean; resend_in?: number; dev_code?: string }>('/auth/otp/sms/start', {
+      await this.api
+        .post<{ ok: boolean; resend_in?: number }>('/auth/otp/sms/start', {
           phone: normalized,
         })
         .toPromise();
@@ -333,10 +333,6 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
       this.focusOtpInput();
       this.listenForWebOtp();
       this.listenForSmsConsent();
-      if (res?.dev_code) {
-        // Mock mode only — prefill and auto-submit
-        this.onOtpChange(res.dev_code);
-      }
     } catch (e: unknown) {
       this.error = (e as { error?: { message?: string } })?.error?.message || 'Could not send the code. Try again.';
       this.step = 'phone';

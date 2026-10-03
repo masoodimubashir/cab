@@ -116,6 +116,54 @@ class FixedBookingPhase4Test extends TestCase
         ]);
     }
 
+    public function test_boarding_and_departure_are_separate_stages(): void
+    {
+        $this->instance(\App\Services\NotificationCenter::class,
+            Mockery::mock(\App\Services\NotificationCenter::class)->shouldIgnoreMissing());
+        \App\Models\Driver::query()->create([
+            'user_id' => $this->driver->id,
+            'city_id' => $this->route->city_id,
+            'service_scope' => 'local',
+            'is_online' => true,
+            'active_service_mode' => 'fixed',
+            'active_service_scope' => 'local',
+        ]);
+        Sanctum::actingAs($this->driver, ['act-as:driver']);
+        $url = "/api/fixed/departures/{$this->departure->id}";
+        $this->postJson($url . '/depart')->assertStatus(422);
+        $this->postJson($url . '/start')->assertOk()->assertJsonPath('vehicle.status', 'DISPATCHED');
+        $this->departure->refresh();
+        $this->assertNotNull($this->departure->trip_id);
+        $this->assertNull($this->departure->actual_depart_at);
+        $this->assertNull($this->departure->boarding_closed_at);
+        $this->postJson($url . '/start')->assertStatus(422);
+        $this->postJson($url . '/depart')->assertOk()->assertJsonPath('vehicle.status', 'DEPARTED');
+        $this->departure->refresh();
+        $this->assertNotNull($this->departure->actual_depart_at);
+        $this->assertNotNull($this->departure->boarding_closed_at);
+        $this->postJson($url . '/depart')->assertStatus(422);
+    }
+
+    public function test_customer_route_search_and_proximity_include_routes_beyond_default_limit(): void
+    {
+        for ($i = 0; $i < 61; $i++) {
+            $route = $this->route->replicate();
+            $route->name = $i === 60 ? 'Hidden closest route' : "Far route {$i}";
+            $route->save();
+            $stop = $this->pickupStop->replicate();
+            $stop->route_id = $route->id;
+            $stop->lat = $i === 60 ? 34.5 : 35;
+            $stop->lng = 74.5;
+            $stop->save();
+        }
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $url = '/api/fixed/routes?city_id=' . $this->route->city_id;
+        $this->getJson($url . '&q=Hidden')->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'Hidden closest route');
+        $this->getJson($url . '&lat=34.5&lng=74.5&limit=1')->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'Hidden closest route');
+    }
+
     public function test_coupon_confirmation_without_tip(): void
     {
         $this->verifyCouponConfirmation(0);
@@ -124,6 +172,23 @@ class FixedBookingPhase4Test extends TestCase
     public function test_coupon_confirmation_with_tip(): void
     {
         $this->verifyCouponConfirmation(10);
+    }
+
+    public function test_production_has_no_test_payment_endpoint_even_with_test_keys(): void
+    {
+        $hold = app(\App\Services\FixedSeatHoldService::class)->createHold($this->customer, [
+            'route_departure_id' => $this->departure->id, 'seats' => 1,
+            'board_stop_id' => $this->pickupStop->id, 'drop_stop_id' => $this->dropStop->id,
+        ]);
+        Sanctum::actingAs($this->customer, ['*']);
+        config()->set('services.razorpay.key_id', 'rzp_test_release_check');
+        $this->app->instance('env', 'production');
+        try {
+            $this->postJson('/api/fixed/seat-holds/'.$hold->id.'/test-confirm-payment')->assertNotFound();
+            $this->assertDatabaseCount('seat_reservations', 0);
+        } finally {
+            $this->app->instance('env', 'testing');
+        }
     }
 
     private function verifyCouponConfirmation(float $tip): void

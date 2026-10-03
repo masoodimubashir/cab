@@ -70,8 +70,12 @@ class FixedRouteService
                 });
             })
             ->orderBy('sort_order')
-            ->orderBy('id')
-            ->limit($limit);
+            ->orderBy('id');
+
+        // With coordinates, rank all matches before selecting the closest results.
+        if ($userLat === null || $userLng === null) {
+            $query->limit($limit);
+        }
 
         $routes = $query->get();
         $images = $this->vehicleImages->preloadForPlatform();
@@ -83,7 +87,7 @@ class FixedRouteService
             })->values();
         }
 
-        return $mapped;
+        return $mapped->take($limit)->values();
     }
 
     public function adminRoutes(City $city): Collection

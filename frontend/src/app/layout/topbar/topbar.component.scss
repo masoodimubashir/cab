@@ -165,3 +165,9 @@
   .tb__burger { display: inline-flex; }
   .tb__user-meta { display: none; }
 }
+
+@media (max-width: 480px) {
+  .tb { flex-wrap: wrap; column-gap: 8px; }
+  .tb__burger { flex-shrink: 0; }
+  .tb__actions { gap: 8px; }
+}

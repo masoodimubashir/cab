@@ -147,7 +147,12 @@ import { CommonModule } from '@angular/common';
       justify-content: space-between;
       gap: 10px;
     }
-    .sf__title-row .bk-title { margin: 0; }
+    .sf__title-row .bk-title {
+      margin: 0;
+      flex: 1 1 auto;
+      min-width: 0;
+      word-break: break-word;
+    }
     .sf__body {
       flex: 1 1 auto;
       min-height: 0;
@@ -157,6 +162,9 @@ import { CommonModule } from '@angular/common';
       display: flex;
       flex-direction: column;
       gap: 10px;
+    }
+    .sf__body > * {
+      flex-shrink: 0;
     }
 
     /* --- dock ----------------------------------------------------------- */

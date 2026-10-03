@@ -10,8 +10,12 @@
 <ion-content>
   <ion-list *ngIf="!loading && trips.length">
     <ion-item *ngFor="let t of trips" lines="full">
+      <ion-thumbnail slot="start" *ngIf="t['image_url']" style="--size: 44px; display: flex; align-items: center; justify-content: center; background: rgba(18, 179, 91, 0.08); border-radius: 10px;">
+        <img [src]="t['image_url']" alt="Vehicle" style="object-fit: contain; width: 100%; height: 100%; padding: 4px;" (error)="t['image_url'] = null" />
+      </ion-thumbnail>
+      <ion-icon slot="start" *ngIf="!t['image_url']" name="car-outline" style="font-size: 24px; color: #12B35B; margin-inline: 10px;"></ion-icon>
       <ion-label>
-        <h2>Trip #{{ t['id'] }}</h2>
+        <h2>Trip #{{ t['id'] }} {{ t['vehicle_name'] ? '· ' + t['vehicle_name'] : '' }}</h2>
         <p>Status: {{ t['status'] }}</p>
         <p *ngIf="t['final_fare'] != null">Fare: {{ t['final_fare'] }} {{ t['currency'] }}</p>
         <p *ngIf="t['completed_at']">Completed: {{ t['completed_at'] }}</p>

@@ -17,7 +17,7 @@ import { FleetsSettingsComponent } from './admin/settings/fleets.component';
 import { SettingsComponent } from './admin/settings/settings.component';
 import { OperatorSettingsComponent } from './admin/settings/operator-settings.component';
 // App Assets temporarily hidden (not part of the first release). Re-enable by uncommenting.
-// import { AppAssetsComponent } from './admin/settings/app-assets.component';
+import { AppAssetsComponent } from './admin/settings/app-assets.component';
 import { SetupWizardComponent } from './admin/setup/setup-wizard.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
 import { CouponsComponent } from './admin/promotions/coupons.component';
@@ -100,6 +100,20 @@ export const routes: Routes = [
   // Vehicle workspace — city vehicle list + Common/Normal/Fixed/Shuttle/Drivers/
   // Seat-layout tabs on one page. `:vehicleRowId` deep-links a single vehicle.
   { path: 'vehicles', component: VehicleWorkspaceComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
+  {
+    path: 'operations',
+    loadComponent: () => import('./admin/vehicles/operations-workspace.component').then((m) => m.OperationsWorkspaceComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'vehicles' },
+  },
+  { path: 'operations/drivers', redirectTo: 'drivers', pathMatch: 'full' },
+  { path: 'operations/route-groups', redirectTo: 'operations/routes', pathMatch: 'full' },
+  {
+    path: 'operations/:section',
+    loadComponent: () => import('./admin/vehicles/operations-workspace.component').then((m) => m.OperationsWorkspaceComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'vehicles' },
+  },
   { path: 'vehicles/:vehicleRowId', component: VehicleWorkspaceComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
 
   // Vehicle seat layouts — reusable seat maps per (city × vehicle-type).
@@ -164,7 +178,7 @@ export const routes: Routes = [
   { path: 'settings/city', component: SettingsComponent, canActivate: [adminAuthGuard], data: { permission: 'city_settings' } },
   { path: 'settings/operator', component: OperatorSettingsComponent, canActivate: [adminAuthGuard], data: { permission: 'operator_settings' } },
   // App Assets temporarily hidden (not part of the first release). Re-enable by uncommenting (and the import above).
-  // { path: 'settings/app-assets', component: AppAssetsComponent, canActivate: [adminAuthGuard], data: { permission: 'app_assets' } },
+  { path: 'settings/app-assets', component: AppAssetsComponent, canActivate: [adminAuthGuard], data: { permission: 'app_assets' } },
   { path: 'settings/general', redirectTo: 'settings/city', pathMatch: 'full' },
   { path: 'settings/fleets', component: FleetsSettingsComponent, canActivate: [adminAuthGuard], data: { permission: 'fleets' } },
   { path: 'settings/vehicle-types/:vehicleRowId', redirectTo: '/setup', pathMatch: 'full' },
