@@ -89,7 +89,7 @@ export class CustomerProfilePage implements OnInit, OnDestroy {
     this.phoneError = null;
     this.phoneBusy = true;
 
-    this.api.post<{ ok: boolean; resend_in?: number; dev_code?: string; message?: string }>('/me/phone/change/start', { phone }).subscribe({
+    this.api.post<{ ok: boolean; resend_in?: number; message?: string }>('/me/phone/change/start', { phone }).subscribe({
       next: (res) => {
         this.phoneBusy = false;
         this.phoneStep = 'otp';

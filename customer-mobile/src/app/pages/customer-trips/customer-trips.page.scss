@@ -102,7 +102,9 @@
       width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
       background: var(--dc-green-tint, rgba(18, 179, 91, 0.1));
       display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
       ion-icon { font-size: 20px; color: var(--dc-green, #12B35B); }
+      .ride-vehicle-img { width: 100%; height: 100%; object-fit: contain; padding: 4px; }
     }
     .ride-kind-text { display: flex; flex-direction: column; min-width: 0; }
     .ride-kind-label { font-size: 15px; font-weight: 700; color: var(--dc-ink, #0D1B2A); letter-spacing: -0.2px; }

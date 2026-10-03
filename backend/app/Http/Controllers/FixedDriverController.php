@@ -329,6 +329,10 @@ class FixedDriverController extends Controller
                 abort(422, 'This fixed vehicle is already closed.');
             }
 
+            if ($dep->status !== 'FORMING') {
+                abort(422, 'Boarding has already started for this vehicle.');
+            }
+
             $route = $dep->route;
             if (!$route) {
                 abort(422, 'This fixed route is not available.');
@@ -414,10 +418,9 @@ class FixedDriverController extends Controller
             $dep->update([
                 'trip_id' => $trip->id,
                 'driver_id' => $request->user()->id,
-                'actual_depart_at' => $dep->actual_depart_at ?? now(),
-                'boarding_closed_at' => $dep->boarding_closed_at ?? now(),
+                'boarding_opened_at' => $dep->boarding_opened_at ?? now(),
                 'visible_to_customers' => true,
-                'status' => 'DEPARTED',
+                'status' => 'DISPATCHED',
                 'fixed_last_reached_stop_seq' => $dep->fixed_last_reached_stop_seq ?: 1,
                 'fixed_last_reached_stop_at' => $dep->fixed_last_reached_stop_at ?? now(),
             ]);
@@ -425,7 +428,7 @@ class FixedDriverController extends Controller
             return $dep->fresh(['route.stops', 'driver:id,name']);
         });
 
-        $this->notifyFixedStarted($departure);
+        $this->notifyFixedStarted($departure, true);
 
         $driver = $this->driverProfile($request);
         $driver->update([
@@ -438,7 +441,31 @@ class FixedDriverController extends Controller
 
         return response()->json([
             'vehicle' => $this->departures->shapeAdminDeparture($departure),
-            'message' => 'Fixed ride started.',
+            'message' => 'Boarding started. The vehicle has not departed yet.',
+        ]);
+    }
+
+    public function depart(Request $request, RouteDeparture $departure)
+    {
+        $this->guardDriverDeparture($request, $departure);
+        $departure = DB::transaction(function () use ($request, $departure) {
+            $dep = RouteDeparture::query()->lockForUpdate()->findOrFail($departure->id);
+            $this->guardDriverDeparture($request, $dep);
+            if ($dep->status !== 'DISPATCHED') {
+                abort(422, 'Start boarding before departing. This vehicle may have already departed or closed.');
+            }
+            $dep->update([
+                'status' => 'DEPARTED',
+                'actual_depart_at' => now(),
+                'boarding_closed_at' => now(),
+            ]);
+            return $dep->fresh(['route.stops', 'driver:id,name']);
+        });
+        $this->notifyFixedStarted($departure);
+        $this->broadcastAvailability($departure, 'vehicle_departed');
+        return response()->json([
+            'vehicle' => $this->departures->shapeAdminDeparture($departure),
+            'message' => 'Vehicle departed. Customers can still book from upcoming stops while seats are available.',
         ]);
     }
 
@@ -909,11 +936,14 @@ class FixedDriverController extends Controller
         return $earthM * 2 * atan2(sqrt($a), sqrt(1 - $a));
     }
 
-    private function notifyFixedStarted(RouteDeparture $departure): void
+    private function notifyFixedStarted(RouteDeparture $departure, bool $boarding = false): void
     {
         try {
             $departure->loadMissing("route:id,name");
             $routeName = $departure->route?->name ?: "Fixed route";
+            $event = $boarding ? 'fixed_boarding_started' : 'fixed_vehicle_started';
+            $title = $boarding ? 'Boarding started' : 'Vehicle departed';
+            $body = $boarding ? $routeName . ' is boarding. The vehicle has not departed yet.' : $routeName . ' has departed.';
             $data = [
                 "route_departure_id" => $departure->id,
                 "route_id" => $departure->route_id,
@@ -925,9 +955,9 @@ class FixedDriverController extends Controller
                 ->whereIn("status", SeatReservation::ACTIVE_STATUSES)
                 ->pluck("customer_id")
                 ->unique()
-                ->each(fn ($customerId) => $this->notifier->notifyUserId((int) $customerId, "fixed_vehicle_started", "Fixed vehicle started", $routeName . " has started.", $data, "play-circle"));
+                ->each(fn ($customerId) => $this->notifier->notifyUserId((int) $customerId, $event, $title, $body, $data, "play-circle"));
 
-            $this->notifier->notifyAdmins("fixed_vehicle_started", "Fixed vehicle started", "Driver started " . $routeName . ".", $data + ["driver_id" => $departure->driver_id], "play-circle");
+            $this->notifier->notifyAdmins($event, $title, $body, $data + ["driver_id" => $departure->driver_id], "play-circle");
         } catch (\Throwable $e) {
             Log::warning('notifyFixedStarted failed', ['error' => $e->getMessage()]);
         }

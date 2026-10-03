@@ -141,7 +141,7 @@
           <small class="pf-head__sub" *ngIf="phone">{{ phone }}</small>
           <span class="drv-status" *ngIf="!onboarding">
             <span class="drv-status__dot" [class.is-approved]="driverApproved"></span>
-            {{ driverApproved ? 'Verified Driver' : 'Account under review' }}
+            {{ !profileLoaded ? 'Profile unavailable' : (driverApproved ? 'Verified Driver' : 'Account under review') }}
           </span>
         </div>
       </div>
@@ -385,7 +385,8 @@
               [class.is-active]="vehicle_type_id === v.id"
               (click)="selectVehicleType(v.id)"
             >
-              <ion-icon class="pf-vtype-card__icon" [name]="getVehicleTypeIconByName(v.name)"></ion-icon>
+              <img *ngIf="v.image_url" class="pf-vehicle-photo" [src]="v.image_url" [alt]="v.name" (error)="v.image_url = null" />
+              <ion-icon *ngIf="!v.image_url" class="pf-vtype-card__icon" [name]="getVehicleTypeIconByName(v.name)"></ion-icon>
               <span class="pf-vtype-card__name">{{ v.name }}</span>
               <div class="pf-vtype-card__check" *ngIf="vehicle_type_id === v.id">
                 <ion-icon name="checkmark"></ion-icon>
@@ -405,6 +406,7 @@
               (click)="selectCityVehicle(cv.id)"
             >
               <div class="pf-model-item__left">
+                <img *ngIf="cv.image_url" class="pf-vehicle-photo pf-vehicle-photo--model" [src]="cv.image_url" [alt]="cv.display_name" (error)="cv.image_url = null" />
                 <div class="pf-model-item__radio" [class.is-checked]="city_vehicle_type_id === cv.id">
                   <div class="pf-model-item__radio-dot" *ngIf="city_vehicle_type_id === cv.id"></div>
                 </div>
@@ -474,6 +476,9 @@
         <div class="pg-card__head">
           <div class="pg-card__icon"><ion-icon name="car-sport-outline"></ion-icon></div>
           <h2 class="pg-card__title">Registered Vehicle &amp; Service</h2>
+        </div>
+        <div class="pf-registered-photo" *ngIf="profileLoaded && registeredVehicleImageUrl">
+          <img [src]="registeredVehicleImageUrl" [alt]="selectedCityVehicleOpt?.display_name || selectedVehicleTypeOpt?.name || 'Registered vehicle'" (error)="registeredVehicleImageUrl = null" />
         </div>
 
         <div class="dc-list">

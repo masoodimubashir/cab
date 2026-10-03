@@ -266,7 +266,6 @@ class AdminCustomersController
             'message' => 'Verification code sent to ' . $normalized . '.',
             'phone' => $normalized,
             'resend_in' => (int) config('services.msg91.resend_cooldown_sec', 30),
-            'dev_code' => $result['dev_code'] ?? null,
         ], static fn ($v) => $v !== null));
     }
 
@@ -404,7 +403,6 @@ class AdminCustomersController
 
         return response()->json([
             'message' => 'OTP sent successfully.',
-            'dev_code' => $res['dev_code'] ?? null,
         ]);
     }
 

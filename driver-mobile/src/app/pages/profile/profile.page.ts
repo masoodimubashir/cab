@@ -21,7 +21,7 @@ type LabelType = 'text' | 'number' | 'date' | 'url';
 
 interface CityOpt { id: number; name: string; country_code: string | null; }
 interface VehicleTypeOpt { id: number; name: string; description: string | null; image_url: string | null; }
-interface CityVehicleOpt { id: number; display_name: string; max_people: number; luggage_capacity: number; vehicle_type_id: number; ride_type_id: number | null; }
+interface CityVehicleOpt { id: number; display_name: string; max_people: number; luggage_capacity: number; vehicle_type_id: number; ride_type_id: number | null; image_url?: string | null; }
 interface FleetOpt { id: number; name: string; city_id: number | null; }
 interface DocumentLabelDef { id: number; label: string; label_type: LabelType; mandatory: boolean; sort_order: number; }
 interface RideModeOption { id: number; scope: ServiceScope; mode: ServiceMode; name: string; image_url: string | null; sort_order: number; }
@@ -148,6 +148,8 @@ export class ProfilePage implements OnInit, OnDestroy {
   // Verification Documents fields
   docs: DocUploadState[] = [];
   driverApproved = false;
+  profileLoaded = false;
+  registeredVehicleImageUrl: string | null = null;
   documentsRefreshInFlight = false;
 
   busy = false;
@@ -319,7 +321,7 @@ export class ProfilePage implements OnInit, OnDestroy {
     this.phoneError = null;
     this.phoneBusy = true;
 
-    this.api.post<{ ok: boolean; resend_in?: number; dev_code?: string; message?: string }>('/me/phone/change/start', { phone }).subscribe({
+    this.api.post<{ ok: boolean; resend_in?: number; message?: string }>('/me/phone/change/start', { phone }).subscribe({
       next: (res) => {
         this.phoneBusy = false;
         this.phoneStep = 'otp';
@@ -411,6 +413,7 @@ export class ProfilePage implements OnInit, OnDestroy {
 
     this.api.get<{
       driver: {
+        image_url?: string | null;
         city_id?: number | null;
         city_ids?: number[] | null;
         cities?: Array<{ id: number; name: string }> | null;
@@ -430,6 +433,8 @@ export class ProfilePage implements OnInit, OnDestroy {
       documents?: ExistingUpload[];
     }>('/drivers/me').subscribe({
       next: (res) => {
+        this.profileLoaded = true;
+        this.registeredVehicleImageUrl = res.driver?.image_url ?? null;
         this.busy = false;
         if (res.user) {
           this.auth.updateUser(res.user);
@@ -470,8 +475,11 @@ export class ProfilePage implements OnInit, OnDestroy {
         }
         this.refreshDocumentStep(false);
       },
-      error: () => {
+      error: (err) => {
         this.busy = false;
+        this.profileLoaded = false;
+        this.registeredVehicleImageUrl = null;
+        this.error = driverProfileErrorMessage(err);
       },
     });
   }
@@ -479,6 +487,7 @@ export class ProfilePage implements OnInit, OnDestroy {
   // ── Computed Registered Info for Clean Read-Only View ──────
 
   get cityNameDisplay(): string {
+    if (!this.profileLoaded) return 'Profile unavailable';
     if (this.city_ids && this.city_ids.length > 0) {
       const names = this.cities.filter((c) => this.city_ids.includes(c.id)).map((c) => c.name);
       if (names.length) return names.join(', ');
@@ -489,12 +498,14 @@ export class ProfilePage implements OnInit, OnDestroy {
   }
 
   get serviceScopeDisplay(): string {
+    if (!this.profileLoaded) return 'Profile unavailable';
     if (!this.service_scope) return 'Not registered';
     if (this.service_scope === 'both') return 'Local & Outstation Service';
     return this.service_scope === 'outstation' ? 'Outstation Service' : 'Local Service';
   }
 
   get serviceModeDisplay(): string {
+    if (!this.profileLoaded) return 'Profile unavailable';
     if (!this.service_mode) return 'Not registered';
     if (this.service_mode === 'fixed') return 'Fixed Route';
     if (this.service_mode === 'shuttle') return 'Shared Shuttle';
@@ -1313,3 +1324,4 @@ function parseOsVersion(ua: string | undefined | null): string | undefined {
   }
   return 'Web';
 }
+import { driverProfileErrorMessage } from '../../core/profile-error.helper';

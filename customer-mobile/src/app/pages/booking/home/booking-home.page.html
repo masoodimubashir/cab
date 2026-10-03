@@ -1,64 +1,22 @@
 <ion-content [fullscreen]="true" class="bh-content">
 
-  <!-- ── Fullscreen Location Fetching Loading Screen ── -->
-  <div class="loc-loader-overlay" [class.loc-loader-overlay--hidden]="!locationFetching" aria-live="polite">
-    <div class="loc-loader-card">
-      <div class="loc-radar-anim">
-        <span class="loc-radar-ring r1"></span>
-        <span class="loc-radar-ring r2"></span>
-        <span class="loc-radar-ring r3"></span>
-        <div class="loc-radar-center">
-          <ion-icon name="location"></ion-icon>
-        </div>
-      </div>
-      <h2 class="loc-loader-title">Fetching current location...</h2>
-      <p class="loc-loader-sub">Pinpointing your position on the map</p>
-      <div class="loc-loader-bar">
-        <div class="loc-loader-bar-fill"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Fullscreen Enable Location Required Modal ── -->
-  <div class="loc-perm-overlay" *ngIf="locationPermissionNeeded && !locationFetching" aria-live="polite">
-    <div class="loc-perm-card dc-anim-pop">
-      <div class="loc-perm-icon-wrap">
-        <div class="loc-perm-icon-glow"></div>
-        <ion-icon name="location-outline" class="loc-perm-icon"></ion-icon>
-        <div class="loc-perm-badge">!</div>
-      </div>
-
-      <h2 class="loc-perm-title">Please Enable Your Location</h2>
-      <p class="loc-perm-desc">
-        DreamCabs needs your precise location to show cabs, fares, and active routes in your area.
-      </p>
-
-      <div class="loc-perm-action-wrap">
-        <button class="loc-perm-btn dc-press" type="button" (click)="requestLocation()">
-          <ion-icon name="navigate-outline"></ion-icon>
-          <span>Enable Location / Try Again</span>
-        </button>
-      </div>
-
-      <div class="loc-perm-hint">
-        <ion-icon name="information-circle-outline"></ion-icon>
-        <span>Make sure GPS / Device Location is turned ON in settings.</span>
-      </div>
-    </div>
+  <div class="bh-location-status" *ngIf="locationFetching" role="status">
+    <ion-spinner name="crescent"></ion-spinner>
+    <span>Finding your location…</span>
   </div>
 
   <!-- ── Live Google Map fills the whole screen ── -->
   <div #mapEl class="bh-map" aria-label="Map"></div>
 
   <!-- Drawer button, top-left -->
-  <div class="bh-menu" *ngIf="!locationPermissionNeeded">
+  <div class="bh-menu">
     <ion-menu-button menu="customer-menu" aria-label="Open menu"></ion-menu-button>
   </div>
 
   <!-- ── Half Screen Floating Banner Card ── -->
   <aside
     class="dc-banner-half-card dc-anim-pop"
-    *ngIf="halfBanner && !isHalfBannerCollapsed && !locationPermissionNeeded"
+    *ngIf="halfBanner && !isHalfBannerCollapsed"
     role="complementary"
     aria-label="Promotional banner"
   >
@@ -107,7 +65,7 @@
   <!-- ── Full-Screen App Banner Overlay Modal (True Mobile Full Screen) ── -->
   <div
     class="dc-banner-fullscreen-modal dc-anim-fade"
-    *ngIf="fullScreenBanner && !isFullScreenDismissed && !locationPermissionNeeded"
+    *ngIf="fullScreenBanner && !isFullScreenDismissed"
     role="dialog"
     aria-modal="true"
     [attr.aria-label]="fullScreenBanner.title"
@@ -151,7 +109,7 @@
   </div>
 
   <!-- ── 1. Active Fixed Ride Bottom Sheet (Replaces "Where are you going" when booking exists) ── -->
-  <section class="bh-sheet bh-active-sheet dc-anim-pop" *ngIf="!locationPermissionNeeded && activeFixedRide as ride">
+  <section class="bh-sheet bh-active-sheet dc-anim-pop" *ngIf="activeFixedRide as ride">
     <span class="bh-grip" aria-hidden="true"></span>
 
     <!-- Status & OTP Row -->
@@ -230,7 +188,7 @@
   </section>
 
   <!-- ── 2. Standard "Where are you going?" Bottom Sheet (When NO active ride) ── -->
-  <section class="bh-sheet" *ngIf="!locationPermissionNeeded && city && !activeFixedRide" [class.bh-sheet--loading]="loading">
+  <section class="bh-sheet" *ngIf="city && !activeFixedRide" [class.bh-sheet--loading]="loading">
     <span class="bh-grip" aria-hidden="true"></span>
 
     <h1 class="bk-title">Where are you going?</h1>

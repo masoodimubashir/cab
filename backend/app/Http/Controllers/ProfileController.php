@@ -144,7 +144,6 @@ class ProfileController extends Controller
             'message' => 'Verification code sent.',
             'phone' => $normalized,
             'resend_in' => (int) config('services.msg91.resend_cooldown_sec', 30),
-            'dev_code' => $result['dev_code'] ?? null,
         ], static fn ($v) => $v !== null));
     }
 

@@ -48,6 +48,9 @@ interface TripRow {
   created_at?: string | null;
   cancelled_reason?: string | null;
   no_show_by?: string | null;
+  image_url?: string | null;
+  map_marker_url?: string | null;
+  vehicle_name?: string | null;
   payment?: TripPayment | null;
 }
 

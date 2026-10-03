@@ -15,9 +15,11 @@ export type IconName =
   | 'trash' | 'download' | 'upload' | 'refresh' | 'more-horizontal' | 'copy'
   | 'road' | 'driver-helmet' | 'rupee' | 'handshake' | 'key'
   | 'expand' | 'compress' | 'grid' | 'lock' | 'alert-triangle'
-  | 'play' | 'external-link' | 'image' | 'camera' | 'link' | 'sliders';
+  | 'play' | 'external-link' | 'image' | 'camera' | 'link' | 'sliders' | 'folder' | 'share-alt';
 
 export const ICONS: Record<IconName, string> = {
+  'folder': '<path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v1"/><path d="M3 7h18l-2 13H3z"/>',
+  'share-alt': '<circle cx="12" cy="4" r="2.5"/><circle cx="4" cy="19" r="2.5"/><circle cx="20" cy="19" r="2.5"/><path d="M12 6.5v5M12 11.5 5 16.5M12 11.5l7 5"/>',
   'image': '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
   'camera': '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
   'link': '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',

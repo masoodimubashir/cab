@@ -31,7 +31,7 @@ type SavedPlace = {
 };
 
 type RideType = { id: number; name: string; description?: string | null };
-type VehicleType = { id: number; name: string; description?: string | null; image_path?: string | null };
+type VehicleType = { id: number; name: string; description?: string | null; image_path?: string | null; image_url?: string | null; map_marker_url?: string | null; images?: any; };
 
 type City = {
   id: number;
@@ -497,7 +497,8 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   private loadVehicleTypes(): void {
-    this.api.get<{ data: VehicleType[] }>('/pricing/vehicle-types').subscribe({
+    const q = this.selectedCity?.id ? `?city_id=${this.selectedCity.id}` : '';
+    this.api.get<{ data: VehicleType[] }>(`/pricing/vehicle-types${q}`).subscribe({
       next: (res) => {
         this.vehicleTypes = res.data || [];
         // Default to "All" (selectedVehicleTypeId stays null). The customer
@@ -591,6 +592,7 @@ export class CustomerBookPage implements OnDestroy {
       this.productsReady = false;
       this.clearRideProducts();
       this.loadRideProducts(resolved.id);
+      this.loadVehicleTypes();
     }
   }
 
@@ -779,8 +781,9 @@ export class CustomerBookPage implements OnDestroy {
         title: 'You',
         content: buildPassengerMarkerElement({
           kind: 'pickup',
-          name: 'You',
+          name: this.auth.getUser()?.name || 'You',
           isLive: true,
+          avatarUrl: this.auth.resolveAvatarUrl(this.auth.getUser()),
         }),
         zIndex: 2,
       });
@@ -850,7 +853,10 @@ export class CustomerBookPage implements OnDestroy {
           position: pos,
           map: this.map,
           title: 'Driver nearby',
-          content: buildReusableCarMarkerElement({ bearing: d.bearing_deg ?? 0 }),
+          content: buildReusableCarMarkerElement({
+            bearing: d.bearing_deg ?? 0,
+            markerUrl: d.map_marker_url || d.vehicle?.map_marker_url,
+          }),
           zIndex: 1,
         });
         this.nearbyDriverMarkers.set(d.id, marker);
@@ -909,8 +915,9 @@ export class CustomerBookPage implements OnDestroy {
         title: 'You',
         content: buildPassengerMarkerElement({
           kind: 'pickup',
-          name: 'You',
+          name: this.auth.getUser()?.name || 'You',
           isLive: true,
+          avatarUrl: this.auth.resolveAvatarUrl(this.auth.getUser()),
         }),
         zIndex: 2,
       });

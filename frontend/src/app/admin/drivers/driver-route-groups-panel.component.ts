@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, EventEmitter, Input, Output, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/api.service';
@@ -24,12 +24,12 @@ interface Payload { assigned_group_ids: number[]; groups: GroupOpt[]; effective_
         <span class="drg__sub">Routes are granted by route groups across this driver's registered operating cities.</span>
       </header>
 
-      <div class="drg__body">
+      <p *ngIf="loading" role="status">Loading route assignments…</p><p *ngIf="loadFailed" role="alert">Could not load assignments. Close and try again.</p><div class="drg__body" *ngIf="!loading && !loadFailed">
         <div class="drg__col">
           <div class="drg__label">Route groups</div>
           <div class="drg__empty" *ngIf="!groups.length">No route groups found in this driver's cities yet.</div>
           <label class="drg__grp" *ngFor="let g of groups">
-            <input type="checkbox" [checked]="assigned.has(g.id)" (change)="toggle(g.id)" />
+            <input type="checkbox" [disabled]="saving" [checked]="assigned.has(g.id)" (change)="toggle(g.id)" />
             <span>
               <strong>{{ g.name }}</strong>
               <small class="drg__city" *ngIf="g.city_name">· {{ g.city_name }}</small>
@@ -91,11 +91,14 @@ interface Payload { assigned_group_ids: number[]; groups: GroupOpt[]; effective_
 })
 export class DriverRouteGroupsPanelComponent implements OnChanges {
   @Input() driverId!: number;
+  @Output() saved = new EventEmitter<void>();
 
   groups: GroupOpt[] = [];
   effective: EffRoute[] = [];
   assigned = new Set<number>();
   saving = false;
+  loading = false;
+  loadFailed = false;
   scopeFilter: 'all' | 'local' | 'outstation' = 'all';
 
   get localCount(): number {
@@ -118,13 +121,16 @@ export class DriverRouteGroupsPanelComponent implements OnChanges {
   }
 
   load(): void {
+    const driverId = this.driverId; this.loading = true; this.loadFailed = false;
+    this.groups = []; this.effective = []; this.assigned = new Set();
     this.api.get<Payload>(`/admin/drivers/${this.driverId}/route-groups`).subscribe({
       next: (res) => {
+        if (this.driverId !== driverId) return; this.loading = false;
         this.groups = res?.groups || [];
         this.effective = res?.effective_routes || [];
         this.assigned = new Set<number>(res?.assigned_group_ids || []);
       },
-      error: () => { this.groups = []; this.effective = []; this.assigned = new Set(); },
+      error: () => { if (this.driverId !== driverId) return; this.loading = false; this.loadFailed = true; },
     });
   }
 
@@ -134,14 +140,14 @@ export class DriverRouteGroupsPanelComponent implements OnChanges {
   }
 
   save(): void {
-    if (!this.driverId) return;
+    if (!this.driverId || this.saving || this.loading || this.loadFailed) return;
     this.saving = true;
     this.api.put<Payload>(`/admin/drivers/${this.driverId}/route-groups`, { group_ids: Array.from(this.assigned) }).subscribe({
       next: (res) => {
         this.saving = false;
         this.effective = res?.effective_routes || [];
         this.assigned = new Set<number>(res?.assigned_group_ids || []);
-        this.toast.success('Route groups updated.');
+        this.toast.success('Route groups updated.'); this.saved.emit();
       },
       error: (e) => { this.saving = false; this.toast.error(e?.error?.message || 'Could not update route groups.'); },
     });

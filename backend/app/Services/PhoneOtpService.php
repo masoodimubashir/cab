@@ -8,7 +8,6 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -25,16 +24,15 @@ class PhoneOtpService
 
     /**
      * Generate + send an OTP. Returns:
-     *   ['sent' => true, 'dev_code' => '123456'|null]            on success
+     *   ['sent' => true]                                      on success
      *   ['sent' => false, 'cooldown' => <seconds>]              when asked again too soon
      *   ['sent' => false]                                     when a change SMS cannot be sent
      *
-     * dev_code is only included in MOCK mode (no MSG91 key) so the flow is testable.
-     * Phone changes allow mock mode only in local/testing environments.
+     * A working SMS gateway is required for login and phone changes.
      */
     public function start(string $phone, ?string $platform = null, ?int $changeUserId = null): array
     {
-        if ($changeUserId !== null && !$this->msg91->isLive() && !app()->environment('local', 'testing')) {
+        if (!$this->msg91->isLive()) {
             return ['sent' => false];
         }
         $phone = $this->normalize($phone);
@@ -66,7 +64,7 @@ class PhoneOtpService
         $message = $this->buildMessage($code, $platform, $ttlMin);
         $sent = $this->msg91->sendOtp($phone, $code, $message);
 
-        if ($changeUserId !== null && !$sent) {
+        if (!$sent) {
             PhoneOtp::query()->where('phone', $phone)->where('change_user_id', $changeUserId)->delete();
             return ['sent' => false];
         }
@@ -76,26 +74,7 @@ class PhoneOtpService
                 ->where('phone', '!=', $phone)->delete();
         }
 
-        // Surface the code in the log, but safely per environment:
-        //   • dev/local (APP_DEBUG=true)  → ALWAYS, so on-device testing can read
-        //     it back whether or not the SMS reached the phone;
-        //   • production (APP_DEBUG=false) → ONLY when the send actually FAILED,
-        //     as a fallback. A successful LIVE send is never logged, so real
-        //     customers' codes don't leak into the log file.
-        // Read it with:  tail -f storage/logs/laravel.log | grep '\[otp\]'
-        if ($changeUserId === null && (config('app.debug') || !$sent)) {
-            Log::warning('[otp] login/registration code', [
-                'phone' => $phone,
-                'code' => $code,
-                'sms_sent' => $sent,
-            ]);
-        }
-
-        return [
-            'sent' => true,
-            // Only leak the code when no real SMS went out (mock mode).
-            'dev_code' => $this->msg91->isLive() ? null : $code,
-        ];
+        return ['sent' => true];
     }
 
     /**

@@ -19,8 +19,6 @@ import { ApiService } from '../../core/api.service';
 export class StartOtpModal {
   @Input() tripId!: number;
   @Input() riderName = 'the rider';
-  /** Only set in mock mode (no SMS gateway) so the flow is testable. */
-  @Input() devCode: string | null = null;
 
   otp = '';
   otpLength = 6;
@@ -71,8 +69,7 @@ export class StartOtpModal {
   async resend(): Promise<void> {
     this.error = null;
     try {
-      const res: any = await firstValueFrom(this.api.post(`/trips/${this.tripId}/start-otp`, {}));
-      this.devCode = res?.dev_code ?? this.devCode;
+      await firstValueFrom(this.api.post(`/trips/${this.tripId}/start-otp`, {}));
       const t = await this.toastCtrl.create({
         message: 'Start code re-sent to the rider.',
         duration: 2200,

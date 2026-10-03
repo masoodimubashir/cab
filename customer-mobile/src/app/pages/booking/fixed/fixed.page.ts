@@ -28,6 +28,7 @@ interface FixedStop {
   is_nearest_pickup?: boolean;
 }
 interface FixedRoute {
+  image_url?: string | null;
   id: number; name: string; scope: 'local' | 'outstation';
   origin_name: string; dest_name: string;
   flat_fare: number; luggage_surcharge_amount: number;
@@ -44,6 +45,7 @@ interface FixedRoute {
   distance_to_nearest_pickup?: number | null;
 }
 interface FixedDeparture {
+  image_url?: string | null;
   id: number; depart_at: string | null; announced_depart_at: string | null;
   seats_remaining: number; luggage_remaining: number; status: string;
   vehicle_name?: string | null;
@@ -88,6 +90,17 @@ export class FixedBookPage implements OnInit, OnDestroy {
   cities: City[] = [];
   selectedCity: City | null = null;
   search = '';
+  private searchTimer?: ReturnType<typeof setTimeout>;
+  private routesSub?: Subscription;
+  private routesRequestId = 0;
+  radiusFilterActive = true;
+
+  get nearbyRoutesCount(): number {
+    if (!this.userCoords) return this.routes.length;
+    return this.routes.filter(
+      (r) => r.distance_to_nearest_pickup != null && r.distance_to_nearest_pickup <= 1000,
+    ).length;
+  }
 
   get selectedCityName(): string {
     return this.selectedCity?.name || (this.cityId ? `City #${this.cityId}` : 'All Cities');
@@ -173,8 +186,17 @@ export class FixedBookPage implements OnInit, OnDestroy {
       const pos = await this.geo.getCurrentPosition();
       if (pos?.lat != null && pos?.lng != null) {
         this.userCoords = { lat: pos.lat, lng: pos.lng };
+        if (this.cityId == null && this.cities.length) {
+          const resolved = resolveCity(this.cities, pos.lat, pos.lng);
+          if (resolved) {
+            this.cityId = resolved.id;
+            this.selectedCity = resolved;
+            this.booking.setCity(resolved.id);
+          }
+        }
         this.recalculateNearbyStops();
         this.annotateRoutesWithProximity();
+        this.sortRoutesByProximity();
         if (!this.loading && this.routes.length) {
           this.loadRoutes();
         }
@@ -187,6 +209,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.stopApprovalWaiting();
+    clearTimeout(this.searchTimer);
+    this.routesSub?.unsubscribe();
   }
 
   async loadCities(): Promise<void> {
@@ -194,6 +218,13 @@ export class FixedBookPage implements OnInit, OnDestroy {
       this.cities = await this.booking.cities().catch(() => [] as City[]);
       if (this.cityId != null && this.cityId > 0) {
         this.selectedCity = this.cities.find((c) => c.id === this.cityId) || null;
+      } else if (this.userCoords) {
+        const resolved = resolveCity(this.cities, this.userCoords.lat, this.userCoords.lng);
+        if (resolved) {
+          this.cityId = resolved.id;
+          this.selectedCity = resolved;
+          this.booking.setCity(resolved.id);
+        }
       } else {
         this.selectedCity = null;
       }
@@ -231,6 +262,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.departure = null;
     this.boardStopId = null;
     this.dropStopId = null;
+    this.search = '';
+    this.radiusFilterActive = true;
     this.loadRoutes();
     this.cdr.markForCheck();
   }
@@ -243,9 +276,18 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   // ---- step 1: route ----------------------------------------------------
 
+  retryRoutes(): void {
+    this.loadRoutes();
+  }
+
   private loadRoutes(): void {
+    clearTimeout(this.searchTimer);
+    this.routesSub?.unsubscribe();
+    const requestId = ++this.routesRequestId;
     this.loading = true;
+    this.error = null;
     const params = new URLSearchParams();
+    if (this.search.trim()) params.set('q', this.search.trim());
     if (this.cityId != null && this.cityId > 0) {
       params.set('city_id', String(this.cityId));
     }
@@ -254,14 +296,29 @@ export class FixedBookPage implements OnInit, OnDestroy {
       params.set('lng', String(this.userCoords.lng));
     }
     const qStr = params.toString() ? '?' + params.toString() : '';
-    this.api.get<{ data: FixedRoute[] }>('/fixed/routes' + qStr).subscribe({
+    this.routesSub = this.api.get<{ data: FixedRoute[] }>('/fixed/routes' + qStr).subscribe({
       next: (res) => {
+        if (requestId !== this.routesRequestId) return;
         this.routes = res?.data ?? [];
         this.annotateRoutesWithProximity();
+        this.sortRoutesByProximity();
         this.loading = false;
         this.cdr.markForCheck();
       },
-      error: () => { this.routes = []; this.loading = false; this.cdr.markForCheck(); },
+      error: () => {
+        if (requestId !== this.routesRequestId) return;
+        this.routes = []; this.loading = false;
+        this.error = 'Could not load routes. Please try again.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  private sortRoutesByProximity(): void {
+    this.routes.sort((a, b) => {
+      const distA = a.distance_to_nearest_pickup ?? Infinity;
+      const distB = b.distance_to_nearest_pickup ?? Infinity;
+      return distA - distB;
     });
   }
 
@@ -355,10 +412,38 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   get visibleRoutes(): FixedRoute[] {
     const q = this.search.trim().toLowerCase();
-    if (!q) return this.routes;
-    return this.routes.filter((r) =>
-      r.name.toLowerCase().includes(q) ||
-      (r.stops ?? []).some((s) => s.name.toLowerCase().includes(q)));
+    if (q) return this.routes;
+
+    // Default view: if radius filter is active and user coordinates are available, only show routes within 1 km (1000m)
+    if (this.radiusFilterActive && this.userCoords) {
+      return this.routes.filter(
+        (r) => r.distance_to_nearest_pickup != null && r.distance_to_nearest_pickup <= 1000,
+      );
+    }
+
+    return this.routes;
+  }
+
+  setRadiusFilter(active: boolean): void {
+    this.radiusFilterActive = active;
+    this.cdr.markForCheck();
+  }
+
+  onSearchChange(value: string): void {
+    this.search = value;
+    this.routesSub?.unsubscribe();
+    ++this.routesRequestId;
+    clearTimeout(this.searchTimer);
+    this.routes = [];
+    this.loading = true;
+    this.searchTimer = setTimeout(() => this.loadRoutes(), 300);
+    this.cdr.markForCheck();
+  }
+
+  clearSearch(): void {
+    this.search = '';
+    this.loadRoutes();
+    this.cdr.markForCheck();
   }
 
   pickRoute(route: FixedRoute): void {

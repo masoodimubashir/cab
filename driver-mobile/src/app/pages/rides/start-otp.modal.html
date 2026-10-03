@@ -38,9 +38,6 @@
     </div>
 
     <p class="otp-error" *ngIf="error">{{ error }}</p>
-    <p class="otp-dev" *ngIf="devCode">
-      Testing (no SMS gateway): the code is <strong>{{ devCode }}</strong>
-    </p>
 
     <div class="otp-actions">
       <button type="button" class="otp-cta dc-press" [disabled]="!otpReady || verifying" (click)="verify()">

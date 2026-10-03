@@ -45,7 +45,7 @@ class FixedBoardingOtpService
      * Generate + dispatch a fresh code to the reservation's customer.
      *
      * Returns:
-     *   ['sent' => true,  'dev_code' => '1234'|null]   on success (dev_code only in SMS mock mode)
+     *   ['sent' => true]                            on success
      *   ['sent' => false, 'retry_after' => <sec>]      resend cooldown still running
      *   ['sent' => false, 'locked_for' => <sec>]       reservation locked after too many wrong tries
      */

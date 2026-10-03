@@ -57,11 +57,9 @@ class FixedAdminRouteSettingsTest extends TestCase
             'dest_lng' => 74.1000000,
             'city_vehicle_type_id' => $vehicleId,
             'booking_window_hours' => 6,
-            'max_seats_per_booking' => 4,
             'waiting_time_per_stop_minutes' => 5,
             'luggage_surcharge_amount' => 25,
             'max_luggage_per_vehicle' => 3,
-            'requires_prepaid' => true,
             'is_active' => true,
             'fare_config' => ['seat_fare' => 120],
             'fixed_settings_json' => [
@@ -97,9 +95,9 @@ class FixedAdminRouteSettingsTest extends TestCase
         ])->assertCreated();
 
         $response
-            // Route now owns its capacity from the payload (4 seats / 3 bags),
-            // independent of the vehicle's own 6/2 — vehicle no longer decides.
-            ->assertJsonPath('route.max_seats_per_booking', 4)
+            // The August migration removed route seat limits and prepaid settings.
+            // Route luggage and stop automation remain part of the admin contract.
+            ->assertJsonMissingPath('route.max_seats_per_booking')
             ->assertJsonPath('route.max_luggage_per_vehicle', 3)
             ->assertJsonPath('route.fixed_settings_json.stop_arrival_radius_m', 175)
             ->assertJsonPath('route.fixed_settings_json.driver_missed_stop_grace_minutes', 4)

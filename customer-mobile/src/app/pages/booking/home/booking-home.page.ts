@@ -13,6 +13,7 @@ import { AlertController, ViewDidEnter, ViewDidLeave, ViewWillEnter } from '@ion
 import { Subscription, interval } from 'rxjs';
 
 import { ApiService } from '../../../core/api.service';
+import { AuthService } from '../../../core/auth.service';
 import {
   buildPassengerMarkerElement,
   buildReusableCarMarkerElement,
@@ -127,6 +128,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   constructor(
     private alertCtrl: AlertController,
     private api: ApiService,
+    private auth: AuthService,
     private booking: BookingService,
     private geo: GeolocationService,
     private places: PlacesService,
@@ -426,6 +428,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     if (!this.map) return;
     const latlng = { lat, lng };
     this.currentCoords = latlng;
+    this.located = true;
 
     if (!this.userMarker) {
       const { AdvancedMarkerElement } = await (google.maps as any).importLibrary('marker');
@@ -435,8 +438,9 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
         position: latlng,
         content: buildPassengerMarkerElement({
           kind: 'pickup',
-          name: 'You',
+          name: this.auth.getUser()?.name || 'You',
           isLive: true,
+          avatarUrl: this.auth.resolveAvatarUrl(this.auth.getUser()),
         }),
         zIndex: 1100,
         title: 'Your exact location',
@@ -470,17 +474,19 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
         if (longFix) fix = { lat: longFix.lat, lng: longFix.lng };
       }
 
+      const hasGpsFix = !!fix;
       if (!fix) {
-        // Location is unavailable / GPS off / permission not granted
-        this.zone.run(() => {
-          this.located = false;
-          this.city = null;
-          this.locationPermissionNeeded = true;
-          this.locationFetching = false;
-          this.loading = false;
-          this.cdr.markForCheck();
-        });
-        return;
+        // Fall back gracefully to the first city or default center without blocking the user with a modal
+        const defaultCity = cities[0] || {
+          id: 1,
+          name: 'Sopore',
+          center_lat: 34.2985,
+          center_lng: 74.4712,
+        };
+        fix = {
+          lat: Number(defaultCity.center_lat ?? 34.2985),
+          lng: Number(defaultCity.center_lng ?? 74.4712),
+        };
       }
 
       // 1. Check if user coordinates match an active Admin City's boundary polygon
@@ -527,7 +533,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
         : [];
 
       this.zone.run(() => {
-        this.located = true;
+        this.located = hasGpsFix || !!this.currentCoords;
         this.city = activeCity;
         this.locationPermissionNeeded = false;
         this.booking.setCity(activeCity.id);
@@ -544,13 +550,24 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
       // Pan map to user fix
       if (this.map) {
-        this.updateMapPosition(fix.lat, fix.lng, 40, true);
+        if (hasGpsFix) {
+          await this.updateMapPosition(fix.lat, fix.lng, 40, true);
+        } else if (!this.currentCoords) {
+          this.map.setCenter(fix);
+          this.map.setZoom(12);
+        }
       }
     } catch {
       this.zone.run(() => {
-        this.located = false;
-        this.city = null;
-        this.locationPermissionNeeded = true;
+        const fallbackCity = {
+          id: 1,
+          name: 'Sopore',
+          center_lat: 34.2985,
+          center_lng: 74.4712,
+        };
+        this.located = !!this.currentCoords;
+        this.city = fallbackCity as City;
+        this.locationPermissionNeeded = false;
         this.locationFetching = false;
         this.loading = false;
         this.cdr.markForCheck();

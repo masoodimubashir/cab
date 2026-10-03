@@ -487,7 +487,8 @@ export class FixedBookingsPage {
   }
 
   departureStatusLine(booking: FixedBooking): string {
-    return this.prettyToken(booking.departure_status || 'Scheduled');
+    const status = booking.departure_status || 'Scheduled';
+    return ({ FORMING: 'Open for bookings', DISPATCHED: 'Boarding', DEPARTED: 'Departed' } as Record<string, string>)[status] || this.prettyToken(status);
   }
 
   rawStatusLine(booking: FixedBooking): string {

@@ -34,13 +34,23 @@
       (primary)="goToPrice()">
 
       <div class="bk-chips">
-        <button class="bk-chip" type="button" [class.bk-chip--on]="vehicleTypeId === null" (click)="chooseVehicle(null)">Any car</button>
+        <button class="bk-chip" type="button" [class.bk-chip--on]="vehicleTypeId === null" (click)="chooseVehicle(null)">
+          <ion-icon name="car-outline" class="bk-chip__ic"></ion-icon>
+          <span>Any car</span>
+        </button>
         <button *ngFor="let v of vehicleTypes" class="bk-chip" type="button"
-                [class.bk-chip--on]="vehicleTypeId === v.id" (click)="chooseVehicle(v.id)">{{ v.name }}</button>
+                [class.bk-chip--on]="vehicleTypeId === v.id" (click)="chooseVehicle(v.id)">
+          <img *ngIf="v.image_url" [src]="v.image_url" class="bk-chip__img" [alt]="v.name" (error)="v.image_url = null" />
+          <ion-icon *ngIf="!v.image_url" name="car-sport-outline" class="bk-chip__ic"></ion-icon>
+          <span>{{ v.name }}</span>
+        </button>
       </div>
 
       <div class="bk-opt bk-opt--on">
-        <span class="bk-opt__ic"><ion-icon name="car-outline" aria-hidden="true"></ion-icon></span>
+        <span class="bk-opt__ic">
+          <img *ngIf="estimate?.image_url" [src]="estimate!.image_url" class="bk-opt__img" alt="" (error)="estimate!.image_url = null" />
+          <ion-icon *ngIf="!estimate?.image_url" name="car-outline" aria-hidden="true"></ion-icon>
+        </span>
         <span class="bk-opt__main">
           <span class="bk-opt__t">{{ vehicleTypeId === null ? 'Any car' : (estimate?.vehicle_name || 'Your car') }}</span>
           <span class="bk-opt__s">{{ estimating ? 'Pricing…' : (estimate?.time_min ? (estimate?.time_min + ' min away') : 'Nearest driver') }}</span>

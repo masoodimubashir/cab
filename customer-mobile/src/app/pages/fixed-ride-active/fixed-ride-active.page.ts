@@ -4,6 +4,7 @@ import { AlertController, Platform, ToastController } from '@ionic/angular';
 import { Subscription, interval } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import {
   buildPassengerMarkerElement,
   buildReusableCarMarkerElement,
@@ -121,6 +122,7 @@ export class FixedRideActivePage implements OnDestroy {
     private alerts: AlertController,
     private toasts: ToastController,
     private platform: Platform,
+    private auth: AuthService,
     private fixedLocation: FixedCustomerLocationService,
     private geo: GeolocationService,
     private places: PlacesService,
@@ -357,7 +359,12 @@ export class FixedRideActivePage implements OnDestroy {
           position: this.userPosition,
           map: this.map,
           title: 'You (Actual Location)',
-          content: buildPassengerMarkerElement({ kind: 'pickup', name: 'You', isLive: true }),
+          content: buildPassengerMarkerElement({
+            kind: 'pickup',
+            name: this.auth.getUser()?.name || 'You',
+            isLive: true,
+            avatarUrl: this.auth.resolveAvatarUrl(this.auth.getUser()),
+          }),
           zIndex: 1100,
         });
       } else {
@@ -376,6 +383,7 @@ export class FixedRideActivePage implements OnDestroy {
           content: buildReusableCarMarkerElement({
             bearing: this.driverBearing,
             label: b.vehicle_name || 'Driver',
+            markerUrl: (b as any).map_marker_url || (b as any).vehicle?.map_marker_url || null,
           }),
           zIndex: 1000,
         });

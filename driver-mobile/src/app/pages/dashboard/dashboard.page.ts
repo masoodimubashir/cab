@@ -104,6 +104,7 @@ interface FixedPassenger {
   drop_lng?: number | null;
   customer_lat?: number | null;
   customer_lng?: number | null;
+  customer_avatar_url?: string | null;
 }
 
 interface FixedManifestResponse {
@@ -913,7 +914,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         position: point.position,
         map: this.map,
         title: point.title,
-        content: this.buildFixedPassengerMarker(point.kind, point.count, point.name, point.isLive),
+        content: this.buildFixedPassengerMarker(point.kind, point.count, point.name, point.isLive, point.avatarUrl),
         zIndex: point.kind === 'pickup' ? (point.isLive ? 960 : 920) : 850,
       });
     });
@@ -975,6 +976,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     title: string;
     name: string;
     isLive: boolean;
+    avatarUrl?: string | null;
     position: { lat: number; lng: number };
   }> {
     const points: Array<{
@@ -983,6 +985,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       title: string;
       name: string;
       isLive: boolean;
+      avatarUrl?: string | null;
       position: { lat: number; lng: number };
     }> = [];
 
@@ -1001,6 +1004,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
             count: passenger.seats || 1,
             name,
             isLive,
+            avatarUrl: passenger.customer_avatar_url || null,
             title: `${name} (${passenger.seats || 1} seat${(passenger.seats || 1) > 1 ? 's' : ''}) - ${isLive ? 'Live Walking' : 'Pickup at ' + (passenger.board || 'stop')}`,
             position: pickup,
           });
@@ -1014,6 +1018,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
             count: passenger.seats || 1,
             name,
             isLive: false,
+            avatarUrl: passenger.customer_avatar_url || null,
             title: `${name} - Drop off at ${passenger.drop || 'destination'}`,
             position: drop,
           });
@@ -1045,8 +1050,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     return (dropStop?.lat != null && dropStop?.lng != null) ? { lat: Number(dropStop.lat), lng: Number(dropStop.lng) } : null;
   }
 
-  private buildFixedPassengerMarker(kind: 'pickup' | 'drop', count: number, name = 'Passenger', isLive = false): HTMLElement {
-    return buildPassengerMarkerElement({ kind, count, name, isLive });
+  private buildFixedPassengerMarker(kind: 'pickup' | 'drop', count: number, name = 'Passenger', isLive = false, avatarUrl?: string | null): HTMLElement {
+    return buildPassengerMarkerElement({ kind, count, name, isLive, avatarUrl });
   }
 
   async choosePrivateRides(): Promise<void> {
@@ -1213,7 +1218,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
           this.finishSignOut();
           return;
         }
-        this.error = err?.error?.message || 'Could not load driver profile';
+        this.error = driverProfileErrorMessage(err);
         this.driver = null;
         this.profileReady = true;
         this.maybeFinishHome();
@@ -1432,7 +1437,11 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         map: this.map,
         position: pos,
         title: 'You',
-        content: buildReusableCarMarkerElement({ bearing: bearing ?? 0, label: 'You' }),
+        content: buildReusableCarMarkerElement({
+          bearing: bearing ?? 0,
+          label: 'You',
+          markerUrl: (this.driver as any)?.vehicle?.map_marker_url,
+        }),
         zIndex: 1000,
       });
     } else {
@@ -1607,3 +1616,4 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.onlineElapsed = h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
   }
 }
+import { driverProfileErrorMessage } from '../../core/profile-error.helper';

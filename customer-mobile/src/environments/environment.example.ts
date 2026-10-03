@@ -10,8 +10,8 @@ export const environment = {
   apiUrl: 'https://dreamcabs.in/api',
   /**
    * Login OTP provider:
-   *   true  → server-side SMS OTP via MSG91 (POST /auth/otp/sms/*). In mock mode
-   *           (no MSG91 key on the backend) the code is auto-filled for testing.
+   *   true  → server-side SMS OTP via MSG91 (POST /auth/otp/sms/*).
+   *           The backend requires working SMS credentials.
    *   false → Firebase phone auth (the legacy client-side path).
    */
   useServerOtp: true,

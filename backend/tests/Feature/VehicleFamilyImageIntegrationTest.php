@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\City;
-use App\Models\CityVehicleFamilyImage;
+use App\Models\VehicleFamilyImage;
 use App\Models\CityVehicleType;
 use App\Models\Driver;
 use App\Models\Invoice;
@@ -48,18 +48,14 @@ class VehicleFamilyImageIntegrationTest extends TestCase
     {
         $city = $this->createCity();
 
-        CityVehicleFamilyImage::create([
-            'city_id' => $city->id,
+        VehicleFamilyImage::create([
             'display_name' => 'Sedan',
-            'platform' => 'android',
             'key' => 'map_marker',
             'image_path' => 'vehicle_families/1/android/marker.png',
         ]);
 
-        CityVehicleFamilyImage::create([
-            'city_id' => $city->id,
+        VehicleFamilyImage::create([
             'display_name' => 'Sedan',
-            'platform' => 'android',
             'key' => 'booking_card',
             'image_path' => 'vehicle_families/1/android/card.png',
         ]);
@@ -107,10 +103,8 @@ class VehicleFamilyImageIntegrationTest extends TestCase
             'is_online' => true,
         ]);
 
-        CityVehicleFamilyImage::create([
-            'city_id' => $city->id,
+        VehicleFamilyImage::create([
             'display_name' => 'Sedan Comfort',
-            'platform' => 'android',
             'key' => 'map_marker',
             'image_path' => 'vehicle_families/1/android/sedan_marker.png',
         ]);
@@ -196,14 +190,14 @@ class VehicleFamilyImageIntegrationTest extends TestCase
         // Upload first image
         $file1 = UploadedFile::fake()->image('icon1.png', 32, 32);
         $response1 = $this->actingAs($admin)
-            ->postJson("/api/admin/cities/{$city->id}/vehicle-types/{$cvt->id}/images", [
-                'platform' => 'android',
+            ->postJson("/api/admin/app-assets", [
+                'display_name' => $cvt->display_name,
                 'key' => 'map_marker',
                 'image' => $file1,
             ]);
 
         $response1->assertStatus(201);
-        $record = CityVehicleFamilyImage::query()->first();
+        $record = VehicleFamilyImage::query()->first();
         $this->assertNotNull($record);
         $firstPath = $record->image_path;
         Storage::disk('public')->assertExists($firstPath);
@@ -211,8 +205,8 @@ class VehicleFamilyImageIntegrationTest extends TestCase
         // Replace with second image
         $file2 = UploadedFile::fake()->image('icon2.png', 32, 32);
         $response2 = $this->actingAs($admin)
-            ->postJson("/api/admin/cities/{$city->id}/vehicle-types/{$cvt->id}/images", [
-                'platform' => 'android',
+            ->postJson("/api/admin/app-assets", [
+                'display_name' => $cvt->display_name,
                 'key' => 'map_marker',
                 'image' => $file2,
             ]);
@@ -224,7 +218,7 @@ class VehicleFamilyImageIntegrationTest extends TestCase
         Storage::disk('public')->assertMissing($firstPath);
     }
 
-    public function test_cross_platform_fallback_when_preloaded(): void
+    public function test_shared_assets_are_returned_for_ios_when_preloaded(): void
     {
         $city = $this->createCity();
         $vt = VehicleType::create(['name' => 'Sedan', 'is_active' => true]);
@@ -237,25 +231,21 @@ class VehicleFamilyImageIntegrationTest extends TestCase
             'is_active' => true,
         ]);
 
-        // Upload only Android records
-        CityVehicleFamilyImage::create([
-            'city_id' => $city->id,
+        // Store the shared family images
+        VehicleFamilyImage::create([
             'display_name' => 'Sedan Comfort',
-            'platform' => 'android',
             'key' => 'booking_card',
             'image_path' => 'vehicle_families/1/android/sedan_card.png',
         ]);
-        CityVehicleFamilyImage::create([
-            'city_id' => $city->id,
+        VehicleFamilyImage::create([
             'display_name' => 'Sedan Comfort',
-            'platform' => 'android',
             'key' => 'map_marker',
             'image_path' => 'vehicle_families/1/android/sedan_marker.png',
         ]);
 
         $imageService = app(VehicleFamilyImageService::class);
 
-        // Preload for iOS request — must preload all platforms so cross-platform fallback works
+        // Existing platform-specific callers receive the same shared images
         $preloaded = $imageService->preloadForPlatform('ios', $city->id);
         $familyPreloaded = $preloaded->get('sedan comfort');
 
@@ -266,20 +256,18 @@ class VehicleFamilyImageIntegrationTest extends TestCase
             preloadedImages: $familyPreloaded
         );
 
-        $this->assertNotNull($resolved['image_url'], 'iOS request should fall back to Android booking card');
-        $this->assertNotNull($resolved['map_marker_url'], 'iOS request should fall back to Android map marker');
+        $this->assertNotNull($resolved['image_url'], 'iOS request should resolve the shared booking card');
+        $this->assertNotNull($resolved['map_marker_url'], 'iOS request should resolve the shared map marker');
         $this->assertStringContainsString('sedan_card.png', $resolved['image_url']);
         $this->assertStringContainsString('sedan_marker.png', $resolved['map_marker_url']);
     }
 
-    public function test_android_borrows_ios_only_assets_when_preloaded(): void
+    public function test_shared_assets_are_returned_for_android_when_preloaded(): void
     {
         $city = $this->createCity();
         foreach (['booking_card', 'map_marker'] as $key) {
-            CityVehicleFamilyImage::create([
-                'city_id' => $city->id,
+            VehicleFamilyImage::create([
                 'display_name' => 'Sedan Comfort',
-                'platform' => 'ios',
                 'key' => $key,
                 'image_path' => "vehicle_families/{$city->id}/ios/{$key}.png",
             ]);
@@ -293,28 +281,24 @@ class VehicleFamilyImageIntegrationTest extends TestCase
         $this->assertStringContainsString('/ios/map_marker.png', $resolved['map_marker_url']);
     }
 
-    public function test_preloaded_assets_are_isolated_between_cities_with_the_same_family_name(): void
+    public function test_preloaded_assets_are_shared_between_cities_with_the_same_family_name(): void
     {
         $firstCity = $this->createCity();
         $secondCity = City::create(['name' => 'Mumbai', 'country_code' => 'IN']);
-        foreach ([$firstCity, $secondCity] as $city) {
-            foreach (['booking_card', 'map_marker'] as $key) {
-                CityVehicleFamilyImage::create([
-                    'city_id' => $city->id,
-                    'display_name' => 'Sedan Comfort',
-                    'platform' => 'android',
-                    'key' => $key,
-                    'image_path' => "vehicle_families/{$city->id}/android/{$key}.png",
-                ]);
-            }
+        foreach (['booking_card', 'map_marker'] as $key) {
+            VehicleFamilyImage::create([
+                'display_name' => 'Sedan Comfort',
+                'key' => $key,
+                'image_path' => "vehicle_families/{$firstCity->id}/android/{$key}.png",
+            ]);
         }
 
         $service = app(VehicleFamilyImageService::class);
         $family = $service->preloadForPlatform('ios')->get('sedan comfort');
         foreach ([$firstCity, $secondCity] as $city) {
             $resolved = $service->resolveForVehicle($city->id, 'Sedan Comfort', 'ios', preloadedImages: $family);
-            $this->assertStringContainsString("/vehicle_families/{$city->id}/android/booking_card.png", $resolved['image_url']);
-            $this->assertStringContainsString("/vehicle_families/{$city->id}/android/map_marker.png", $resolved['map_marker_url']);
+            $this->assertStringContainsString("/vehicle_families/{$firstCity->id}/android/booking_card.png", $resolved['image_url']);
+            $this->assertStringContainsString("/vehicle_families/{$firstCity->id}/android/map_marker.png", $resolved['map_marker_url']);
         }
     }
 
@@ -346,10 +330,8 @@ class VehicleFamilyImageIntegrationTest extends TestCase
             'is_online' => true,
         ]);
 
-        CityVehicleFamilyImage::create([
-            'city_id' => $city->id,
+        VehicleFamilyImage::create([
             'display_name' => 'Sedan Comfort',
-            'platform' => 'android',
             'key' => 'map_marker',
             'image_path' => 'vehicle_families/1/android/sedan_marker.png',
         ]);
@@ -420,24 +402,22 @@ class VehicleFamilyImageIntegrationTest extends TestCase
 
         $file = UploadedFile::fake()->image('icon.png', 32, 32);
         $storeResponse = $this->actingAs($admin)
-            ->postJson("/api/admin/cities/{$city->id}/vehicle-types/{$cvt->id}/images", [
-                'platform' => 'android',
+            ->postJson("/api/admin/app-assets", [
+                'display_name' => $cvt->display_name,
                 'key' => 'map_marker',
                 'image' => $file,
             ]);
 
         $storeResponse->assertStatus(500);
-        $this->assertEquals(0, CityVehicleFamilyImage::query()->count());
+        $this->assertEquals(0, VehicleFamilyImage::query()->count());
 
         // 2. Test failed storage during update()
         Storage::fake('public');
         $existingFile = UploadedFile::fake()->image('valid.png', 32, 32);
         $existingPath = $existingFile->store("vehicle_families/{$city->id}/android", 'public');
 
-        $imageRecord = CityVehicleFamilyImage::create([
-            'city_id' => $city->id,
+        $imageRecord = VehicleFamilyImage::create([
             'display_name' => 'Sedan Comfort',
-            'platform' => 'android',
             'key' => 'map_marker',
             'image_path' => $existingPath,
         ]);
@@ -450,7 +430,9 @@ class VehicleFamilyImageIntegrationTest extends TestCase
 
         $newFile = UploadedFile::fake()->image('new.png', 32, 32);
         $updateResponse = $this->actingAs($admin)
-            ->postJson("/api/admin/cities/{$city->id}/vehicle-types/{$cvt->id}/images/{$imageRecord->id}", [
+            ->postJson("/api/admin/app-assets", [
+                'display_name' => $cvt->display_name,
+                'key' => 'map_marker',
                 'image' => $newFile,
             ]);
 
@@ -504,10 +486,8 @@ class VehicleFamilyImageIntegrationTest extends TestCase
         $storedRelPath = "vehicle_families/{$city->id}/android/sample_card.png";
         Storage::disk('public')->put($storedRelPath, $samplePng);
 
-        CityVehicleFamilyImage::create([
-            'city_id' => $city->id,
+        VehicleFamilyImage::create([
             'display_name' => 'Sedan Comfort',
-            'platform' => 'android',
             'key' => 'booking_card',
             'image_path' => $storedRelPath,
         ]);

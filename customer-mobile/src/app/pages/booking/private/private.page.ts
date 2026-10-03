@@ -13,6 +13,9 @@ type Waiting = 'idle' | 'searching' | 'bids';
 interface VehicleType {
   id: number;
   name: string;
+  image_url?: string | null;
+  map_marker_url?: string | null;
+  images?: any;
 }
 
 interface Estimate {
@@ -20,6 +23,9 @@ interface Estimate {
   time_min?: number;
   city_vehicle_type_id?: number;
   vehicle_name?: string;
+  image_url?: string | null;
+  map_marker_url?: string | null;
+  images?: any;
   available?: boolean;
   message?: string;
 }
@@ -129,6 +135,7 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   onDrop(place: Place): void {
     this.booking.setDrop(place);
     this.step = 'car';
+    this.loadVehicleTypes();
     void this.loadEstimate();
     this.cdr.markForCheck();
   }
@@ -136,7 +143,9 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   // ---- step 3: choose car ----------------------------------------------
 
   private loadVehicleTypes(): void {
-    this.api.get<{ data: VehicleType[] }>('/pricing/vehicle-types').subscribe({
+    const cityId = this.booking.trip.cityId;
+    const url = cityId ? `/pricing/vehicle-types?city_id=${cityId}` : '/pricing/vehicle-types';
+    this.api.get<{ data: VehicleType[] }>(url).subscribe({
       next: (res) => { this.vehicleTypes = res?.data ?? []; this.cdr.markForCheck(); },
       error: () => { this.vehicleTypes = []; },
     });

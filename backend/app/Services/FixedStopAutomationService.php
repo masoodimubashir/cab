@@ -22,15 +22,15 @@ class FixedStopAutomationService
         $now ??= now();
 
         // Only run arrival / approaching / no-show automation once the ride has
-        // actually STARTED. A FORMING vehicle sits at the origin stop while
+        // actually DEPARTED. A FORMING or DISPATCHED vehicle is still at the origin while
         // boarding, so the driver's own ping is already inside the stop geofence —
         // processing it there would falsely stamp `fixed_no_show_after_at` and tell
         // the customer "the vehicle is waiting at your pickup stop" before the ride
-        // has even left. Arrival is only meaningful after dispatch. (Bug F1)
+        // has even left. Arrival automation begins after departure. (Bug F1)
         $departures = RouteDeparture::query()
             ->with(['route.stops', 'seatReservations.customer'])
             ->where('driver_id', $driverId)
-            ->whereIn('status', ['DISPATCHED', 'DEPARTED'])
+            ->where('status', 'DEPARTED')
             ->whereHas('route', fn ($q) => $q->where('mode', 'fixed'))
             ->get();
 

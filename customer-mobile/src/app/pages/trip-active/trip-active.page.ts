@@ -768,6 +768,7 @@ export class TripActivePage implements OnInit, OnDestroy {
     const el = buildReusableCarMarkerElement({
       bearing: 0,
       label: name,
+      markerUrl: (this.trip?.driver as any)?.vehicle?.map_marker_url || (this.trip?.driver as any)?.map_marker_url || (this.trip as any)?.map_marker_url,
     });
     el.addEventListener('click', () => this.openDriverDetails());
     return el;
@@ -1072,8 +1073,9 @@ export class TripActivePage implements OnInit, OnDestroy {
           title: 'You',
           content: buildPassengerMarkerElement({
             kind: 'pickup',
-            name: 'You',
+            name: this.auth.getUser()?.name || 'You',
             isLive: true,
+            avatarUrl: this.auth.resolveAvatarUrl(this.auth.getUser()),
           }),
           zIndex: 4,
         });

@@ -1,0 +1,29 @@
+:host { font: inherit; color: var(--tm-text); }
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:disabled { opacity: .45; cursor: default; }
+input:not([type=checkbox]) { height: 40px; width: 100%; padding: 9px 12px; box-sizing: border-box; border: 1px solid var(--tm-line-2); border-radius: var(--tm-radius-sm); background: var(--tm-surface); color: var(--tm-text); font-size: var(--tm-fs-body); }
+input:focus-visible, button:focus-visible { outline: 2px solid var(--tm-green); outline-offset: 2px; }
+input[type=checkbox] { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--tm-green); }
+.editor-tabs { display: flex; gap: 6px; padding: 4px; background: var(--tm-canvas); border-radius: var(--tm-radius-sm); margin-bottom: 20px; }
+.editor-tabs button { display: flex; flex: 1; gap: 8px; align-items: center; justify-content: center; padding: 10px; font-weight: 600; font-size: var(--tm-fs-body); border: 1px solid transparent; border-radius: var(--tm-radius-xs); color: var(--tm-text-muted); background: transparent; }
+.editor-tabs button.active { background: var(--tm-surface); border-color: var(--tm-line); color: var(--tm-green-deep); }
+.editor-tabs span { font-size: var(--tm-fs-small); border-radius: var(--tm-radius-pill); padding: 2px 7px; background: var(--tm-green-tint); }
+.editor-tabs i { width: 6px; height: 6px; border-radius: 50%; background: var(--tm-green); }
+.name-field { display: grid; gap: 6px; color: var(--tm-text-muted); font-size: var(--tm-fs-small); margin-bottom: 18px; }
+.list-toolbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.view-toggle { display: flex; flex-shrink: 0; gap: 4px; }
+.view-toggle button, .list-empty button { border: 1px solid var(--tm-line); padding: 9px 12px; border-radius: var(--tm-radius-sm); background: var(--tm-surface); font-size: var(--tm-fs-small); font-weight: 600; color: var(--tm-text-muted); }
+.view-toggle button.active { background: var(--tm-green-tint); color: var(--tm-green-deep); border-color: var(--tm-green); }
+.search { position: relative; max-width: 240px; flex: 1; }.search tm-icon { position: absolute; left: 12px; top: 12px; color: var(--tm-text-muted); }.search input { padding-left: 36px; }
+.list-caption { font-size: var(--tm-fs-small); color: var(--tm-text-muted); margin: 14px 0 10px; }
+.assignment-list { border: 1px solid var(--tm-line); border-radius: var(--tm-radius-sm); }
+.assignment-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-bottom: 1px solid var(--tm-line); }.assignment-row:last-child { border-bottom: 0; }
+.assignment-choice { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer; }
+.item-copy { flex: 1; min-width: 0; }.item-copy strong { display: block; font-size: var(--tm-fs-body); font-weight: 600; overflow-wrap: anywhere; }.item-copy small { display: block; margin-top: 4px; color: var(--tm-text-muted); font-size: var(--tm-fs-small); line-height: 1.4; overflow-wrap: anywhere; }
+.route-meta { display: flex; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--tm-text-muted); }.price { font-size: var(--tm-fs-small); font-weight: 700; white-space: nowrap; }.edit-link { display: grid; place-items: center; width: 30px; height: 30px; color: var(--tm-green-deep); background: var(--tm-green-tint); border: 0; border-radius: var(--tm-radius-sm); }
+.driver-avatar { display: grid; place-items: center; width: 34px; height: 34px; color: var(--tm-green-deep); background: var(--tm-green-tint); border-radius: var(--tm-radius-sm); }
+.list-empty { display: grid; gap: 12px; justify-items: center; padding: 32px 16px; color: var(--tm-text-muted); font-size: var(--tm-fs-small); }
+.editor-note { font-size: var(--tm-fs-small); color: var(--tm-text-muted); margin: 12px 0 0; }
+.editor-footer { display: flex; gap: 10px; align-items: center; width: 100%; }.save-status { flex: 1; color: var(--tm-text-muted); font-size: var(--tm-fs-small); }.save-status small { display: block; margin-top: 4px; }
+@media (max-width: 600px) { .list-toolbar { flex-wrap: wrap; }.search { min-width: 100%; max-width: none; }.assignment-row { gap: 8px; padding: 10px; }.editor-footer { flex-wrap: wrap; }.save-status { flex-basis: 100%; } }

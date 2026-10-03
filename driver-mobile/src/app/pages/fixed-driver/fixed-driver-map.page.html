@@ -142,6 +142,10 @@
             <div class="p-mini-info">
               <strong>{{ p.customer_name || 'Passenger' }}</strong>
               <span>{{ p.seats || 1 }} seat{{ (p.seats || 1) > 1 ? 's' : '' }} · {{ p.drop ? 'To: ' + p.drop : 'Fixed Ride' }}</span>
+              <small class="stop-mini-dist" *ngIf="passengerDistanceText(p)">
+                <ion-icon name="pin-outline"></ion-icon> {{ passengerDistanceText(p) }} away
+                <span class="stop-mini-live" *ngIf="hasCustomerLocation(p)">· {{ isCustomerLive(p) ? 'Live GPS' : 'Last known location' }}</span>
+              </small>
             </div>
             <span class="p-mini-status" [class.is-boarded]="p.status === 'BOARDED'">{{ p.status }}</span>
           </div>
@@ -157,6 +161,9 @@
             <div class="p-mini-info">
               <strong>{{ p.customer_name || 'Passenger' }}</strong>
               <span>{{ p.seats || 1 }} seat{{ (p.seats || 1) > 1 ? 's' : '' }} · {{ p.board ? 'From: ' + p.board : 'Boarded' }}</span>
+              <small class="stop-mini-dist" *ngIf="passengerDistanceText(p)">
+                <ion-icon name="pin-outline"></ion-icon> {{ passengerDistanceText(p) }} to drop-off
+              </small>
             </div>
             <span class="p-mini-status">{{ p.status }}</span>
           </div>

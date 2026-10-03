@@ -3,7 +3,7 @@
   <!-- Step 1 — route -->
   <app-step-shell
     *ngIf="step === 'route'"
-    title="Choose a route"
+    title="Choose your route"
     subtitle="A set line with set stops. You pay for one seat."
     barLabel="Share a seat"
     [step]="1" [total]="total"
@@ -13,39 +13,130 @@
       <span class="fb-city-pill__name">{{ selectedCityName }}</span>
       <ion-icon name="chevron-down-outline" class="fb-city-pill__arrow"></ion-icon>
     </button>
-    <label class="bk-field">
-      <input class="bk-field__input" type="search" placeholder="Search route or stop"
-             autocomplete="off" [(ngModel)]="search" />
+    <label class="bk-field fb-search-field">
+      <input class="bk-field__input" type="search" placeholder="Search routes or stops"
+             autocomplete="off" [ngModel]="search" (ngModelChange)="onSearchChange($event)" maxlength="80" />
+      <button *ngIf="search" type="button" class="fb-search-clear-btn" (click)="clearSearch()" aria-label="Clear search">
+        <ion-icon name="close-circle-sharp"></ion-icon>
+      </button>
     </label>
-    <p class="bk-sub" *ngIf="loading">Loading routes…</p>
-    <button *ngFor="let r of visibleRoutes; trackBy: trackByRoute" class="bk-opt" type="button" (click)="pickRoute(r)">
-      <span class="bk-opt__ic">🚌</span>
-      <span class="bk-opt__main">
-        <span class="bk-opt__t">{{ r.name }}</span>
-        <span class="bk-opt__s">{{ r.origin_name }} → {{ r.dest_name }} · {{ (r.stops || []).length }} stops</span>
-        <span class="fb-route-nearest" *ngIf="r.nearest_pickup_stop">
-          <ion-icon name="walk-outline"></ion-icon> Nearest: <b>{{ r.nearest_pickup_stop.name }}</b> ({{ formatDistance(r.nearest_pickup_stop.distance_meters) }})
+
+    <!-- Scope / Radius Tabs (when not searching and location available) -->
+    <div class="fb-dist-filter-bar" *ngIf="!loading && !search && userCoords && routes.length">
+      <button type="button" class="fb-dist-tab dc-press"
+              [class.fb-dist-tab--active]="radiusFilterActive"
+              (click)="setRadiusFilter(true)">
+        <ion-icon name="navigate-outline"></ion-icon>
+        <span>Within 1 km</span>
+        <span class="fb-tab-count">{{ nearbyRoutesCount }}</span>
+      </button>
+      <button type="button" class="fb-dist-tab dc-press"
+              [class.fb-dist-tab--active]="!radiusFilterActive"
+              (click)="setRadiusFilter(false)">
+        <ion-icon name="layers-outline"></ion-icon>
+        <span>All routes</span>
+        <span class="fb-tab-count">{{ routes.length }}</span>
+      </button>
+    </div>
+
+    <!-- Active Search Scope Indicator (when searching) -->
+    <div class="fb-search-scope-note" *ngIf="!loading && search.trim()">
+      <ion-icon name="search-outline"></ion-icon>
+      <span><b>{{ visibleRoutes.length }}</b> results in <b>{{ selectedCityName }}</b></span>
+    </div>
+
+    <!-- Skeleton Loading Cards (when loading routes) -->
+    <div class="fb-route-skeletons" *ngIf="loading" aria-label="Loading routes">
+      <div class="fb-route-skel-card" *ngFor="let s of [1, 2, 3]">
+        <div class="skel-photo dc-skeleton"></div>
+        <div class="skel-main">
+          <div class="skel-title dc-skeleton"></div>
+          <div class="skel-corridor dc-skeleton"></div>
+          <div class="skel-badge dc-skeleton"></div>
+        </div>
+        <div class="skel-fare dc-skeleton"></div>
+      </div>
+    </div>
+
+    <!-- Active Route Cards -->
+    <div class="fb-empty-state" *ngIf="!loading && error" role="alert">
+      <p class="fb-empty-title">{{ error }}</p>
+      <button type="button" class="fb-switch-city-btn dc-press" (click)="retryRoutes()">Try again</button>
+    </div>
+    <ng-container *ngIf="!loading && !error">
+      <button *ngFor="let r of visibleRoutes; trackBy: trackByRoute" class="bk-opt fb-route-opt dc-press" type="button" (click)="pickRoute(r)">
+        <span class="bk-opt__ic" [class.bk-opt__ic--photo]="!!r.image_url">
+          <img *ngIf="r.image_url" [src]="r.image_url" class="fb-vehicle-image" alt="Route vehicle" (error)="r.image_url = null" />
+          <span *ngIf="!r.image_url" aria-hidden="true">🚌</span>
         </span>
-      </span>
-      <span class="bk-opt__r">₹{{ r.flat_fare }}<small>a seat</small></span>
-    </button>
-    <div class="fb-empty-state" *ngIf="!loading && !visibleRoutes.length">
+        <span class="bk-opt__main">
+          <span class="bk-opt__t">{{ r.name }}</span>
+          <span class="bk-opt__s">
+            <span class="fb-route-endpoints">{{ r.origin_name }} → {{ r.dest_name }}</span>
+            <span class="fb-route-stops-tag">{{ (r.stops || []).length }} {{ (r.stops || []).length === 1 ? 'stop' : 'stops' }}</span>
+          </span>
+          <span class="fb-route-nearest" *ngIf="r.nearest_pickup_stop">
+            <ion-icon name="walk-outline"></ion-icon>
+            <span class="fb-route-nearest__txt">Nearest: <b>{{ r.nearest_pickup_stop.name }}</b> ({{ formatDistance(r.nearest_pickup_stop.distance_meters) }})</span>
+          </span>
+        </span>
+        <span class="bk-opt__r">
+          <span class="fb-route-fare-val">₹{{ r.flat_fare }}</span>
+          <small class="fb-route-fare-unit">a seat</small>
+          <ion-icon name="chevron-forward-outline" class="fb-route-arrow"></ion-icon>
+        </span>
+      </button>
+    </ng-container>
+
+    <div class="fb-empty-state" *ngIf="!loading && !error && !visibleRoutes.length">
       <div class="fb-empty-icon">
         <ion-icon name="map-outline"></ion-icon>
       </div>
-      <p class="fb-empty-title" *ngIf="cityId != null && cityId > 0">
-        No fixed routes found in <b>{{ selectedCityName }}</b>
-      </p>
-      <p class="fb-empty-title" *ngIf="cityId == null || cityId === 0">
-        No active fixed routes available yet
-      </p>
-      <p class="fb-empty-sub">
-        Fixed corridors are currently active in Sopore and connected regions.
-      </p>
-      <button *ngIf="cityId != null && cityId > 0" type="button" class="fb-switch-city-btn dc-press" (click)="selectCity(null)">
-        <ion-icon name="globe-outline"></ion-icon>
-        <span>View all routes (All Cities)</span>
-      </button>
+
+      <!-- Case 1: Search returned 0 results -->
+      <ng-container *ngIf="search.trim()">
+        <p class="fb-empty-title">
+          No routes matching "<b>{{ search.trim() }}</b>"
+        </p>
+        <p class="fb-empty-sub">
+          We couldn't find any routes or stops in {{ selectedCityName }} matching your search.
+        </p>
+        <button type="button" class="fb-switch-city-btn dc-press" (click)="clearSearch()">
+          <ion-icon name="close-circle-outline"></ion-icon>
+          <span>Clear search</span>
+        </button>
+      </ng-container>
+
+      <!-- Case 2: Radius filter active, but 0 routes within 1 km (while routes exist in city) -->
+      <ng-container *ngIf="!search.trim() && radiusFilterActive && userCoords && routes.length">
+        <p class="fb-empty-title">
+          No pickup stops within 1 km
+        </p>
+        <p class="fb-empty-sub">
+          There are {{ routes.length }} routes in {{ selectedCityName }} slightly further from your current spot.
+        </p>
+        <button type="button" class="fb-switch-city-btn dc-press" (click)="setRadiusFilter(false)">
+          <ion-icon name="layers-outline"></ion-icon>
+          <span>View all {{ routes.length }} routes in {{ selectedCityName }}</span>
+        </button>
+      </ng-container>
+
+      <!-- Case 3: No routes in selected city at all -->
+      <ng-container *ngIf="!search.trim() && (!radiusFilterActive || !routes.length)">
+        <p class="fb-empty-title" *ngIf="cityId != null && cityId > 0">
+          No fixed routes found in <b>{{ selectedCityName }}</b>
+        </p>
+        <p class="fb-empty-title" *ngIf="cityId == null || cityId === 0">
+          No active fixed routes available yet
+        </p>
+        <p class="fb-empty-sub">
+          Try another city or check again later.
+        </p>
+        <button *ngIf="cityId != null && cityId > 0" type="button" class="fb-switch-city-btn dc-press" (click)="selectCity(null)">
+          <ion-icon name="globe-outline"></ion-icon>
+          <span>View all routes (All Cities)</span>
+        </button>
+      </ng-container>
     </div>
   </app-step-shell>
 
@@ -56,16 +147,37 @@
     [barLabel]="route?.name || 'Share a seat'"
     [step]="2" [total]="total"
     (back)="back()">
-    <p class="bk-sub" *ngIf="loading">Loading departures…</p>
-    <button *ngFor="let d of departures; trackBy: trackByDep" class="bk-opt" type="button"
-            [class.bk-opt--on]="departure?.id === d.id" (click)="pickDeparture(d)">
-      <span class="bk-opt__ic">🚐</span>
-      <span class="bk-opt__main">
-        <span class="bk-opt__t">{{ departLabel(d) }}</span>
-        <span class="bk-opt__s">{{ d.seats_remaining }} seats left{{ d.vehicle_name ? ' · ' + d.vehicle_name : '' }}</span>
-      </span>
-      <span class="bk-opt__r">₹{{ route?.flat_fare }}</span>
-    </button>
+    <!-- Skeleton Loading Cards (when loading departures) -->
+    <div class="fb-route-skeletons" *ngIf="loading" aria-label="Loading departures">
+      <div class="fb-route-skel-card" *ngFor="let s of [1, 2]">
+        <div class="skel-photo dc-skeleton"></div>
+        <div class="skel-main">
+          <div class="skel-title dc-skeleton"></div>
+          <div class="skel-corridor dc-skeleton"></div>
+        </div>
+        <div class="skel-fare dc-skeleton"></div>
+      </div>
+    </div>
+    <ng-container *ngIf="!loading">
+      <button *ngFor="let d of departures; trackBy: trackByDep" class="bk-opt fb-route-opt fb-dep-opt dc-press" type="button"
+              [class.bk-opt--on]="departure?.id === d.id" (click)="pickDeparture(d)">
+        <span class="bk-opt__ic" [class.bk-opt__ic--photo]="!!d.image_url">
+          <img *ngIf="d.image_url" [src]="d.image_url" class="fb-vehicle-image" [alt]="d.vehicle_name || 'Vehicle'" (error)="d.image_url = null" />
+          <span *ngIf="!d.image_url" aria-hidden="true">🚐</span>
+        </span>
+        <span class="bk-opt__main">
+          <span class="bk-opt__t">{{ departLabel(d) }}</span>
+          <span class="bk-opt__s">
+            <span>{{ d.seats_remaining }} seats left</span>
+            <span class="fb-route-stops-tag" *ngIf="d.vehicle_name">{{ d.vehicle_name }}</span>
+          </span>
+        </span>
+        <span class="bk-opt__r">
+          <span class="fb-route-fare-val">₹{{ route?.flat_fare }}</span>
+          <ion-icon name="chevron-forward-outline" class="fb-route-arrow"></ion-icon>
+        </span>
+      </button>
+    </ng-container>
     <p class="bk-note" *ngIf="!loading && !departures.length">No departures yet on this route. Try again later.</p>
   </app-step-shell>
 

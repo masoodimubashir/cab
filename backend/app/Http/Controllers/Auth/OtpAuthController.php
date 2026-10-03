@@ -28,16 +28,14 @@ class OtpAuthController extends Controller
 
         if (!($result['sent'] ?? false)) {
             return response()->json([
-                'message' => 'Please wait before requesting another code.',
+                'message' => isset($result['cooldown']) ? 'Please wait before requesting another code.' : 'Could not send the code. Please try again later.',
                 'cooldown' => $result['cooldown'] ?? null,
-            ], 429);
+            ], isset($result['cooldown']) ? 429 : 503);
         }
 
         return response()->json(array_filter([
             'ok' => true,
             'resend_in' => (int) config('services.msg91.resend_cooldown_sec', 30),
-            // present ONLY in mock mode (no MSG91 key) — lets you test without SMS.
-            'dev_code' => $result['dev_code'] ?? null,
         ], static fn ($v) => $v !== null));
     }
 

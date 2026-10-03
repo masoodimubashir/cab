@@ -1,5 +1,6 @@
 import {
   ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
   EventEmitter,
   HostListener,
@@ -216,6 +217,8 @@ export class ModalComponent implements OnChanges {
   private static idCounter = 0;
   readonly labelId = `tm-modal-${++ModalComponent.idCounter}`;
 
+  constructor(private cdr: ChangeDetectorRef) {}
+
   ngOnChanges(changes: SimpleChanges): void {
     if (!changes['open']) return;
     if (this.open) {
@@ -229,6 +232,7 @@ export class ModalComponent implements OnChanges {
         this.mounted = false;
         this.closing = false;
         if (this.lockScroll) document.body.style.overflow = '';
+        this.cdr.markForCheck();
       }, 220);
     }
   }

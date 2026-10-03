@@ -46,6 +46,20 @@
                 <th>Ride Type</th>
                 <td>{{ optional($trip->rideType)->name ?? '-' }}</td>
             </tr>
+            @if(!empty($vehicleImageUrl))
+            <tr>
+                <th>Vehicle</th>
+                <td>
+                    <img src="{{ $vehicleImageUrl }}" alt="Vehicle" style="height: 36px; vertical-align: middle; margin-right: 8px;" />
+                    <span>{{ $trip->vehicle_name ?? optional($trip->cityVehicleType)->display_name ?? optional($trip->rideType)->name ?? '-' }}</span>
+                </td>
+            </tr>
+            @else
+            <tr>
+                <th>Vehicle</th>
+                <td>{{ $trip->vehicle_name ?? optional($trip->cityVehicleType)->display_name ?? optional($trip->rideType)->name ?? '-' }}</td>
+            </tr>
+            @endif
         </table>
     </div>
 

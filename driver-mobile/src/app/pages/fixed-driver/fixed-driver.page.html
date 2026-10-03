@@ -393,7 +393,7 @@
           <span>No seat layout configured for this route. Please contact your fleet operator.</span>
         </div>
 
-        <!-- Primary CTA: Start ride -->
+        <!-- Primary CTA: Start boarding -->
         <button 
           class="dc-cta dc-cta--primary dc-press take-rides-btn" 
           (click)="openVehicle()"
@@ -401,7 +401,7 @@
         >
           <ion-spinner *ngIf="busy" name="crescent"></ion-spinner>
           <ion-icon *ngIf="!busy" name="play-outline"></ion-icon>
-          <span>{{ busy ? 'Starting ride…' : 'Start ride' }}</span>
+          <span>{{ busy ? 'Opening vehicle…' : 'Open for Bookings' }}</span>
         </button>
       </div>
     </section>
@@ -425,11 +425,6 @@
       <div class="dc-fullmap-view">
         <!-- 1. FULL-PAGE GOOGLE MAP -->
         <div id="fixed-driver-embedded-map" class="dc-fullscreen-map"></div>
-
-        <!-- Floating Re-center FAB on Top-Right of Map -->
-        <button type="button" class="dc-map-recenter-fab dc-press" (click)="recenterMap()" aria-label="Re-center map">
-          <ion-icon name="locate-outline"></ion-icon>
-        </button>
 
         <!-- 2. TOP FLOATING ROUTE & NEXT STOP BANNER -->
         <div class="dc-top-banner" (click)="openDetailsModal()">
@@ -459,12 +454,47 @@
               </span>
             </div>
           </div>
+
+          <!-- Live Nearest Customer Distance & Proximity HUD -->
+          <div 
+            class="dc-customer-proximity-row dc-anim-pop" 
+            *ngIf="nearestWaitingPassenger as p"
+            (click)="focusOnPassenger(p, $event)"
+          >
+            <div class="dc-cprox-left">
+              <div class="dc-cprox-avatar" [class.is-live]="isCustomerLive(p)">
+                <ion-icon [name]="isCustomerLive(p) ? 'navigate-circle' : 'person-circle'"></ion-icon>
+                <span class="dc-cprox-live-pulse" *ngIf="isCustomerLive(p)"></span>
+              </div>
+              <div class="dc-cprox-text">
+                <div class="dc-cprox-title">
+                  <span class="dc-cprox-badge" [class.is-live]="isCustomerLive(p)">{{ isCustomerLive(p) ? 'LIVE GPS' : hasCustomerLocation(p) ? 'LAST KNOWN' : 'WAITING' }}</span>
+                  <strong class="dc-cprox-name">{{ p.customer_name || 'Passenger' }}</strong>
+                  <span class="dc-cprox-seats" *ngIf="(p.seats || 1) > 1">({{ p.seats }} seats)</span>
+                </div>
+                <div class="dc-cprox-sub">
+                  <ion-icon name="location-outline"></ion-icon>
+                  <span>{{ isCustomerLive(p) ? 'Pickup: ' + (p.board || 'stop') : hasCustomerLocation(p) ? 'Last known location' : (p.board || 'Pickup stop') }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="dc-cprox-right">
+              <div class="dc-cprox-dist-bubble" [class.is-near]="isCustomerLive(p) && passengerDistanceMeters(p) != null && passengerDistanceMeters(p)! <= 200">
+                <ion-icon name="pin"></ion-icon>
+                <span class="dc-cprox-dist-val">{{ passengerDistanceText(p) || '—' }}</span>
+              </div>
+              <span class="dc-cprox-dist-status">{{ !isCustomerLive(p) ? (hasCustomerLocation(p) ? 'LAST KNOWN' : 'PICKUP STOP') : (passengerDistanceMeters(p) != null && passengerDistanceMeters(p)! <= 200 ? 'NEARBY' : 'AWAY') }}</span>
+            </div>
+          </div>
         </div>
 
         <!-- 3. FLOATING BOTTOM BAR WITH MANIFEST FAB & PRIMARY CTA -->
         <div class="dc-map-floating-bottom-bar">
+          <button type="button" class="dc-map-recenter-fab dc-press" (click)="recenterMap()" aria-label="Re-center map">
+            <ion-icon name="locate-outline"></ion-icon>
+          </button>
           <!-- Primary Lifecycle Action (Start / Complete / Cancel) -->
-          <!-- 1. START RIDE (Before departure) -->
+          <!-- 1. START BOARDING (Before departure) -->
           <button 
             class="dc-float-cta dc-float-cta--start dc-press" 
             *ngIf="canStart(vehicle)" 
@@ -472,8 +502,12 @@
             [disabled]="busy"
           >
             <ion-icon name="play"></ion-icon>
-            <span>Start Ride</span>
+            <span>Start Boarding</span>
           </button>
+          <button class="dc-float-cta dc-float-cta--start dc-press" *ngIf="canDepart(vehicle)" (click)="departRide()" [disabled]="busy">
+            <ion-icon name="play"></ion-icon><span>Depart</span>
+          </button>
+
 
           <!-- 2. COMPLETE RIDE (Only shown once the ride has started) -->
           <button 
@@ -528,7 +562,7 @@
                 <span class="dc-manifest-badge dc-manifest-badge--blocked" *ngIf="blockedSeatCellsCount > 0">{{ blockedSeatCellsCount }}</span>
               </div>
               <div class="dc-manifest-btn-text">
-                <strong>Seats Layout</strong>
+                <strong>Seat Layout</strong>
                 <span>{{ vehicle.seats_remaining }} free</span>
               </div>
             </button>
@@ -582,11 +616,15 @@
 
               <!-- Contextual Ride Action Button inside Overview Card -->
               <div class="dc-overview-actions" *ngIf="canStart(vehicle) || rideStarted || canCloseVehicle(vehicle)">
-                <!-- 1. START RIDE (Before departure) -->
+                <!-- 1. START BOARDING (Before departure) -->
                 <button class="dc-modal-action-cta dc-modal-action-cta--start dc-press" *ngIf="canStart(vehicle)" (click)="startRide()" [disabled]="busy">
                   <ion-icon name="play"></ion-icon>
-                  <span>Start Fixed Ride</span>
+                  <span>Start Boarding</span>
                 </button>
+                <button class="dc-modal-action-cta dc-modal-action-cta--start dc-press" *ngIf="canDepart(vehicle)" (click)="departRide()" [disabled]="busy">
+                  <ion-icon name="play"></ion-icon><span>Depart</span>
+                </button>
+
 
                 <!-- 2. COMPLETE RIDE (Only shown once the ride has started) -->
                 <button class="dc-modal-action-cta dc-modal-action-cta--complete dc-press" *ngIf="rideStarted" (click)="completeRide()" [disabled]="busy">
@@ -723,6 +761,19 @@
                         {{ passengerStatusLabel(passenger) }}
                       </span>
                     </div>
+                  </div>
+
+                  <!-- Live Distance & Location Row -->
+                  <div class="dc-pcard-dist-row" *ngIf="passengerDistanceText(passenger)">
+                    <div class="dc-pcard-dist-left" [class.is-live]="isCustomerLive(passenger)">
+                      <ion-icon [name]="isCustomerLive(passenger) ? 'radio' : 'navigate-outline'"></ion-icon>
+                      <strong class="dc-pcard-dist-num">{{ passengerDistanceText(passenger) }}</strong>
+                      <span class="dc-pcard-dist-tag" *ngIf="isCustomerLive(passenger)">{{ passengerDistanceMeters(passenger) != null && passengerDistanceMeters(passenger)! <= 200 ? 'Nearby' : 'away' }}</span>
+                      <span class="dc-pcard-live-pill" *ngIf="isCustomerLive(passenger)">● Live GPS</span>
+                    </div>
+                    <span class="dc-pcard-dist-loc">
+                      {{ (passenger.status || '').toUpperCase() === 'BOARDED' ? 'To drop-off' : isCustomerLive(passenger) ? 'Live customer location' : hasCustomerLocation(passenger) ? 'Last known location' : 'To pickup stop' }}
+                    </span>
                   </div>
 
                   <!-- Actions (Clear, single-action / secondary layout) -->
@@ -1043,6 +1094,10 @@
             <div class="p-mini-info">
               <strong>{{ p.customer_name || 'Passenger' }}</strong>
               <span>{{ p.seats }} seat{{ p.seats > 1 ? 's' : '' }} · {{ p.drop ? 'To: ' + p.drop : 'Fixed Ride' }}</span>
+              <small class="stop-mini-dist" *ngIf="passengerDistanceText(p)">
+                <ion-icon name="pin-outline"></ion-icon> {{ passengerDistanceText(p) }} away
+                <span class="stop-mini-live" *ngIf="hasCustomerLocation(p)">· {{ isCustomerLive(p) ? 'Live GPS' : 'Last known location' }}</span>
+              </small>
             </div>
             <span class="p-mini-status" [class.is-boarded]="p.status === 'BOARDED'">{{ p.status }}</span>
           </div>
@@ -1058,6 +1113,9 @@
             <div class="p-mini-info">
               <strong>{{ p.customer_name || 'Passenger' }}</strong>
               <span>{{ p.seats }} seat{{ p.seats > 1 ? 's' : '' }} · {{ p.board ? 'From: ' + p.board : 'Boarded' }}</span>
+              <small class="stop-mini-dist" *ngIf="passengerDistanceText(p)">
+                <ion-icon name="pin-outline"></ion-icon> {{ passengerDistanceText(p) }} to drop-off
+              </small>
             </div>
             <span class="p-mini-status">{{ p.status }}</span>
           </div>
@@ -1132,10 +1190,6 @@
       <div class="otp-msg-box otp-msg-box--locked" *ngIf="otpLockedFor > 0">
         <ion-icon name="lock-closed-outline"></ion-icon>
         <span>Locked for {{ otpLockedFor }}s — or mark passenger as no-show.</span>
-      </div>
-
-      <div class="otp-dev-hint" *ngIf="otpDevCode">
-        <span>DEV SMS Mock: <strong>{{ otpDevCode }}</strong></span>
       </div>
 
       <!-- Modal Action Buttons -->

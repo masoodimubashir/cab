@@ -117,7 +117,7 @@ export class AuthService {
       ['coupons', '/promotions/coupons'],
       ['subscriptions', '/subscriptions'],
       // App Assets temporarily hidden (not part of the first release). Re-enable by uncommenting.
-      // ['app_assets', '/settings/app-assets'],
+      ['app_assets', '/settings/app-assets'],
       ['fleets', '/settings/fleets'],
       ['safety', '/safety'],
       ['contact_drivers', '/contact-drivers'],

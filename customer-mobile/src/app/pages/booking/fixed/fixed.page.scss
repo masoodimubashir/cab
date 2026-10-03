@@ -210,7 +210,9 @@
   font-size: 12px;
   font-weight: 750;
   cursor: pointer;
-  max-width: 48%;
+  max-width: 50%;
+  flex-shrink: 0;
+  box-sizing: border-box;
   white-space: nowrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   transition: background 0.15s ease, border-color 0.15s ease;
@@ -673,15 +675,38 @@
 /* Nearest Pickup Point styles */
 .fb-route-nearest {
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--dc-green, #12B35B);
-  font-weight: 600;
-  margin-top: 2px;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #15803D;
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  margin-top: 3px;
+  max-width: 100%;
+  box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: break-word;
 
   ion-icon {
-    font-size: 13px;
+    font-size: 13.5px;
+    color: #16A34A;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .fb-route-nearest__txt {
+    flex: 1 1 auto;
+    min-width: 0;
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+
+  b {
+    font-weight: 750;
+    color: #166534;
   }
 }
 
@@ -842,3 +867,385 @@
     }
   }
 }
+.fb-vehicle-image {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  display: block !important;
+}
+.bk-opt__ic--photo {
+  width: 72px !important;
+  min-width: 72px !important;
+  max-width: 72px !important;
+  height: 52px !important;
+  background: var(--dc-surface-2, #F8FAFC) !important;
+  border: 1px solid var(--dc-hairline-strong, #E2E8F0) !important;
+  border-radius: 10px !important;
+  padding: 4px !important;
+  box-sizing: border-box !important;
+}
+
+/* ─── Route & Departure Selection Cards (Anti-Overlap & Clean Responsive Layout) ─── */
+.fb-route-opt,
+.fb-dep-opt {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 12px !important;
+  width: 100% !important;
+  min-height: 72px !important;
+  height: auto !important;
+  padding: 12px 14px !important;
+  background: var(--dc-surface, #FFFFFF) !important;
+  border: 1.5px solid var(--dc-hairline-strong, #E2E8F0) !important;
+  border-radius: var(--dc-r-md, 14px) !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04) !important;
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+  text-align: left !important;
+  position: relative !important;
+  overflow: visible !important;
+  margin-bottom: 2px;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &:active {
+    transform: scale(0.985);
+    background: var(--dc-surface-2, #F8FAFC) !important;
+  }
+
+  &.bk-opt--on {
+    border-color: var(--dc-green, #12B35B) !important;
+    background: var(--dc-green-tint, #ECFDF5) !important;
+    box-shadow: 0 0 0 3px rgba(18, 179, 91, 0.16) !important;
+  }
+
+  .bk-opt__ic {
+    flex-shrink: 0;
+    align-self: flex-start !important;
+    margin-top: 1px !important;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    border-radius: 10px;
+    background: #F1F5F9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+
+    &.bk-opt__ic--photo {
+      width: 72px !important;
+      min-width: 72px !important;
+      max-width: 72px !important;
+      height: 52px !important;
+      min-height: 52px !important;
+      max-height: 52px !important;
+      flex: 0 0 72px !important;
+      align-self: flex-start !important;
+      margin-top: 1px !important;
+      border-radius: 10px !important;
+      background: var(--dc-surface-2, #F8FAFC) !important;
+      border: 1px solid var(--dc-hairline-strong, #E2E8F0) !important;
+      padding: 4px !important;
+      box-sizing: border-box !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      overflow: hidden !important;
+
+      .fb-vehicle-image {
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        object-fit: contain !important;
+        object-position: center !important;
+        display: block !important;
+        margin: auto !important;
+      }
+    }
+  }
+
+  .bk-opt__main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow: hidden;
+  }
+
+  .bk-opt__t {
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.35;
+    color: var(--dc-ink, #0D1B2A);
+    word-break: break-word;
+    overflow-wrap: break-word;
+    margin: 0;
+  }
+
+  .bk-opt__s {
+    font-size: 12.5px;
+    color: var(--dc-ink-soft, #64748B);
+    line-height: 1.4;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    margin: 0;
+
+    .fb-route-endpoints {
+      font-weight: 600;
+      color: #334155;
+    }
+
+    .fb-route-stops-tag {
+      display: inline-flex;
+      align-items: center;
+      font-size: 10.5px;
+      font-weight: 750;
+      color: #64748B;
+      background: #F1F5F9;
+      border: 1px solid #E2E8F0;
+      padding: 1px 6px;
+      border-radius: 5px;
+      margin-left: 5px;
+      vertical-align: middle;
+    }
+  }
+
+  .bk-opt__r {
+    flex-shrink: 0;
+    align-self: flex-start;
+    text-align: right;
+    padding-top: 2px;
+    margin-left: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+
+    .fb-route-fare-val {
+      font-size: 16px;
+      font-weight: 850;
+      color: var(--dc-ink, #0D1B2A);
+      line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .fb-route-fare-unit {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--dc-ink-soft, #64748B);
+      margin-top: 2px;
+      letter-spacing: 0.02em;
+    }
+
+    .fb-route-arrow {
+      font-size: 15px;
+      color: var(--dc-ink-faint, #94A3B8);
+      margin-top: 5px;
+      transition: transform 0.15s ease, color 0.15s ease;
+    }
+  }
+
+  &:hover .fb-route-arrow,
+  &:active .fb-route-arrow {
+    color: var(--dc-green, #12B35B);
+    transform: translateX(2px);
+  }
+}
+
+/* ─── Skeleton Loading Cards (when loading routes or departures) ─── */
+.fb-route-skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.fb-route-skel-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-height: 74px;
+  padding: 13px 14px;
+  background: var(--dc-surface, #FFFFFF);
+  border: 1.5px solid var(--dc-hairline-strong, #E2E8F0);
+  border-radius: var(--dc-r-md, 14px);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+  box-sizing: border-box;
+  flex-shrink: 0;
+
+  .skel-photo {
+    width: 72px;
+    height: 52px;
+    min-width: 72px;
+    flex: 0 0 72px;
+    border-radius: 10px;
+    align-self: flex-start;
+    margin-top: 1px;
+  }
+
+  .skel-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding-top: 2px;
+  }
+
+  .skel-title {
+    width: 65%;
+    height: 15px;
+    border-radius: 5px;
+  }
+
+  .skel-corridor {
+    width: 88%;
+    height: 12px;
+    border-radius: 4px;
+  }
+
+  .skel-badge {
+    width: 52%;
+    height: 16px;
+    border-radius: 6px;
+  }
+
+  .skel-fare {
+    width: 44px;
+    height: 22px;
+    border-radius: 6px;
+    margin-left: 6px;
+    align-self: flex-start;
+    padding-top: 2px;
+  }
+}
+
+/* ─── Search Field & Clear Button ─── */
+.fb-search-field {
+  position: relative;
+  display: block;
+  margin-bottom: 10px;
+
+  .bk-field__input {
+    padding-right: 36px !important;
+  }
+
+  .fb-search-clear-btn {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    padding: 4px;
+    margin: 0;
+    color: var(--dc-ink-faint, #94A3B8);
+    font-size: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 2;
+
+    &:hover,
+    &:active {
+      color: var(--dc-ink, #0D1B2A);
+    }
+  }
+}
+
+/* ─── Distance Scope Tabs (Within 1 km vs All City) ─── */
+.fb-dist-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--dc-surface-2, #F1F5F9);
+  border: 1px solid var(--dc-hairline-strong, #E2E8F0);
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+
+  .fb-dist-tab {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 10px;
+    background: transparent;
+    border: none;
+    border-radius: 9px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--dc-ink-soft, #64748B);
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    ion-icon {
+      font-size: 15px;
+      flex-shrink: 0;
+    }
+
+    .fb-tab-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 9px;
+      background: #E2E8F0;
+      color: #475569;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    &.fb-dist-tab--active {
+      background: var(--dc-surface, #FFFFFF);
+      color: var(--dc-ink, #0D1B2A);
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+
+      ion-icon {
+        color: var(--dc-green, #12B35B);
+      }
+
+      .fb-tab-count {
+        background: var(--dc-green-tint, #ECFDF5);
+        color: var(--dc-green, #12B35B);
+      }
+    }
+  }
+}
+
+/* ─── Search Scope Indicator Note ─── */
+.fb-search-scope-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 7px 11px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #475569;
+
+  ion-icon {
+    font-size: 15px;
+    color: var(--dc-green, #12B35B);
+    flex-shrink: 0;
+  }
+
+  b {
+    color: var(--dc-ink, #0D1B2A);
+    font-weight: 750;
+  }
+}
+

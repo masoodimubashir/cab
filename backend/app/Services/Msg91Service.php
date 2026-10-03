@@ -9,9 +9,7 @@ use Illuminate\Support\Facades\Log;
  * Thin wrapper around the MSG91 SMS gateway. ALL network specifics live here —
  * to change the API/template later you only touch this one method.
  *
- * MOCK MODE: when MSG91_AUTH_KEY is blank, no SMS is sent — the code is logged
- * (storage/logs/laravel.log) and reported as sent, so the full OTP flow is
- * testable without real credentials.
+ * Missing credentials fail without logging or returning the OTP.
  */
 class Msg91Service
 {
@@ -22,9 +20,7 @@ class Msg91Service
     }
 
     /**
-     * Send the OTP code to a phone. Returns true on success (always true in mock
-     * mode). $previewMessage is the human-readable text (used for the mock log
-     * and for gateways that accept a raw body).
+     * Send the OTP code to a phone. Returns true only when the gateway succeeds.
      */
     public function sendOtp(string $phone, string $code, string $previewMessage): bool
     {
@@ -36,12 +32,7 @@ class Msg91Service
         $mobile = $this->normalizeMobile($phone);
 
         if (!$this->isLive()) {
-            Log::info('[msg91:mock] OTP SMS (no auth key — not actually sent)', [
-                'phone' => $mobile,
-                'code' => $code,
-                'message' => $previewMessage,
-            ]);
-            return true;
+            return false;
         }
 
         $otpVar = (string) (config('services.msg91.otp_var') ?: 'otp');

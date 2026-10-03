@@ -1,10 +1,11 @@
-import { Component, OnDestroy } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
 import { App as CapacitorApp } from '@capacitor/app';
 import { PluginListenerHandle } from '@capacitor/core';
 import { interval, Subscription } from 'rxjs';
 import { finalize } from 'rxjs/operators';
+import { customerMarkerSignature, hasCustomerLocation, isCustomerLocationLive } from '../../core/customer-location.helper';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { BackgroundLocationService } from '../../core/background-location.service';
@@ -21,6 +22,16 @@ import { AudioRingtoneService } from '../../core/audio-ringtone.service';
 import { PushService } from '../../core/push.service';
 
 declare const google: any;
+
+/** Haversine formula in meters */
+export function haversineDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
 
 export interface PendingSeatHold {
   id: number;
@@ -81,6 +92,8 @@ interface FixedVehicle {
   fixed_last_reached_stop_at?: string | null;
   active_hold_count?: number;
   reservation_count?: number;
+  map_marker_url?: string | null;
+  image_url?: string | null;
 }
 
 interface SeatLayout {
@@ -128,6 +141,7 @@ interface FixedPassenger {
   board_lng?: number | null;
   drop_lat?: number | null;
   drop_lng?: number | null;
+  customer_avatar_url?: string | null;
 }
 
 interface FixedStop {
@@ -264,6 +278,7 @@ export class FixedDriverPage implements OnDestroy {
 
   activeVehicle: FixedVehicle | null = null;
   passengers: FixedPassenger[] = [];
+  private renderedPassengerSignature = '';
   stops: FixedStop[] = [];
   citySettings: FixedCitySettings | null = null;
   selectedStopDetail: StopDetailModalData | null = null;
@@ -340,7 +355,6 @@ export class FixedDriverPage implements OnDestroy {
   otpVerifying = false;  // checking a typed code
   otpResendIn = 0;       // seconds until Resend unlocks
   otpLockedFor = 0;      // seconds of anti-brute-force lockout
-  otpDevCode: string | null = null; // shown only in SMS mock mode (dev)
   // Per-passenger cooldown (reservation id → seconds). Set when the driver
   // closes the OTP sheet while a resend/lockout timer is still running: the
   // row's Board button shows the countdown and stays disabled until it ends,
@@ -348,6 +362,8 @@ export class FixedDriverPage implements OnDestroy {
   boardCooldowns: Record<number, number> = {};
   private otpTimer?: Subscription;
   private appStateHandle?: PluginListenerHandle;
+
+  driverPosition: { lat: number; lng: number } | null = null;
 
   constructor(
     private api: ApiService,
@@ -362,6 +378,7 @@ export class FixedDriverPage implements OnDestroy {
     private places: PlacesService,
     private ringtone: AudioRingtoneService,
     private push: PushService,
+    private cd: ChangeDetectorRef,
   ) {
     this.route.queryParams.subscribe((params) => {
       const depId = params['departure'] ? Number(params['departure']) : null;
@@ -391,6 +408,14 @@ export class FixedDriverPage implements OnDestroy {
     this.subscribeHoldRequests();
     this.startClock();
     this.refresh();
+
+    void this.geo.getCurrentPosition({ timeout: 8000, maximumAge: 15000 }).then((fix) => {
+      if (fix) {
+        this.driverPosition = { lat: fix.lat, lng: fix.lng };
+        this.updatePassengerMarkerDistances();
+        this.cd.markForCheck();
+      }
+    }).catch(() => {});
 
     CapacitorApp.addListener('appStateChange', (state) => {
       if (state.isActive) {
@@ -665,7 +690,7 @@ export class FixedDriverPage implements OnDestroy {
     if (showSpinner) this.busy = true;
     const oldRadius = Number(this.citySettings?.fixed_stop_arrival_radius_m || 0);
     const oldStopsJson = JSON.stringify(this.stops.map((s) => ({ id: s.id, seq: s.seq })));
-    const oldPassengersJson = JSON.stringify(this.passengers.map((p) => ({ id: p.id, status: p.status, lat: p.customer_lat, lng: p.customer_lng })));
+    const oldPassengersJson = this.renderedPassengerSignature;
     const oldCitySettingsJson = JSON.stringify(this.citySettings || {});
     const hadMap = !!this.map;
 
@@ -684,7 +709,8 @@ export class FixedDriverPage implements OnDestroy {
 
           const newRadius = Number(this.citySettings?.fixed_stop_arrival_radius_m || 0);
           const newStopsJson = JSON.stringify(this.stops.map((s) => ({ id: s.id, seq: s.seq })));
-          const newPassengersJson = JSON.stringify(this.passengers.map((p) => ({ id: p.id, status: p.status, lat: p.customer_lat, lng: p.customer_lng })));
+          const newPassengersJson = customerMarkerSignature(this.passengers);
+          this.renderedPassengerSignature = newPassengersJson;
           const newCitySettingsJson = JSON.stringify(this.citySettings || {});
 
           // Live update stop detail popup if open
@@ -721,11 +747,11 @@ export class FixedDriverPage implements OnDestroy {
   async startRide(): Promise<void> {
     if (!this.activeVehicle) return;
     const alert = await this.alerts.create({
-      header: 'Start fixed ride?',
+      header: 'Start boarding?',
       message: 'Customers can still book from upcoming stops while seats are available.',
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Start ride', role: 'confirm' },
+        { text: 'Start boarding', role: 'confirm' },
       ],
     });
     await alert.present();
@@ -739,11 +765,38 @@ export class FixedDriverPage implements OnDestroy {
       .subscribe({
         next: async (res) => {
           this.activeVehicle = res.vehicle;
-          await this.showToast(res.message || 'Fixed ride started.');
+          await this.showToast(res.message || 'Boarding started.');
           void this.syncFixedTripLocationStreaming();
           this.refresh();
         },
-        error: (err) => this.error = err?.error?.message || 'Could not start fixed ride.',
+        error: (err) => this.error = err?.error?.message || 'Could not start boarding.',
+      });
+  }
+
+  canDepart(vehicle: FixedVehicle | null): boolean {
+    return (vehicle?.status || '').toUpperCase() === 'DISPATCHED';
+  }
+
+  async departRide(): Promise<void> {
+    if (!this.activeVehicle || !this.canDepart(this.activeVehicle)) return;
+    const alert = await this.alerts.create({
+      header: 'Depart now?',
+      message: 'Finish boarding at this stop before departing. Customers can still book from upcoming stops.',
+      buttons: [{ text: 'Cancel', role: 'cancel' }, { text: 'Depart', role: 'confirm' }],
+    });
+    await alert.present();
+    if ((await alert.onDidDismiss()).role !== 'confirm') return;
+    this.busy = true;
+    this.error = null;
+    this.api.post<{ vehicle: FixedVehicle; message: string }>(`/fixed/departures/${this.activeVehicle.id}/depart`, {})
+      .pipe(finalize(() => this.busy = false))
+      .subscribe({
+        next: async (res) => {
+          this.activeVehicle = res.vehicle;
+          await this.showToast(res.message || 'Vehicle departed.');
+          this.refresh();
+        },
+        error: (err) => this.error = err?.error?.message || 'Could not depart.',
       });
   }
 
@@ -813,7 +866,7 @@ export class FixedDriverPage implements OnDestroy {
     this.otpSending = true;
     this.error = null;
     const coords = await this.actionCoords();
-    this.api.post<{ message: string; resend_after?: number; dev_code?: string | null }>(
+    this.api.post<{ message: string; resend_after?: number }>(
       `/fixed/bookings/${passenger.id}/boarding-otp`, coords,
     )
       .pipe(finalize(() => this.otpSending = false))
@@ -821,7 +874,6 @@ export class FixedDriverPage implements OnDestroy {
         next: (res) => {
           delete this.boardCooldowns[passenger.id];
           this.openBoardingOtp(passenger);
-          this.otpDevCode = res.dev_code || null;
           this.startOtpCountdown(res.resend_after ?? 30);
         },
         error: (err) => {
@@ -859,14 +911,13 @@ export class FixedDriverPage implements OnDestroy {
     this.otpSending = true;
     this.otpError = null;
     const coords = await this.actionCoords();
-    this.api.post<{ message: string; resend_after?: number; dev_code?: string | null }>(
+    this.api.post<{ message: string; resend_after?: number }>(
       `/fixed/bookings/${passenger.id}/boarding-otp`, coords,
     )
       .pipe(finalize(() => this.otpSending = false))
       .subscribe({
         next: async (res) => {
           this.otpCode = '';
-          this.otpDevCode = res.dev_code || null;
           this.startOtpCountdown(res.resend_after ?? 30);
           await this.showToast('Code re-sent to the passenger.');
         },
@@ -926,7 +977,6 @@ export class FixedDriverPage implements OnDestroy {
     this.otpPassenger = null;
     this.otpCode = '';
     this.otpError = null;
-    this.otpDevCode = null;
     this.otpResendIn = 0;
     this.otpLockedFor = 0;
     if (!Object.keys(this.boardCooldowns).length) {
@@ -948,7 +998,6 @@ export class FixedDriverPage implements OnDestroy {
     this.otpPassenger = passenger;
     this.otpCode = '';
     this.otpError = null;
-    this.otpDevCode = null;
     this.otpLockedFor = 0;
   }
 
@@ -1251,9 +1300,9 @@ export class FixedDriverPage implements OnDestroy {
   statusLabel(vehicle: FixedVehicle | null): string {
     if (!vehicle) return '';
     switch (vehicle.status) {
-      case 'FORMING': return 'Boarding';
-      case 'DISPATCHED': return 'Assigned';
-      case 'DEPARTED': return 'Started';
+      case 'FORMING': return 'Open for bookings';
+      case 'DISPATCHED': return 'Boarding';
+      case 'DEPARTED': return 'Departed';
       case 'COMPLETED': return 'Completed';
       case 'CANCELLED': return 'Cancelled';
       default: return vehicle.status;
@@ -1315,7 +1364,7 @@ export class FixedDriverPage implements OnDestroy {
   /** Why the Board button is disabled, or null when it's ready to tap. */
   boardBlockReason(passenger: FixedPassenger): string | null {
     if (!this.canBoardPassenger(passenger)) return null;
-    if (!this.rideStarted) return 'Start the ride to begin boarding';
+    if (!this.rideStarted) return 'Start boarding to begin checking in passengers';
     if (!this.isPassengerPickupReached(passenger)) {
       const stop = this.passengerBoardStop(passenger);
       return stop ? 'Board unlocks when you reach ' + stop.name : 'Board unlocks when you reach the pickup stop';
@@ -1537,7 +1586,7 @@ export class FixedDriverPage implements OnDestroy {
   passengerActionHint(passenger: FixedPassenger): string {
     const status = (passenger.status || '').toUpperCase();
     if (['BOOKED', 'CONFIRMED'].includes(status)) {
-      if (!this.rideStarted) return 'Start the ride to begin boarding';
+      if (!this.rideStarted) return 'Start boarding to begin checking in passengers';
       if (!this.isPassengerPickupReached(passenger)) return 'Board & no-show unlock once you reach the pickup stop';
       const secs = this.noShowCountdown(passenger);
       if (secs > 0) return 'Wait for the passenger — no-show unlocks in ' + this.noShowCountdownLabel(passenger);
@@ -2010,13 +2059,17 @@ export class FixedDriverPage implements OnDestroy {
       return marker;
     });
 
-    this.passengerMarkers = this.passengerPointGroups().map((point) => new google.maps.marker.AdvancedMarkerElement({
-      position: point.position,
-      map: this.map,
-      title: point.title,
-      content: this.buildPassengerMarker(point.kind, point.count, point.name, point.isLive),
-      zIndex: point.kind === 'pickup' ? (point.isLive ? 960 : 920) : 850,
-    }));
+    this.passengerMarkers = this.passengerPointGroups().map((point) => {
+      const marker = new google.maps.marker.AdvancedMarkerElement({
+        position: point.position,
+        map: this.map,
+        title: point.title,
+        content: this.buildPassengerMarker(point.kind, point.count, point.name, point.isLive, point.avatarUrl, point.distanceText),
+        zIndex: point.kind === 'pickup' ? (point.isLive ? 960 : 920) : 850,
+      });
+      (marker as any).__passenger = point.passenger;
+      return marker;
+    });
     if (refit) {
       this.fitEmbeddedMap();
     }
@@ -2115,6 +2168,7 @@ export class FixedDriverPage implements OnDestroy {
 
   private onDriverPosition(fix: GeoFix): void {
     const position = { lat: fix.lat, lng: fix.lng };
+    this.driverPosition = position;
     if (this.map) {
       if (!this.selfMarker) {
         this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
@@ -2132,6 +2186,9 @@ export class FixedDriverPage implements OnDestroy {
         }
       }
     }
+
+    this.updatePassengerMarkerDistances();
+    this.cd.markForCheck();
 
     // Proactively post GPS location to server (throttled to 4s)
     const now = Date.now();
@@ -2199,13 +2256,100 @@ export class FixedDriverPage implements OnDestroy {
     return { lat: Number(stop.lat), lng: Number(stop.lng) };
   }
 
+  passengerDistanceMeters(passenger: FixedPassenger): number | null {
+    if (!this.driverPosition) return null;
+    const kind = (passenger.status || '').toUpperCase() === 'BOARDED' ? 'drop' : 'pickup';
+    const pos = this.passengerPosition(passenger, kind);
+    if (!pos || !Number.isFinite(pos.lat) || !Number.isFinite(pos.lng)) return null;
+    return haversineDistanceMeters(this.driverPosition.lat, this.driverPosition.lng, pos.lat, pos.lng);
+  }
+
+  passengerDistanceText(passenger: FixedPassenger): string | null {
+    const meters = this.passengerDistanceMeters(passenger);
+    if (meters == null || isNaN(meters)) return null;
+    if (meters < 1000) {
+      return `${Math.round(meters)} m`;
+    }
+    const km = meters / 1000;
+    return `${km < 10 ? km.toFixed(1) : Math.round(km)} km`;
+  }
+
+  hasCustomerLocation(passenger: FixedPassenger): boolean {
+    return hasCustomerLocation(passenger);
+  }
+
+  isCustomerLive(passenger: FixedPassenger): boolean {
+    return isCustomerLocationLive(passenger);
+  }
+
+  get nearestWaitingPassenger(): FixedPassenger | null {
+    if (!this.activeVehicle || !this.driverPosition) return null;
+    const waiting = this.passengers.filter((p) => {
+      const s = (p.status || '').toUpperCase();
+      return ['BOOKED', 'CONFIRMED'].includes(s);
+    });
+    if (!waiting.length) return null;
+
+    let nearest: FixedPassenger | null = null;
+    let minDistance = Infinity;
+
+    for (const p of waiting) {
+      const d = this.passengerDistanceMeters(p);
+      if (d != null && d < minDistance) {
+        minDistance = d;
+        nearest = p;
+      }
+    }
+    return nearest || waiting[0];
+  }
+
+  focusOnPassenger(passenger: FixedPassenger, event?: Event): void {
+    if (event) event.stopPropagation();
+    const pos = this.passengerPosition(passenger, (passenger.status || '').toUpperCase() === 'BOARDED' ? 'drop' : 'pickup');
+    if (pos && this.map) {
+      this.map.panTo(pos);
+      this.map.setZoom(16);
+    }
+  }
+
+  private updatePassengerMarkerDistances(): void {
+    if (!this.passengerMarkers?.length || !this.driverPosition) return;
+    for (const marker of this.passengerMarkers) {
+      const p = (marker as any).__passenger as FixedPassenger | undefined;
+      if (!p) continue;
+      const dist = this.passengerDistanceText(p);
+      const pill = marker.content?.querySelector('.person-tag-pill');
+      if (!pill) continue;
+      let distEl = pill.querySelector('.person-tag-dist');
+      if (dist) {
+        if (!distEl) {
+          distEl = document.createElement('span');
+          distEl.className = 'person-tag-dist';
+          const liveDot = pill.querySelector('.person-live-dot');
+          if (liveDot) {
+            pill.insertBefore(distEl, liveDot);
+          } else {
+            pill.appendChild(distEl);
+          }
+        }
+        distEl.textContent = dist;
+        (distEl as HTMLElement).style.display = 'inline-block';
+      } else if (distEl) {
+        (distEl as HTMLElement).style.display = 'none';
+      }
+    }
+  }
+
   private passengerPointGroups(): Array<{
     kind: 'pickup' | 'drop';
     count: number;
     title: string;
     name: string;
     isLive: boolean;
+    distanceText?: string | null;
+    avatarUrl?: string | null;
     position: { lat: number; lng: number };
+    passenger: FixedPassenger;
   }> {
     const points: Array<{
       kind: 'pickup' | 'drop';
@@ -2213,7 +2357,10 @@ export class FixedDriverPage implements OnDestroy {
       title: string;
       name: string;
       isLive: boolean;
+      distanceText?: string | null;
+      avatarUrl?: string | null;
       position: { lat: number; lng: number };
+      passenger: FixedPassenger;
     }> = [];
 
     for (const passenger of this.passengers) {
@@ -2223,29 +2370,36 @@ export class FixedDriverPage implements OnDestroy {
       if (['BOOKED', 'CONFIRMED'].includes(status)) {
         const pickup = this.passengerPosition(passenger, 'pickup');
         if (pickup) {
-          const isLive = passenger.customer_lat != null && passenger.customer_lng != null &&
-            Number.isFinite(Number(passenger.customer_lat)) && Number.isFinite(Number(passenger.customer_lng));
+          const isLive = this.isCustomerLive(passenger);
           const name = passenger.customer_name || 'Passenger';
+          const distText = this.passengerDistanceText(passenger);
           points.push({
             kind: 'pickup',
             count: passenger.seats || 1,
             name,
             isLive,
-            title: `${name} (${passenger.seats || 1} seat${(passenger.seats || 1) > 1 ? 's' : ''}) - ${isLive ? 'Live Walking' : 'Pickup at ' + (passenger.board || 'stop')}`,
+            distanceText: distText,
+            avatarUrl: passenger.customer_avatar_url || null,
+            title: `${name} (${passenger.seats || 1} seat${(passenger.seats || 1) > 1 ? 's' : ''}) - ${distText ? distText + ' away · ' : ''}${isLive ? 'Live Walking' : this.hasCustomerLocation(passenger) ? 'Last known location' : 'Pickup at ' + (passenger.board || 'stop')}`,
             position: pickup,
+            passenger,
           });
         }
       } else if (status === 'BOARDED') {
         const drop = this.passengerPosition(passenger, 'drop');
         if (drop) {
           const name = passenger.customer_name || 'Passenger';
+          const distText = this.passengerDistanceText(passenger);
           points.push({
             kind: 'drop',
             count: passenger.seats || 1,
             name,
             isLive: false,
-            title: `${name} - Drop off at ${passenger.drop || 'destination'}`,
+            distanceText: distText,
+            avatarUrl: passenger.customer_avatar_url || null,
+            title: `${name} - ${distText ? distText + ' away · ' : ''}Drop off at ${passenger.drop || 'destination'}`,
             position: drop,
+            passenger,
           });
         }
       }
@@ -2280,8 +2434,8 @@ export class FixedDriverPage implements OnDestroy {
     return dropStop && this.hasStopCoords(dropStop) ? this.stopPosition(dropStop) : null;
   }
 
-  private buildPassengerMarker(kind: 'pickup' | 'drop', count: number, name = 'Passenger', isLive = false): HTMLElement {
-    return buildPassengerMarkerElement({ kind, count, name, isLive });
+  private buildPassengerMarker(kind: 'pickup' | 'drop', count: number, name = 'Passenger', isLive = false, avatarUrl?: string | null, distanceText?: string | null): HTMLElement {
+    return buildPassengerMarkerElement({ kind, count, name, isLive, avatarUrl, distanceText });
   }
 
   private buildStopMarker(stop: FixedStop): HTMLElement {
@@ -2296,6 +2450,7 @@ export class FixedDriverPage implements OnDestroy {
     return buildReusableCarMarkerElement({
       bearing,
       label: 'You (Car)',
+      markerUrl: this.activeVehicle?.map_marker_url || (this.auth.getUser() as any)?.vehicle?.map_marker_url || null,
     });
   }
 

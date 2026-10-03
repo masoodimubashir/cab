@@ -41,6 +41,7 @@ interface FixedStop {
 }
 
 interface FixedRoute {
+  image_url?: string | null;
   id: number;
   name: string;
   scope: 'local' | 'outstation';
@@ -71,6 +72,7 @@ interface FixedRoute {
 }
 
 interface FixedDeparture {
+  image_url?: string | null;
   id: number;
   route_id: number;
   trip_id?: number | null;
@@ -254,6 +256,14 @@ export class FixedBookPage implements OnInit, OnDestroy {
   snappedStopInfo: { stopName: string; distanceMeters: number; kind: 'pickup' | 'drop' } | null = null;
   userCoords: { lat: number; lng: number } | null = null;
   nearestPickupStop: FixedStop | null = null;
+  radiusFilterActive = true;
+
+  get nearbyRoutesCount(): number {
+    if (!this.userCoords) return this.routes.length;
+    return this.routes.filter(
+      (r) => r.distance_to_nearest_pickup != null && r.distance_to_nearest_pickup <= 1000,
+    ).length;
+  }
 
   private entered = false;
   private unsubscribeFixedCity: (() => void) | null = null;
@@ -342,7 +352,12 @@ export class FixedBookPage implements OnInit, OnDestroy {
     const term = this.routeSearch.trim().toLowerCase();
     return this.routes.filter((route) => {
       if (this.routeFilter !== 'all' && route.scope !== this.routeFilter) return false;
-      if (!term) return true;
+      if (!term) {
+        if (this.radiusFilterActive && this.userCoords) {
+          return route.distance_to_nearest_pickup != null && route.distance_to_nearest_pickup <= 1000;
+        }
+        return true;
+      }
       return [
         route.name,
         route.origin_name,
@@ -350,6 +365,10 @@ export class FixedBookPage implements OnInit, OnDestroy {
         ...(route.stops || []).map((stop) => stop.name),
       ].some((value) => (value || '').toLowerCase().includes(term));
     });
+  }
+
+  setRadiusFilter(active: boolean): void {
+    this.radiusFilterActive = active;
   }
 
   get localRouteCount(): number {
@@ -1177,10 +1196,10 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   /** Seat picker "Book Seats" â†’ directly requests seats from driver and shows approval waiting screen. */
-  bookSeats(testPayment = false): void {
+  bookSeats(): void {
     if (this.step !== 'seats' || this.selectedLabels.length < 1) return;
     this.seats = this.selectedLabels.length;
-    this.requestSeatHold(testPayment, 'online');
+    this.requestSeatHold('online');
   }
 
   reviewBooking(): void {
@@ -1211,21 +1230,12 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.clearCouponPreview();
   }
 
-  testPay(): void {
-    if (!this.canConfirm) return;
-    if (this.hold?.status === 'ACCEPTED') {
-      this.confirmHoldTestPayment(this.hold);
-    } else {
-      this.requestSeatHold(true, 'online');
-    }
-  }
-
   confirm(): void {
     if (!this.canConfirm) return;
     if (this.hold?.status === 'ACCEPTED') {
       this.paymentModalOpen = true;
     } else {
-      this.requestSeatHold(false, 'online');
+      this.requestSeatHold('online');
     }
   }
 
@@ -1241,7 +1251,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     }
   }
 
-  private requestSeatHold(testPayment: boolean, method: PaymentChoice): void {
+  private requestSeatHold(method: PaymentChoice): void {
     if (!this.canConfirm || !this.selectedDeparture) return;
     this.booking = true;
     this.hold = null;
@@ -1260,14 +1270,10 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
         if (this.hold.status === 'PENDING_DRIVER_APPROVAL') {
           this.step = 'awaiting_approval';
-          this.startApprovalWaiting(this.hold, testPayment, method);
+          this.startApprovalWaiting(this.hold);
         } else if (this.hold.status === 'ACCEPTED' || this.hold.status === 'HELD') {
           this.step = 'review';
-          if (testPayment) {
-            this.confirmHoldTestPayment(this.hold);
-          } else {
-            this.paymentModalOpen = true;
-          }
+          this.paymentModalOpen = true;
         }
       },
       error: async (err) => {
@@ -1310,7 +1316,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     });
   }
 
-  private startApprovalWaiting(hold: SeatHold, testPayment = false, method: PaymentChoice = 'online'): void {
+  private startApprovalWaiting(hold: SeatHold): void {
     this.stopApprovalWaiting();
     this.updateApprovalCountdown();
 
@@ -1320,7 +1326,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
     this.unsubscribeHoldChannel = this.realtime.subscribeFixedHold(
       hold.id,
-      (payload) => this.onHoldAccepted(payload, testPayment, method),
+      (payload) => this.onHoldAccepted(payload),
       (payload) => this.onHoldRejected(payload),
     );
 
@@ -1330,7 +1336,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
         user.id,
         (payload) => {
           if (payload.hold_id === this.hold?.id) {
-            this.onHoldAccepted(payload, testPayment, method);
+            this.onHoldAccepted(payload);
           }
         },
         (payload) => {
@@ -1348,7 +1354,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
           const h = res?.hold;
           if (!h) return;
           if (h.status === 'ACCEPTED') {
-            this.onHoldAccepted(h, testPayment, method);
+            this.onHoldAccepted(h);
           } else if (h.status === 'REJECTED') {
             this.onHoldRejected(h);
           }
@@ -1358,7 +1364,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     });
   }
 
-  private onHoldAccepted(payload: any, testPayment = false, method: PaymentChoice = 'online'): void {
+  private onHoldAccepted(payload: any): void {
     if (this.step !== 'awaiting_approval') return;
     this.stopApprovalWaiting();
     this.audioAlert.playDriverAccepted();
@@ -1593,23 +1599,6 @@ export class FixedBookPage implements OnInit, OnDestroy {
     rzp.open();
   }
 
-
-  private confirmHoldTestPayment(hold: SeatHold): void {
-    this.api.post<{ reservation: FixedReservation }>(`/fixed/seat-holds/${hold.id}/test-confirm-payment`, {
-      booking_channel: "advance",
-    }, { "Idempotency-Key": this.uuid() }).subscribe({
-      next: (res) => {
-        this.booking = false;
-        this.confirmation = res?.reservation ?? null;
-        this.loadMyBookings();
-        this.openConfirmedFixedRide();
-      },
-      error: async (err) => {
-        this.booking = false;
-        await this.showToast(err?.error?.message || "Test payment confirmation failed.");
-      },
-    });
-  }
 
   private confirmHoldPayment(hold: SeatHold, payment: {
     razorpay_payment_id: string;

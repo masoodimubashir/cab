@@ -144,36 +144,6 @@ class FixedBookingsController extends Controller
     }
 
 
-    public function confirmSeatHoldTestPayment(Request $request, FixedSeatHold $fixedSeatHold)
-    {
-        if ($fixedSeatHold->customer_id !== $request->user()->id) {
-            abort(404);
-        }
-
-        $key = (string) config("services.razorpay.key_id");
-        if (app()->environment("production") && !str_starts_with($key, "rzp_test_")) {
-            abort(403, "Test payment is disabled for live Razorpay keys.");
-        }
-
-        $data = $request->validate([
-            "booking_channel" => ["nullable", "in:advance,on_spot"],
-        ]);
-
-        $reservation = $this->seatHolds->confirmTestHold($request->user(), $fixedSeatHold, $data["booking_channel"] ?? "advance");
-
-        return response()->json([
-            "reservation" => $this->bookings->shapeBooking($reservation->fresh([
-                "route:id,name,scope,mode",
-                "routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status",
-                "boardStop:id,name,lat,lng",
-                "dropStop:id,name,lat,lng",
-            ])),
-            "message" => "Fixed booking confirmed with test payment.",
-        ], 201);
-    }
-
-
-
     public function createSeatHoldRazorpayOrder(Request $request, FixedSeatHold $fixedSeatHold, RazorpayService $razorpayService)
     {
         if ($fixedSeatHold->customer_id !== $request->user()->id) {

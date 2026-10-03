@@ -783,7 +783,7 @@ class TripsController extends Controller
      * Generate + SMS the start-ride OTP to the rider (the friend's phone on a
      * for-someone-else booking, the booker's otherwise). The driver calls this
      * from the pickup; the rider reads the code back and the driver enters it to
-     * start the ride. dev_code is returned only in mock mode (no SMS gateway).
+     * start the ride. Only the customer can retrieve the code.
      */
     public function requestStartOtp(Request $request, Trip $trip, \App\Services\Msg91Service $msg91)
     {
@@ -824,8 +824,6 @@ class TripsController extends Controller
         return response()->json([
             'ok' => true,
             'sent_to_name' => $trip->customer_name,
-            // Present ONLY in mock mode (no SMS gateway) so the flow is testable.
-            'dev_code' => $msg91->isLive() ? null : $code,
         ]);
     }
 

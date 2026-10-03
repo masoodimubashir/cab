@@ -50,6 +50,7 @@ class AdminRouteGroupsApiTest extends TestCase
             'city_id' => $cityId, 'scope' => 'local', 'mode' => $mode, 'name' => $name,
             'origin_name' => "$name O", 'dest_name' => "$name D",
             'origin_lat' => 34.0, 'origin_lng' => 74.0, 'dest_lat' => 34.1, 'dest_lng' => 74.1,
+            'fare_config' => json_encode(['seat_fare' => 10]),
             'created_at' => now(), 'updated_at' => now(),
         ]);
     }
@@ -73,7 +74,6 @@ class AdminRouteGroupsApiTest extends TestCase
         return DB::table('city_vehicle_types')->insertGetId([
             'city_id' => $cityId,
             'ride_type_id' => $rideTypeId,
-            'product_kind' => 'local',
             'display_name' => 'Veh ' . uniqid(),
             'created_at' => now(), 'updated_at' => now(),
         ]);
@@ -99,6 +99,17 @@ class AdminRouteGroupsApiTest extends TestCase
         $this->postJson("/api/admin/cities/{$this->cityId}/route-groups", [
             'name' => 'Bad', 'route_ids' => [$foreign],
         ])->assertStatus(422);
+    }
+
+    public function test_route_without_a_price_cannot_be_grouped(): void
+    {
+        $routeId = $this->makeRoute($this->cityId, 'Needs pricing');
+        DB::table('routes')->where('id', $routeId)->update(['fare_config' => null]);
+
+        $this->postJson("/api/admin/cities/{$this->cityId}/route-groups", [
+            'name' => 'Unpriced', 'route_ids' => [$routeId],
+        ])->assertStatus(422);
+        $this->assertDatabaseMissing('route_group_route', ['route_id' => $routeId]);
     }
 
     public function test_non_fixed_route_is_rejected(): void

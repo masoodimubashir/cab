@@ -55,7 +55,10 @@
 
           <div class="ride-head">
             <div class="ride-kind">
-              <div class="ride-kind-icon"><ion-icon [name]="kindIcon(t)"></ion-icon></div>
+              <div class="ride-kind-icon">
+                <img *ngIf="t.image_url" [src]="t.image_url" alt="" class="ride-vehicle-img" (error)="t.image_url = null" />
+                <ion-icon *ngIf="!t.image_url" [name]="kindIcon(t)"></ion-icon>
+              </div>
               <div class="ride-kind-text">
                 <span class="ride-kind-label">{{ rideTypeLabel(t) }}</span>
                 <span class="ride-id">#{{ t.id }}</span>

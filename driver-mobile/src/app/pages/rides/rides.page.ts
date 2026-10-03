@@ -467,6 +467,12 @@ export class RidesPage implements OnInit, OnDestroy {
     return !!this.lastTrip?.['is_for_other'];
   }
 
+  /** Rider avatar: suppressed when booked for someone else (is_for_other). */
+  get customerAvatarUrl(): string | null {
+    if (this.isForOther) return null;
+    return (this.lastTrip?.['customer_avatar_url'] as string | undefined) || null;
+  }
+
   /** Dial the rider to coordinate pickup. */
   call(phone: string | null | undefined): void {
     const p = (phone || '').trim();
@@ -560,10 +566,8 @@ export class RidesPage implements OnInit, OnDestroy {
   private async startRideWithOtp(tripId: number): Promise<void> {
     this.progressBusy = true;
     this.error = null;
-    let devCode: string | null = null;
     try {
-      const res: any = await firstValueFrom(this.api.post(`/trips/${tripId}/start-otp`, {}));
-      devCode = res?.dev_code ?? null;
+      await firstValueFrom(this.api.post(`/trips/${tripId}/start-otp`, {}));
     } catch (err: any) {
       this.error = err?.error?.message || 'Could not send the start code. Try again.';
       this.progressBusy = false;
@@ -574,7 +578,7 @@ export class RidesPage implements OnInit, OnDestroy {
       component: StartOtpModal,
       cssClass: 'start-otp-modal',
       backdropDismiss: false,
-      componentProps: { tripId, riderName: this.customerName, devCode },
+      componentProps: { tripId, riderName: this.customerName },
     });
     try {
       await modal.present();
@@ -982,7 +986,11 @@ export class RidesPage implements OnInit, OnDestroy {
           position: pickup,
           map: this.map,
           title: 'Pickup',
-          content: buildPassengerMarkerElement({ kind: 'pickup', name: 'Pickup' }),
+          content: buildPassengerMarkerElement({
+            kind: 'pickup',
+            name: this.customerName || 'Pickup',
+            avatarUrl: this.customerAvatarUrl,
+          }),
           zIndex: 900,
         });
       } else {
@@ -1033,6 +1041,7 @@ export class RidesPage implements OnInit, OnDestroy {
           kind: 'pickup',
           name: this.customerName || 'Passenger',
           isLive: true,
+          avatarUrl: this.customerAvatarUrl,
         }),
         zIndex: 950,
       });
@@ -1071,7 +1080,11 @@ export class RidesPage implements OnInit, OnDestroy {
         position: p,
         map: this.map,
         title: 'You',
-        content: buildReusableCarMarkerElement({ bearing: fix.bearing ?? 0, label: 'You' }),
+        content: buildReusableCarMarkerElement({
+          bearing: fix.bearing ?? 0,
+          label: 'You',
+          markerUrl: (this.lastTrip as any)?.driver?.vehicle?.map_marker_url || (this.auth.getUser() as any)?.vehicle?.map_marker_url,
+        }),
         zIndex: 1000,
       });
       this.fitMap();
