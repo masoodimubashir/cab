@@ -93,6 +93,43 @@ class AdminRouteGroupsApiTest extends TestCase
         $this->assertSame(2, $res->json('route_group.route_count'));
     }
 
+    public function test_multiple_groups_share_one_generated_fleet_and_save_atomically(): void
+    {
+        $vehicle = $this->makeCityVehicleType($this->cityId);
+        $route = $this->makeRoute($this->cityId, 'Shared');
+        $driver = $this->makeDriver($this->cityId);
+        $payload = ['names' => ['Morning', 'Evening'], 'route_ids' => [$route], 'vehicle_ids' => [$vehicle], 'vehicle_set_ids' => [], 'driver_user_ids' => [$driver->user_id]];
+        $result = $this->postJson("/api/admin/cities/{$this->cityId}/route-groups/setup-batch", $payload)->assertCreated();
+        $this->assertCount(2, $result->json('data'));
+        $this->assertSame($result->json('data.0.vehicle_set_ids'), $result->json('data.1.vehicle_set_ids'));
+        $this->assertSame([$route], $result->json('data.1.route_ids'));
+        $this->assertSame([$driver->user_id], $result->json('data.1.driver_user_ids'));
+        $this->assertDatabaseCount('vehicle_sets', 1);
+        $payload['vehicle_ids'] = []; $payload['vehicle_set_ids'] = $result->json('data.0.vehicle_set_ids'); $payload['names'] = ['New draft', 'Morning'];
+        $this->postJson("/api/admin/cities/{$this->cityId}/route-groups/setup-batch", $payload)->assertUnprocessable();
+        $this->assertDatabaseCount('route_groups', 2); $this->assertDatabaseMissing('route_groups', ['name' => 'New draft']);
+    }
+
+    public function test_multiple_vehicles_can_join_groups_and_a_failed_batch_creates_nothing(): void
+    {
+        $group = $this->postJson("/api/admin/cities/{$this->cityId}/route-groups", ['name' => 'Town'])->assertCreated()->json('route_group.id');
+        $payload = ['vehicles' => [
+            ['vehicle_type_name' => 'Sumo', 'display_name' => 'Sumo', 'max_people' => 9, 'luggage_capacity' => 0],
+            ['vehicle_type_name' => 'Bus', 'display_name' => 'Bus', 'max_people' => 30, 'luggage_capacity' => 2],
+        ], 'route_group_ids' => [$group], 'set_name' => 'Town fleet'];
+        $response = $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-types/batch", $payload)->assertCreated();
+        $this->assertCount(2, $response->json('data')); $this->assertDatabaseCount('vehicle_sets', 1);
+        $set = DB::table('vehicle_sets')->first()->id;
+        $this->assertDatabaseHas('route_group_vehicle_set', ['route_group_id' => $group, 'vehicle_set_id' => $set]);
+        $this->assertSame(2, DB::table('city_vehicle_types')->where('vehicle_set_id', $set)->count());
+        $payload['vehicles'][0]['display_name'] = 'Another Sumo';
+        $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-types/batch", $payload)->assertUnprocessable()->assertJsonValidationErrors('vehicles.1');
+        $this->assertDatabaseCount('city_vehicle_types', 2); $this->assertDatabaseCount('vehicle_sets', 1);
+        $payload['route_group_ids'] = [DB::table('route_groups')->insertGetId(['city_id' => $this->otherCityId, 'name' => 'Foreign', 'created_at' => now(), 'updated_at' => now()])];
+        $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-types/batch", $payload)->assertUnprocessable();
+        $this->assertDatabaseCount('city_vehicle_types', 2);
+    }
+
     public function test_workspace_setup_saves_routes_vehicles_and_drivers_together_and_can_pause_access(): void
     {
         $sumo = $this->makeCityVehicleType($this->cityId);

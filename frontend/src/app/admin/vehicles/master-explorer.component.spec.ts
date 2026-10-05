@@ -28,6 +28,17 @@ describe('Master route explorer', () => {
     page.vehicleId = 10;
     expect(page.scopedRoutes.map(row => row.id)).toEqual([1, 2]);
   });
+  it('shows shared groups and routes for another vehicle in the same set without copying records', () => {
+    page.vehicles = [{ id: 30, display_name: 'Tavera', vehicle_type_id: 3, max_people: 7, luggage_capacity: 2, is_active: true, vehicle_set_ids: [7], mode_row_ids: [30, 31] }];
+    page.groups[0].vehicle_set_ids = [7];
+    page.vehicleId = 30;
+    expect(page.vehicleGroups.map(group => group.id)).toEqual([100, 101]);
+    expect(page.vehicleRoutes.map(route => route.id)).toEqual([1, 2]);
+    expect(page.routes.length).toBe(3);
+    page.vehicles[0].vehicle_set_ids = [];
+    expect(page.vehicleGroups).toEqual([]);
+    expect(page.vehicleRoutes).toEqual([]);
+  });
   it('searches sets across scope branches and preserves status filtering', () => {
     page.search = 'Airport';
     expect(page.tree.ids).toEqual([1, 2]);

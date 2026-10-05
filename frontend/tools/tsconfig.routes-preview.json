@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.app.json",
+  "files": ["routes-workspace-preview.ts"],
+  "include": ["../src/**/*.d.ts"]
+}
