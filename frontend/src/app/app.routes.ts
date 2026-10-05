@@ -9,7 +9,6 @@ import { RidesAllComponent } from './admin/rides/rides-all.component';
 import { RidesShellComponent } from './admin/rides/rides-shell.component';
 import { AdminNotificationsComponent } from './admin/notifications/notifications.component';
 import { RideDetailComponent } from './admin/rides/ride-detail.component';
-import { VehicleWorkspaceComponent } from './admin/vehicles/vehicle-workspace.component';
 import { ContactDriversComponent } from './admin/contact-drivers/contact-drivers.component';
 import { MapsComponent } from './admin/maps/maps.component';
 import { CityWorkspaceComponent } from './admin/city-workspace/city-workspace.component';
@@ -99,7 +98,7 @@ export const routes: Routes = [
 
   // Vehicle workspace — city vehicle list + Common/Normal/Fixed/Shuttle/Drivers/
   // Seat-layout tabs on one page. `:vehicleRowId` deep-links a single vehicle.
-  { path: 'vehicles', component: VehicleWorkspaceComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
+  { path: 'vehicles', loadComponent: () => import('./admin/vehicles/vehicle-workspace.component').then(m => m.VehicleWorkspaceComponent), canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
   {
     path: 'operations',
     loadComponent: () => import('./admin/vehicles/operations-workspace.component').then((m) => m.OperationsWorkspaceComponent),
@@ -114,7 +113,7 @@ export const routes: Routes = [
     canActivate: [adminAuthGuard],
     data: { permission: 'vehicles' },
   },
-  { path: 'vehicles/:vehicleRowId', component: VehicleWorkspaceComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
+  { path: 'vehicles/:vehicleRowId', loadComponent: () => import('./admin/vehicles/vehicle-workspace.component').then(m => m.VehicleWorkspaceComponent), canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
 
   // Vehicle seat layouts — reusable seat maps per (city × vehicle-type).
   {

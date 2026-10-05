@@ -17,6 +17,10 @@ import { SeatLayoutDesignerComponent } from '../vehicle-seat-layouts/seat-layout
 import { VehicleSeatLayout, VehicleSeatLayoutsService } from '../vehicle-seat-layouts/vehicle-seat-layouts.service';
 import { MasterAction, MasterExplorerComponent, MasterSection } from './master-explorer.component';
 import { MasterGroupEditorComponent } from './master-group-editor.component';
+import { VehicleSetsEditorComponent } from './vehicle-sets-editor.component';
+import { RouteOperationsComponent } from './route-operations.component';
+import type { OperationsAction } from './route-operations.component';
+import type { SetupVehicleSet } from './route-group-setup.component';
 
 /** How a ride type behaves, derived from its name. Only the behaviour is
  *  inferred — every label shown to the operator comes from the database. */
@@ -28,6 +32,9 @@ interface RideTypeRef { id: number; name: string; }
 interface VehicleTypeRef { id: number; name: string; }
 
 interface CityVehicleRow {
+  vehicle_set_id?: number | null;
+  vehicle_set_ids?: number[];
+  mode_row_ids?: number[];
   image_url?: string | null;
   map_marker_url?: string | null;
   id: number;
@@ -61,6 +68,7 @@ interface RouteLite {
 }
 
 interface GroupRow {
+  vehicle_set_ids?: number[];
   id: number;
   name: string;
   is_active: boolean;
@@ -71,6 +79,7 @@ interface GroupRow {
 }
 
 interface DriverOpt {
+  avatar_url?: string | null;
   id: number;
   user_id: number;
   name: string;
@@ -122,20 +131,24 @@ interface TabDef { key: string; label: string; count?: number; }
     SeatLayoutDesignerComponent,
     MasterExplorerComponent,
     MasterGroupEditorComponent,
+    VehicleSetsEditorComponent,
+    RouteOperationsComponent,
   ],
   template: `
     <div class="ws">
       <app-return-to-setup></app-return-to-setup>
 
-      <header class="ws__head">
+      <header class="ws__head" *ngIf="masterSection !== 'routes'">
         <div class="vehicle-page-heading"><h1>{{ masterHeading }}</h1><p>{{ masterSection && masterSection !== 'vehicle-configuration' ? 'Manage ' + cityName + ' routes, route groups and driver allocations.' : 'Choose a vehicle to manage its routes, groups, drivers and fares.' }}</p></div>
         <div class="vehicle-page-actions">
         <tm-button variant="outline" icon="cog" (clicked)="openTypes()">Vehicle types</tm-button>
+        <tm-button variant="outline" [disabled]="cityId == null || loading" (clicked)="vehicleSetsOpen = true">Vehicle sets</tm-button>
         <tm-button *ngIf="!masterSection || masterSection === 'vehicle-configuration'" variant="outline" icon="copy" [disabled]="cityId == null || !vehicles.length" (clicked)="openCopyModal()">Copy to location</tm-button>
-        <tm-button *ngIf="!masterSection || masterSection === 'vehicle-configuration'" variant="green" icon="plus" [disabled]="cityId == null || !vehicleTypeOptions.length" (clicked)="openCreate()">Add vehicle</tm-button>
+        <tm-button variant="green" icon="plus" [disabled]="cityId == null || !vehicleTypeOptions.length" (clicked)="openCreate()">Add vehicle</tm-button>
         <tm-button *ngIf="masterSection" variant="outline" icon="refresh" [disabled]="loading" (clicked)="refresh()">Refresh</tm-button>
         </div>
       </header>
+      <app-vehicle-sets-editor *ngIf="vehicleSetsOpen && cityId" [cityId]="cityId" [vehicles]="rows" [groups]="groups" (closed)="vehicleSetsOpen = false" (saved)="refresh()" />
 
       <div class="cue" *ngIf="cityId == null">
         <tm-icon name="map-marker" [size]="22" />
@@ -144,7 +157,10 @@ interface TabDef { key: string; label: string; count?: number; }
       </div>
 
       <div class="grid" *ngIf="cityId != null">
-        <app-master-explorer *ngIf="masterSection && masterSection !== 'vehicle-configuration'" [section]="masterSection" [cityId]="cityId" [cityName]="cityName" [loading]="loading" [vehicles]="vehicles" [routes]="routes" [groups]="groups" [drivers]="cityDrivers" [groupCreating]="groupSaving" [groupCreatedVersion]="masterGroupCreatedVersion" (groupCreate)="createMasterInlineGroup($event)" (action)="handleMasterAction($event)" />
+        @defer (when masterSection === 'routes') {
+          <app-route-operations *ngIf="masterSection === 'routes'" [cityId]="cityId!" [cityName]="cityName" [loading]="operationsLoading" [loadError]="operationsLoadError" [vehicles]="vehicles" [vehicleRows]="rows" [sets]="vehicleSets" [routes]="routes" [groups]="groups" [drivers]="cityDrivers" [fareModes]="fareRideTypes" [vehicleTypeOptions]="vehicleTypeOptions" [editId]="editId" [editField]="editField" [editValue]="editValue" (cellEdit)="handleOperationsCellEdit($event)" (action)="handleOperationsAction($event)" (refresh)="refresh()" />
+        } @placeholder { <p *ngIf="masterSection === 'routes'">Opening Routes workspace…</p> }
+        <app-master-explorer *ngIf="masterSection && masterSection !== 'vehicle-configuration' && masterSection !== 'routes'" [section]="masterSection" [cityId]="cityId" [cityName]="cityName" [loading]="loading" [vehicles]="vehicles" [routes]="routes" [groups]="groups" [drivers]="cityDrivers" [groupCreating]="groupSaving" [groupCreatedVersion]="masterGroupCreatedVersion" (groupCreate)="createMasterInlineGroup($event)" (action)="handleMasterAction($event)" />
         <ng-container *ngIf="!masterSection || masterSection === 'vehicle-configuration'">
         <!-- ─────────────── spreadsheet ─────────────── -->
         <!-- controls -->
@@ -349,14 +365,18 @@ interface TabDef { key: string; label: string; count?: number; }
     <!-- ─────────────── drawers ─────────────── -->
     <tm-drawer [open]="createOpen" title="Add vehicle" [width]="560" (closed)="createOpen = false">
       <div slot="body" class="form">
-        <p class="note"><b>Vehicle type is required.</b> Create the type under “Vehicle types” first, then choose it here to create the city vehicle.</p>
+        <p class="note">Choose an existing vehicle type or create a new one below. The type and city vehicle save together.</p>
         <label class="f"><span>Vehicle name <i>*</i></span>
           <select [(ngModel)]="create.vehicle_type_id">
             <option [ngValue]="null" disabled>Select vehicle name</option>
             <option *ngFor="let vt of vehicleTypeOptions" [ngValue]="vt.id">{{ vt.name }}</option>
+            <option [ngValue]="-1">+ Create a new vehicle type</option>
           </select>
         </label>
-        <label class="f"><span>Display name <i>*</i></span><input type="text" [(ngModel)]="create.display_name" placeholder="Display name shown in fare setup and apps" /></label>
+        <label class="f" *ngIf="create.vehicle_type_id === -1"><span>New vehicle type <i>*</i></span><input [(ngModel)]="create.vehicle_type_name" maxlength="120" placeholder="e.g. Tavera, Bus, Bicycle" /></label>
+        <label class="f"><span>Display name (optional)</span><input type="text" [(ngModel)]="create.display_name" placeholder="Leave blank to use the vehicle type name" /></label>
+        <label class="f"><span>Vehicle set (optional)</span><select [(ngModel)]="create.vehicle_set_id"><option [ngValue]="null">No set</option><option *ngFor="let set of vehicleSets" [ngValue]="set.id">{{ set.name }}</option></select></label>
+        <p class="note">Joining a set makes its shared route groups available. Use Vehicle sets to create a set or change its groups.</p>
         <div class="fields">
           <label class="f"><span>Max people</span><input type="number" min="1" [(ngModel)]="create.max_people" /></label>
           <label class="f"><span>Luggage capacity</span><input type="number" min="0" [(ngModel)]="create.luggage_capacity" /></label>
@@ -2371,13 +2391,42 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     if (action.kind === 'toggle-route' && route) { this.toggleRouteActive(route); return; }
     const owningId = action.kind === 'edit-route' ? route?.city_vehicle_type_id : action.kind === 'edit-group' ? group?.city_vehicle_type_id : action.vehicleId;
     const groupVehicleId = action.kind === 'edit-group' ? this.routes.find(row => group?.route_ids.includes(row.id) && row.city_vehicle_type_id !== null)?.city_vehicle_type_id : null;
-    const vehicle = this.vehicles.find(row => row.id === owningId) ?? this.vehicles.find(row => row.id === groupVehicleId) ?? this.vehicles.find(row => row.id === action.vehicleId) ?? (action.kind.startsWith('edit-') ? this.vehicles[0] : undefined);
+    const vehicle = this.vehicles.find(row => (row.mode_row_ids ?? [row.id]).includes(owningId ?? -1)) ?? this.vehicles.find(row => (row.mode_row_ids ?? [row.id]).includes(groupVehicleId ?? -1)) ?? this.vehicles.find(row => (row.mode_row_ids ?? [row.id]).includes(action.vehicleId ?? -1)) ?? (action.kind.startsWith('edit-') ? this.vehicles[0] : undefined);
     if (!vehicle) { this.toast.warning('Choose a city vehicle first.'); return; }
     if (action.kind === 'add-route') this.newRouteFor(vehicle);
     if (action.kind === 'edit-route' && route) this.editRouteFor(vehicle, route.id);
     if (action.kind === 'import') this.openImportChoice(vehicle);
     if (action.kind === 'add-group') { this.select(vehicle); this.groupName = ''; this.masterGroupCreateOpen = true; }
     if (action.kind === 'edit-group' && group) this.openMasterGroupEditor(vehicle, group);
+  }
+  handleOperationsCellEdit(event: { phase: 'start' | 'change' | 'save' | 'cancel'; id: number; field: 'name' | 'seats' | 'bags'; value?: string }): void {
+    const vehicle = this.vehicles.find(row => row.id === event.id);
+    if (!vehicle) return;
+    if (event.phase === 'start') this.startCellEdit(vehicle, event.field);
+    if (event.phase === 'change') this.editValue = event.value ?? '';
+    if (event.phase === 'save') this.commitCellEdit(vehicle);
+    if (event.phase === 'cancel') this.cancelCellEdit();
+  }
+  handleOperationsAction(action: OperationsAction): void {
+    if (action.kind === 'add-vehicle') { this.openCreate(); return; }
+    if (action.kind === 'vehicle-types') { this.openTypes(); return; }
+    if (action.kind === 'vehicle-sets') { this.vehicleSetsOpen = true; return; }
+    if (action.kind === 'copy-vehicles' || action.kind === 'bulk-enable' || action.kind === 'bulk-disable' || action.kind === 'export-vehicles') {
+      this.selectedIds = new Set(action.ids ?? []);
+      if (action.kind === 'copy-vehicles') this.openCopyModal();
+      if (action.kind === 'bulk-enable') this.bulkSetActive(true);
+      if (action.kind === 'bulk-disable') this.bulkSetActive(false);
+      if (action.kind === 'export-vehicles') this.bulkExport();
+      return;
+    }
+    const vehicle = this.vehicles.find(row => row.id === action.id);
+    if (action.kind === 'edit-vehicle' && vehicle) { this.openCommonDrawer(vehicle); return; }
+    if (action.kind === 'toggle-vehicle' && vehicle) { this.toggleActiveFor(vehicle); return; }
+    if (action.kind === 'vehicle-layouts' && vehicle) { this.openLayoutsList(vehicle); return; }
+    if (action.kind === 'vehicle-assets' && vehicle) { this.openAppAssets(vehicle); return; }
+    if (action.kind === 'vehicle-drivers' && vehicle) { this.openOperationsDrawer(vehicle, 'drivers'); return; }
+    if (action.kind === 'vehicle-fare' && vehicle) { const mode = this.fareRideTypes.find(row => row.id === action.rideTypeId); if (mode) this.openFareDrawer(vehicle, mode); return; }
+    this.handleMasterAction(action as MasterAction);
   }
   @ViewChild(FixedRoutesComponent) private fixedRoutes?: FixedRoutesComponent;
 
@@ -3180,6 +3229,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     if (cityId == null) return;
 
     this.loading = true;
+    this.supportErrors.delete('vehicles');
     this.api.get<{
       data: CityVehicleRow[];
       available_ride_types?: RideTypeRef[];
@@ -3195,7 +3245,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
         this.applyDeepLink();
         this.applyView();
       },
-      error: () => { if (this.cityId !== cityId) return; this.loading = false; this.toast.error('Failed to load vehicles'); },
+      error: () => { if (this.cityId !== cityId) return; this.loading = false; this.supportErrors.add('vehicles'); this.toast.error('Failed to load vehicles'); },
     });
 
     this.api.get<{ data: VehicleTypeRow[] }>('/admin/vehicle-types-global').subscribe({
@@ -3209,12 +3259,26 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.loadRoutes();
     this.loadGroups();
     this.loadDrivers();
+    this.supportLoading.add('sets'); this.supportErrors.delete('sets');
+    this.api.get<{ data: SetupVehicleSet[] }>(`/admin/cities/${cityId}/vehicle-sets`).subscribe({
+      next: res => { if (this.cityId === cityId) { this.supportLoading.delete('sets'); this.vehicleSets = res.data ?? []; } },
+      error: () => { if (this.cityId === cityId) { this.supportLoading.delete('sets'); this.supportErrors.add('sets'); this.vehicleSets = []; } },
+    });
   }
 
   /** Full reload after a mutation. Same staging as the initial load. */
   refresh(): void { this.load(); }
+  vehicleSetsOpen = false;
+  vehicleSets: SetupVehicleSet[] = [];
+  supportLoading = new Set<string>();
+  supportErrors = new Set<string>();
+  get operationsLoading(): boolean { return this.loading || this.supportLoading.size > 0; }
+  get operationsLoadError(): string { return this.supportErrors.size ? 'Some workspace information could not be loaded. Refresh to try again before making changes.' : ''; }
 
   private resetData(): void {
+    this.supportLoading.clear(); this.supportErrors.clear();
+    this.vehicleSetsOpen = false;
+    this.vehicleSets = [];
     this.masterEditGroupId = null;
     this.rows = []; this.vehicles = []; this.visible = [];
     this.routes = []; this.groups = []; this.cityDrivers = []; this.layouts = [];
@@ -3224,31 +3288,35 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   loadRoutes(): void {
     const cityId = this.cityId;
     if (cityId == null) { this.routes = []; return; }
+    this.supportLoading.add('routes'); this.supportErrors.delete('routes');
     this.api.get<{ data: RouteLite[] }>(`/admin/cities/${cityId}/fixed-routes`).subscribe({
-      next: (res) => { if (this.cityId !== cityId) return; this.routes = res?.data ?? []; this.recompute(); },
-      error: () => { if (this.cityId !== cityId) return; this.routes = []; },
+      next: (res) => { if (this.cityId !== cityId) return; this.supportLoading.delete('routes'); this.routes = res?.data ?? []; this.recompute(); },
+      error: () => { if (this.cityId !== cityId) return; this.supportLoading.delete('routes'); this.supportErrors.add('routes'); this.routes = []; },
     });
   }
 
   loadGroups(): void {
     const cityId = this.cityId;
     if (cityId == null) { this.groups = []; return; }
+    this.supportLoading.add('groups'); this.supportErrors.delete('groups');
     this.api.get<{ data: GroupRow[] }>(`/admin/cities/${cityId}/route-groups`).subscribe({
       next: (res) => {
         if (this.cityId !== cityId) return;
+        this.supportLoading.delete('groups');
         this.groups = (res?.data ?? []).map((g) => ({ ...g, route_ids: [...(g.route_ids ?? [])], driver_user_ids: [...(g.driver_user_ids ?? [])] }));
         this.recompute();
       },
-      error: () => { if (this.cityId !== cityId) return; this.groups = []; },
+      error: () => { if (this.cityId !== cityId) return; this.supportLoading.delete('groups'); this.supportErrors.add('groups'); this.groups = []; },
     });
   }
 
   loadDrivers(): void {
     const cityId = this.cityId;
     if (cityId == null) { this.cityDrivers = []; return; }
+    this.supportLoading.add('drivers'); this.supportErrors.delete('drivers');
     this.api.get<{ data: DriverOpt[] }>(`/admin/cities/${cityId}/route-group-drivers`).subscribe({
-      next: (res) => { if (this.cityId !== cityId) return; this.cityDrivers = res?.data ?? []; this.recompute(); },
-      error: () => { if (this.cityId !== cityId) return; this.cityDrivers = []; },
+      next: (res) => { if (this.cityId !== cityId) return; this.supportLoading.delete('drivers'); this.cityDrivers = res?.data ?? []; this.recompute(); },
+      error: () => { if (this.cityId !== cityId) return; this.supportLoading.delete('drivers'); this.supportErrors.add('drivers'); this.cityDrivers = []; },
     });
   }
 
@@ -3580,6 +3648,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.api.post<{ vehicle_type: CityVehicleRow; message?: string }>(`/admin/cities/${this.cityId}/vehicle-types`, {
       ride_type_id: rt.id,
       vehicle_type_id: v.vehicle_type_id,
+      vehicle_set_id: v.vehicle_set_id ?? (v.vehicle_set_ids?.length === 1 ? v.vehicle_set_ids[0] : null),
       display_name: v.display_name,
       max_people: v.max_people,
       luggage_capacity: v.luggage_capacity,
@@ -3601,15 +3670,18 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   openCreate(): void { this.create = this.blankCreate(); this.createOpen = true; }
 
   get createValid(): boolean {
-    return this.create.vehicle_type_id != null && this.create.display_name.trim().length > 0;
+    return (this.create.vehicle_type_id === -1 ? !!this.create.vehicle_type_name.trim() : this.create.vehicle_type_id != null) && !!this.createDisplayName;
   }
+  get createDisplayName(): string { return this.create.display_name.trim() || (this.create.vehicle_type_id === -1 ? this.create.vehicle_type_name.trim() : this.vehicleTypeOptions.find(type => type.id === this.create.vehicle_type_id)?.name ?? ''); }
 
   submitCreate(): void {
     if (!this.createValid || this.creating || this.cityId == null) return;
     this.creating = true;
     this.api.post<{ vehicle_type: CityVehicleRow }>(`/admin/cities/${this.cityId}/vehicle-types`, {
-      vehicle_type_id: this.create.vehicle_type_id,
-      display_name: this.create.display_name.trim(),
+      vehicle_type_id: this.create.vehicle_type_id === -1 ? null : this.create.vehicle_type_id,
+      vehicle_type_name: this.create.vehicle_type_id === -1 ? this.create.vehicle_type_name.trim() : null,
+      vehicle_set_id: this.create.vehicle_set_id,
+      display_name: this.createDisplayName,
       max_people: this.create.max_people,
       luggage_capacity: this.create.luggage_capacity,
       is_active: true,
@@ -3726,7 +3798,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.groupSaving = true;
     this.api.post(`/admin/cities/${this.cityId}/route-groups`, {
       name: this.groupName.trim(),
-      city_vehicle_type_id: this.selected?.id ?? null,
+      city_vehicle_type_id: this.rows.find(row => (this.selected?.mode_row_ids ?? []).includes(row.id) && row.vehicle_set_id)?.id ?? this.selected?.id ?? null,
     }).subscribe({
       next: () => { this.groupSaving = false; this.groupOpen = false; this.masterGroupCreateOpen = false; this.masterGroupCreatedVersion++; this.toast.success('Route group created'); this.loadGroups(); },
       error: (err) => { this.groupSaving = false; this.toast.error(err?.error?.message || 'Could not create group'); },
@@ -3980,8 +4052,9 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     const vId = Number(v.id);
     const mine = new Set(this.routes.filter((r) => r.city_vehicle_type_id != null && Number(r.city_vehicle_type_id) === vId).map((r) => r.id));
     return this.groups.filter((g) => {
+      if ((g.vehicle_set_ids ?? []).some(id => (v.vehicle_set_ids ?? (v.vehicle_set_id ? [v.vehicle_set_id] : [])).includes(id))) return true;
       // Bound groups belong to exactly one vehicle — shown there even when empty.
-      if (g.city_vehicle_type_id != null) return Number(g.city_vehicle_type_id) === vId;
+      if (g.city_vehicle_type_id != null) return (v.mode_row_ids ?? [vId]).includes(Number(g.city_vehicle_type_id));
       // Legacy unbound groups fall back to route ownership only; a route-less
       // unbound group belongs to no vehicle (it no longer leaks onto every row).
       return g.route_ids.some((id) => mine.has(id));
@@ -4432,7 +4505,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
 
   // ── helpers ────────────────────────────────────────────────
   private blankCreate() {
-    return { vehicle_type_id: null as number | null, display_name: '', max_people: 4, luggage_capacity: 0 };
+    return { vehicle_type_id: null as number | null, vehicle_type_name: '', vehicle_set_id: null as number | null, display_name: '', max_people: 4, luggage_capacity: 0 };
   }
 
   private groupKey(row: CityVehicleRow): string {
@@ -4450,7 +4523,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     return Array.from(buckets.values()).map((bucket) => {
       const rep = bucket.find((r) => this.kindOf(r.ride_type_name) === 'private') ?? bucket[0];
       const mode_ids = order.filter((id) => bucket.some((row) => row.ride_type_id === id));
-      return { ...rep, mode_ids };
+      return { ...rep, mode_ids, mode_row_ids: bucket.map(row => row.id), vehicle_set_ids: [...new Set(bucket.flatMap(row => row.vehicle_set_id ? [row.vehicle_set_id] : []))] };
     });
   }
 }

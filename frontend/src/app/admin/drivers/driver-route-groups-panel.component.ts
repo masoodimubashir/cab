@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
 
-interface GroupOpt { id: number; name: string; city_id?: number; city_name?: string; is_active: boolean; }
+interface GroupOpt { id: number; name: string; city_id?: number; city_name?: string; is_active: boolean; vehicle_set_names?: string[]; matches_vehicle_set?: boolean; }
 interface EffRoute { id: number; name: string; origin_name: string; dest_name: string; scope: string; is_active: boolean; }
 interface Payload { assigned_group_ids: number[]; groups: GroupOpt[]; effective_routes: EffRoute[]; }
 
@@ -33,6 +33,8 @@ interface Payload { assigned_group_ids: number[]; groups: GroupOpt[]; effective_
             <span>
               <strong>{{ g.name }}</strong>
               <small class="drg__city" *ngIf="g.city_name">· {{ g.city_name }}</small>
+              <small class="drg__city" *ngIf="!g.is_active">· Inactive group: route access paused</small>
+              <small class="drg__city" *ngIf="g.vehicle_set_names?.length">· {{ g.vehicle_set_names?.join(', ') }}{{ g.matches_vehicle_set ? ' · Matches driver vehicle' : '' }}</small>
             </span>
           </label>
           <button class="drg__save" [disabled]="saving || !driverId" (click)="save()">{{ saving ? 'Saving…' : 'Save route groups' }}</button>
@@ -126,7 +128,7 @@ export class DriverRouteGroupsPanelComponent implements OnChanges {
     this.api.get<Payload>(`/admin/drivers/${this.driverId}/route-groups`).subscribe({
       next: (res) => {
         if (this.driverId !== driverId) return; this.loading = false;
-        this.groups = res?.groups || [];
+        this.groups = [...(res?.groups || [])].sort((a, b) => Number(!!b.matches_vehicle_set) - Number(!!a.matches_vehicle_set));
         this.effective = res?.effective_routes || [];
         this.assigned = new Set<number>(res?.assigned_group_ids || []);
       },

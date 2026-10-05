@@ -5,10 +5,10 @@ import { ButtonComponent, IconComponent } from '../../ui';
 
 export type MasterSection = 'routes' | 'drivers' | 'route-groups' | 'vehicle-configuration';
 export type RouteGrouping = 'route-set' | 'city-area' | 'scope' | 'type' | 'all-routes' | 'routes';
-export interface MasterVehicle { id: number; display_name: string; vehicle_type_id: number | null; vehicle_type_name?: string | null; max_people: number; luggage_capacity: number; is_active: boolean; }
+export interface MasterVehicle { image_url?: string | null; id: number; display_name: string; vehicle_type_id: number | null; vehicle_type_name?: string | null; max_people: number; luggage_capacity: number; is_active: boolean; vehicle_set_id?: number | null; vehicle_set_ids?: number[]; mode_row_ids?: number[]; }
 export interface MasterRoute { id: number; name: string; scope: string; origin_name: string; dest_name: string; flat_fare: number | null; booking_window_hours: number | null; is_active: boolean; city_vehicle_type_id: number | null; stops?: { id: number }[]; }
-export interface MasterGroup { id: number; name: string; is_active: boolean; city_vehicle_type_id: number | null; route_ids: number[]; driver_user_ids: number[]; }
-export interface MasterDriver { id: number; user_id: number; name: string; phone: string | null; city_vehicle_type_id: number | null; vehicle_type_id: number | null; vehicle_reg_no: string | null; vehicle_model: string | null; vehicle_color: string | null; }
+export interface MasterGroup { id: number; name: string; is_active: boolean; city_vehicle_type_id: number | null; route_ids: number[]; driver_user_ids: number[]; vehicle_set_ids?: number[]; }
+export interface MasterDriver { avatar_url?: string | null; id: number; user_id: number; name: string; phone: string | null; city_vehicle_type_id: number | null; vehicle_type_id: number | null; vehicle_reg_no: string | null; vehicle_model: string | null; vehicle_color: string | null; }
 export interface MasterAction { kind: 'add-route' | 'edit-route' | 'toggle-route' | 'import' | 'add-group' | 'edit-group' | 'group-drivers' | 'delete-group' | 'driver'; id?: number; vehicleId?: number | null; }
 interface Node { key: string; name: string; kind: 'root' | 'scope' | 'area' | 'type' | 'group' | 'route'; ids: number[]; children: Node[]; id?: number; scope?: string; }
 interface Row { node: Node; depth: number; trackKey: string; }
@@ -51,10 +51,17 @@ export class MasterExplorerComponent implements OnChanges {
   }
   get selectedVehicle(): MasterVehicle | undefined { return this.vehicles.find(vehicle => vehicle.id === this.vehicleId); }
   get vehicleRoutes(): MasterRoute[] {
-    const groupIds = new Set(this.groups.filter(group => group.city_vehicle_type_id === this.vehicleId).flatMap(group => group.route_ids));
+    const groupIds = new Set(this.groups.filter(group => this.groupUsesVehicle(group)).flatMap(group => group.route_ids));
     return this.routes.filter(route => this.vehicleId === null || route.city_vehicle_type_id === this.vehicleId || groupIds.has(route.id));
   }
-  get vehicleGroups(): MasterGroup[] { return this.groups.filter(group => this.vehicleId === null || group.city_vehicle_type_id === this.vehicleId || group.route_ids.some(id => this.vehicleRoutes.some(route => route.id === id))); }
+  private groupUsesVehicle(group: MasterGroup): boolean {
+    if (this.vehicleId === null || group.city_vehicle_type_id === this.vehicleId) return true;
+    const vehicle = this.selectedVehicle;
+    if (!vehicle) return false;
+    return (vehicle.mode_row_ids ?? [vehicle.id]).includes(group.city_vehicle_type_id ?? -1)
+      || (group.vehicle_set_ids ?? []).some(id => (vehicle.vehicle_set_ids ?? (vehicle.vehicle_set_id ? [vehicle.vehicle_set_id] : [])).includes(id));
+  }
+  get vehicleGroups(): MasterGroup[] { return this.groups.filter(group => this.groupUsesVehicle(group) || group.route_ids.some(id => this.vehicleRoutes.some(route => route.id === id))); }
   get vehicleDrivers(): MasterDriver[] {
     const vehicle = this.selectedVehicle;
     return this.drivers.filter(driver => !vehicle || driver.city_vehicle_type_id === vehicle.id || (vehicle.vehicle_type_id !== null && driver.vehicle_type_id === vehicle.vehicle_type_id) || this.driverGroups(driver.user_id).some(group => this.vehicleGroups.some(item => item.id === group.id)));

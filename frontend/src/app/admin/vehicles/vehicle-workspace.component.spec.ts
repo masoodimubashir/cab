@@ -73,9 +73,35 @@ describe('Vehicle workspace group workflow', () => {
     page.groupSearch = 'missing';
     expect(page.navigationGroups(vehicle)).toEqual([]);
   });
+  it('shows shared groups for a member even when its displayed row uses another ride mode', () => {
+    const member = { id: 6, mode_row_ids: [6, 7], vehicle_set_ids: [20] };
+    group.vehicle_set_ids = [20];
+    expect(page.groupsForVehicle(member)).toEqual([group]);
+    expect(page.routesForVehicle(member).map((route: any) => route.id)).toEqual([1]);
+    member.vehicle_set_ids = [];
+    expect(page.groupsForVehicle(member)).toEqual([]);
+  });
 
   it('searches ungrouped routes without showing inactive or other-vehicle routes', () => {
     page.groupRouteSearch = ' market ';
     expect(page.groupRouteCandidates(vehicle).map((r: any) => r.id)).toEqual([2]);
+  });
+  it('connects compact vehicle actions to the existing fare, fleet and copy editors', () => {
+    page.vehicles = [vehicle]; page.rideTypes = [{ id: 7, name: 'Private' }];
+    page.openFareDrawer = jasmine.createSpy(); page.openOperationsDrawer = jasmine.createSpy(); page.openCopyModal = jasmine.createSpy();
+    page.handleOperationsAction({ kind: 'vehicle-fare', id: 1, rideTypeId: 7 });
+    expect(page.openFareDrawer).toHaveBeenCalledWith(vehicle, page.fareRideTypes[0]);
+    page.handleOperationsAction({ kind: 'vehicle-drivers', id: 1 });
+    expect(page.openOperationsDrawer).toHaveBeenCalledWith(vehicle, 'drivers');
+    page.handleOperationsAction({ kind: 'copy-vehicles', ids: [1] });
+    expect([...page.selectedIds]).toEqual([1]); expect(page.openCopyModal).toHaveBeenCalled();
+  });
+  it('keeps inline edits connected to the existing save and cancel behavior', () => {
+    page.vehicles = [vehicle]; page.startCellEdit = jasmine.createSpy(); page.commitCellEdit = jasmine.createSpy(); page.cancelCellEdit = jasmine.createSpy();
+    page.handleOperationsCellEdit({ phase: 'start', id: 1, field: 'seats' });
+    expect(page.startCellEdit).toHaveBeenCalledWith(vehicle, 'seats');
+    page.handleOperationsCellEdit({ phase: 'change', id: 1, field: 'seats', value: '9' }); expect(page.editValue).toBe('9');
+    page.handleOperationsCellEdit({ phase: 'save', id: 1, field: 'seats' }); expect(page.commitCellEdit).toHaveBeenCalledWith(vehicle);
+    page.handleOperationsCellEdit({ phase: 'cancel', id: 1, field: 'seats' }); expect(page.cancelCellEdit).toHaveBeenCalled();
   });
 });
