@@ -21,8 +21,14 @@
       </button>
     </label>
 
-    <!-- Scope / Radius Tabs (when not searching and location available) -->
-    <div class="fb-dist-filter-bar" *ngIf="!loading && !search && userCoords && routes.length">
+    <div class="fb-dist-filter-bar fb-route-scope" role="group" aria-label="Route category">
+      <button type="button" class="fb-dist-tab dc-press" [class.fb-dist-tab--active]="routeScope === 'all'" [attr.aria-pressed]="routeScope === 'all'" (click)="setRouteScope('all')">All</button>
+      <button type="button" class="fb-dist-tab dc-press" [class.fb-dist-tab--active]="routeScope === 'local'" [attr.aria-pressed]="routeScope === 'local'" (click)="setRouteScope('local')">Local</button>
+      <button type="button" class="fb-dist-tab dc-press" [class.fb-dist-tab--active]="routeScope === 'outstation'" [attr.aria-pressed]="routeScope === 'outstation'" (click)="setRouteScope('outstation')">Outstation</button>
+    </div>
+
+    <!-- Radius tabs apply within the selected category. -->
+    <div class="fb-dist-filter-bar" *ngIf="!loading && !search && userCoords && scopedRoutes.length">
       <button type="button" class="fb-dist-tab dc-press"
               [class.fb-dist-tab--active]="radiusFilterActive"
               (click)="setRadiusFilter(true)">
@@ -35,8 +41,14 @@
               (click)="setRadiusFilter(false)">
         <ion-icon name="layers-outline"></ion-icon>
         <span>All routes</span>
-        <span class="fb-tab-count">{{ routes.length }}</span>
+        <span class="fb-tab-count">{{ scopedRoutes.length }}</span>
       </button>
+    </div>
+
+    <div class="fb-location-control">
+      <button type="button" class="fb-location-button dc-press" [disabled]="locating" (click)="refreshLocation()"><ion-icon name="locate-outline"></ion-icon>{{ locating ? 'Finding your location…' : (userCoords ? 'Refresh location' : 'Use current location') }}</button>
+      <p class="fb-location-note" *ngIf="locationMessage" role="status">{{ locationMessage }}</p>
+      <p class="fb-location-note" *ngIf="userCoords">Distance is measured directly to the pickup stop.<span *ngIf="locationAccuracy != null && locationAccuracy > 50"> Your GPS location is approximate.</span></p>
     </div>
 
     <!-- Active Search Scope Indicator (when searching) -->
@@ -75,15 +87,17 @@
             <span class="fb-route-endpoints">{{ r.origin_name }} → {{ r.dest_name }}</span>
             <span class="fb-route-stops-tag">{{ (r.stops || []).length }} {{ (r.stops || []).length === 1 ? 'stop' : 'stops' }}</span>
           </span>
-          <span class="fb-route-nearest" *ngIf="r.nearest_pickup_stop">
-            <ion-icon name="walk-outline"></ion-icon>
-            <span class="fb-route-nearest__txt">Nearest: <b>{{ r.nearest_pickup_stop.name }}</b> ({{ formatDistance(r.nearest_pickup_stop.distance_meters) }})</span>
-          </span>
         </span>
         <span class="bk-opt__r">
           <span class="fb-route-fare-val">₹{{ r.flat_fare }}</span>
           <small class="fb-route-fare-unit">a seat</small>
-          <ion-icon name="chevron-forward-outline" class="fb-route-arrow"></ion-icon>
+        </span>
+        <span class="fb-route-bottom">
+          <span class="fb-route-nearest" *ngIf="r.nearest_pickup_stop">
+            <ion-icon name="walk-outline"></ion-icon>
+            <span class="fb-route-nearest__txt">Nearest: <b>{{ r.nearest_pickup_stop.name }}</b> ({{ formatDistance(r.nearest_pickup_stop.distance_meters) }})</span>
+          </span>
+          <ion-icon name="chevron-forward-outline" class="fb-route-arrow" aria-hidden="true"></ion-icon>
         </span>
       </button>
     </ng-container>
@@ -108,21 +122,26 @@
       </ng-container>
 
       <!-- Case 2: Radius filter active, but 0 routes within 1 km (while routes exist in city) -->
-      <ng-container *ngIf="!search.trim() && radiusFilterActive && userCoords && routes.length">
+      <ng-container *ngIf="!search.trim() && radiusFilterActive && userCoords && scopedRoutes.length">
         <p class="fb-empty-title">
           No pickup stops within 1 km
         </p>
         <p class="fb-empty-sub">
-          There are {{ routes.length }} routes in {{ selectedCityName }} slightly further from your current spot.
+          There are {{ scopedRoutes.length }} {{ routeScope === 'all' ? '' : routeScope }} routes in {{ selectedCityName }} further from your current spot.
         </p>
         <button type="button" class="fb-switch-city-btn dc-press" (click)="setRadiusFilter(false)">
           <ion-icon name="layers-outline"></ion-icon>
-          <span>View all {{ routes.length }} routes in {{ selectedCityName }}</span>
+          <span>View all {{ scopedRoutes.length }} {{ routeScope === 'all' ? '' : routeScope }} routes in {{ selectedCityName }}</span>
         </button>
       </ng-container>
 
       <!-- Case 3: No routes in selected city at all -->
-      <ng-container *ngIf="!search.trim() && (!radiusFilterActive || !routes.length)">
+      <ng-container *ngIf="!search.trim() && routeScope !== 'all' && !scopedRoutes.length">
+        <p class="fb-empty-title">No {{ routeScope }} routes in {{ selectedCityName }}</p>
+        <p class="fb-empty-sub">Try the other category or show all routes.</p>
+        <button type="button" class="fb-switch-city-btn dc-press" (click)="setRouteScope('all')">Show all categories</button>
+      </ng-container>
+      <ng-container *ngIf="!search.trim() && routeScope === 'all' && (!radiusFilterActive || !routes.length)">
         <p class="fb-empty-title" *ngIf="cityId != null && cityId > 0">
           No fixed routes found in <b>{{ selectedCityName }}</b>
         </p>

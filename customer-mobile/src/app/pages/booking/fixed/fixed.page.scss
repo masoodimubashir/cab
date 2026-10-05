@@ -1056,6 +1056,32 @@
   }
 }
 
+.fb-route-opt {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 12px !important;
+  row-gap: 4px !important;
+
+  .bk-opt__ic { grid-column: 1; grid-row: 1 / 3; }
+  .bk-opt__main { grid-column: 2; grid-row: 1; }
+  .bk-opt__r { grid-column: 3; grid-row: 1; }
+  .fb-route-bottom {
+    grid-column: 2 / 4;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  .fb-route-nearest { flex: 1; min-width: 0; margin-top: 0; }
+  .fb-route-arrow {
+    flex: 0 0 15px;
+    font-size: 15px;
+    color: var(--dc-ink-faint, #94A3B8);
+    margin-left: auto;
+    transition: transform 0.15s ease, color 0.15s ease;
+  }
+}
+
 /* ─── Skeleton Loading Cards (when loading routes or departures) ─── */
 .fb-route-skeletons {
   display: flex;
@@ -1128,11 +1154,25 @@
 /* ─── Search Field & Clear Button ─── */
 .fb-search-field {
   position: relative;
-  display: block;
-  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 16px;
+  margin: 4px 0 16px;
+  box-sizing: border-box;
 
   .bk-field__input {
-    padding-right: 36px !important;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 12px 32px 12px 0;
+    box-sizing: border-box;
+    font-size: 16px;
+    line-height: 22px;
+    appearance: none;
+
+    &::-webkit-search-cancel-button { display: none; }
   }
 
   .fb-search-clear-btn {
@@ -1247,5 +1287,26 @@
     color: var(--dc-ink, #0D1B2A);
     font-weight: 750;
   }
+}
+
+.fb-location-note {
+  margin: 0 2px 12px;
+  color: var(--dc-ink-soft, #64748B);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.fb-location-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  margin-bottom: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--dc-green, #12B35B);
+  font-size: 12px;
+  font-weight: 700;
+  ion-icon { font-size: 17px; }
+  &:disabled { opacity: .6; }
 }
 
