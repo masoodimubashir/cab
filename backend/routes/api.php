@@ -376,6 +376,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
 
         Route::get('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'index'])->middleware('permission:vehicles|pricing|manual_dispatch|rides');
         Route::post('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'store'])->middleware('permission:vehicles');
+        Route::post('/admin/cities/{city}/vehicle-types/batch', [AdminVehicleTypesController::class, 'storeBatch'])->middleware('permission:vehicles');
         Route::post('/admin/cities/{city}/vehicle-types/copy-to-city', [AdminVehicleTypesController::class, 'copyToCity'])->middleware('permission:vehicles');
         Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'show'])->middleware('permission:vehicles|pricing');
         Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update'])->middleware('permission:vehicles');
@@ -631,6 +632,9 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rid
     Route::patch('/admin/cities/{city}/fixed-routes/{route}', [AdminFixedRoutesController::class, 'update']);
 
     // Route Groups — reusable bundles of fixed routes; the unit of driver route allocation.
+    Route::post('/admin/cities/{city}/route-groups/setup', [AdminRouteGroupsController::class, 'setup']);
+    Route::post('/admin/cities/{city}/route-groups/setup-batch', [AdminRouteGroupsController::class, 'setupBatch']);
+    Route::put('/admin/cities/{city}/route-groups/{routeGroup}/setup', [AdminRouteGroupsController::class, 'setup']);
     Route::get('/admin/cities/{city}/route-groups', [AdminRouteGroupsController::class, 'index']);
     Route::post('/admin/cities/{city}/route-groups', [AdminRouteGroupsController::class, 'store']);
     Route::patch('/admin/cities/{city}/route-groups/{routeGroup}', [AdminRouteGroupsController::class, 'update']);

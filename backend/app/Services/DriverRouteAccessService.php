@@ -29,6 +29,8 @@ class DriverRouteAccessService
     public function effectiveRouteIds(int $driverUserId): array
     {
         return DB::table('driver_route_group as drg')
+            ->join('route_groups as rg', 'rg.id', '=', 'drg.route_group_id')
+            ->where('rg.is_active', true)
             ->join('route_group_route as rgr', 'rgr.route_group_id', '=', 'drg.route_group_id')
             ->where('drg.driver_user_id', $driverUserId)
             ->distinct()
@@ -45,6 +47,8 @@ class DriverRouteAccessService
     public function canAccessRoute(int $driverUserId, int $routeId): bool
     {
         return DB::table('driver_route_group as drg')
+            ->join('route_groups as rg', 'rg.id', '=', 'drg.route_group_id')
+            ->where('rg.is_active', true)
             ->join('route_group_route as rgr', 'rgr.route_group_id', '=', 'drg.route_group_id')
             ->where('drg.driver_user_id', $driverUserId)
             ->where('rgr.route_id', $routeId)

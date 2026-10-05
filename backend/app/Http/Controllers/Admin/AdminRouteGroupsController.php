@@ -7,7 +7,9 @@ use App\Models\Driver;
 use App\Models\Route;
 use App\Models\RouteGroup;
 use App\Models\CityVehicleType;
+use App\Models\VehicleSet;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
@@ -17,6 +19,75 @@ use Illuminate\Validation\Rule;
  */
 class AdminRouteGroupsController
 {
+    public function setupBatch(Request $request, City $city)
+    {
+        $data = $request->validate(['names' => ['required', 'array', 'min:1', 'max:30'], 'names.*' => ['required', 'string', 'max:120', 'distinct:ignore_case']]);
+        $groups = DB::transaction(function () use ($request, $city, $data) {
+            $body = $request->except('names');
+            $groups = [];
+            foreach ($data['names'] as $name) {
+                $body['name'] = trim($name);
+                $response = $this->setup(new Request($body), $city);
+                $group = $response->getData(true)['route_group'];
+                $groups[] = $group;
+                // All groups in this quick batch use the same fleet. Reuse the
+                // first group's generated set instead of moving its vehicles.
+                $body['vehicle_ids'] = [];
+                $body['vehicle_set_ids'] = $group['vehicle_set_ids'];
+            }
+            return $groups;
+        });
+        return response()->json(['data' => $groups, 'message' => count($groups).' groups created.'], 201);
+    }
+
+    public function setup(Request $request, City $city, ?RouteGroup $routeGroup = null)
+    {
+        if ($routeGroup) $this->assertCityOwnsGroup($city, $routeGroup);
+        $data = $this->validatePayload($request, $city, $routeGroup);
+        $sharing = $request->validate([
+            'driver_user_ids' => ['present', 'array'], 'driver_user_ids.*' => ['integer'],
+            'vehicle_set_ids' => ['present', 'array'],
+            'vehicle_set_ids.*' => ['integer', Rule::exists('vehicle_sets', 'id')->where('city_id', $city->id)],
+            'vehicle_ids' => ['present', 'array'],
+            'vehicle_ids.*' => ['integer', Rule::exists('city_vehicle_types', 'id')->where('city_id', $city->id)],
+        ]);
+        $routeIds = $this->validRouteIds($city, $data['route_ids'] ?? []);
+        $driverIds = array_values(array_unique($sharing['driver_user_ids']));
+        if ($driverIds && Driver::query()->forCity((int) $city->id)->whereIn('user_id', $driverIds)->count() !== count($driverIds)) {
+            abort(422, 'Some drivers are not registered in this city.');
+        }
+        $isNew = $routeGroup === null;
+        $group = DB::transaction(function () use ($city, $routeGroup, $data, $sharing, $routeIds, $driverIds) {
+            $vehicleIds = array_values(array_unique($sharing['vehicle_ids']));
+            $members = CityVehicleType::query()->whereIn('id', $vehicleIds)->lockForUpdate()->get();
+            if ($members->contains(fn ($vehicle) => $vehicle->vehicle_set_id !== null)) {
+                abort(422, 'A selected vehicle already belongs to a set. Select its existing vehicle set instead.');
+            }
+            $group = $routeGroup ?? new RouteGroup(['city_id' => $city->id]);
+            $group->fill([
+                'name' => trim($data['name']), 'is_active' => $data['is_active'] ?? true,
+                'city_vehicle_type_id' => $data['city_vehicle_type_id'] ?? null,
+            ])->save();
+            $setIds = $sharing['vehicle_set_ids'];
+            if ($vehicleIds) {
+                // Build sharing as part of group setup, without moving members of other sets.
+                $baseName = mb_substr($group->name, 0, 100).' vehicles';
+                $setName = $baseName;
+                for ($suffix = 2; VehicleSet::query()->where('city_id', $city->id)->where('name', $setName)->exists(); $suffix++) {
+                    $setName = $baseName.' ('.$suffix.')';
+                }
+                $set = VehicleSet::query()->create(['city_id' => $city->id, 'name' => $setName, 'sort_order' => 0]);
+                CityVehicleType::query()->whereIn('id', $vehicleIds)->update(['vehicle_set_id' => $set->id]);
+                $setIds[] = $set->id;
+            }
+            $group->routes()->sync($routeIds);
+            $group->drivers()->sync($driverIds);
+            $group->vehicleSets()->sync(array_unique($setIds));
+            return $group;
+        });
+        return response()->json(['route_group' => $this->shape($group->fresh(['routes', 'drivers', 'vehicleSets'])), 'message' => 'Group setup saved.'], $isNew ? 201 : 200);
+    }
+
     public function index(City $city)
     {
         $groups = RouteGroup::query()
@@ -127,13 +198,16 @@ class AdminRouteGroupsController
     {
         $drivers = Driver::query()
             ->forCity((int) $city->id)
-            ->with(['user:id,name,phone', 'cities:id,name'])
+            ->with(['user:id,name,phone,avatar_path', 'cities:id,name'])
             ->get()
             ->map(fn (Driver $d) => [
                 'id' => (int) $d->id,
                 'user_id' => (int) $d->user_id,
                 'name' => $d->user?->name ?: ('Driver #' . $d->user_id),
                 'phone' => $d->user?->phone,
+                'avatar_url' => $d->user?->avatar_path
+                    ? (str_starts_with($d->user->avatar_path, 'http') ? $d->user->avatar_path : url('/storage/'.ltrim($d->user->avatar_path, '/')))
+                    : null,
                 // Vehicle fields live on the driver, so the vehicle workspace
                 // reads the driver ⇄ city-vehicle link from here. vehicle_type_id
                 // is needed to keep reassignment inside the driver's own type.
