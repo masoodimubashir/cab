@@ -48,7 +48,13 @@ class AppBanner extends Model
             return null;
         }
 
-        return Storage::disk('public')->url($this->image_path);
+        $url = Storage::disk('public')->url($this->image_path);
+
+        // Production uploads are served by HTTPS nginx. A stale HTTP APP_URL
+        // must not make installed mobile apps request insecure banner images.
+        return app()->environment('production')
+            ? preg_replace('/^http:\/\//i', 'https://', $url)
+            : $url;
     }
 
     public function getIsCurrentlyActiveAttribute(): bool
