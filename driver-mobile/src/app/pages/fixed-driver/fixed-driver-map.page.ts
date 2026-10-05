@@ -392,8 +392,13 @@ export class FixedDriverMapPage implements OnDestroy {
     this.fitMap();
   }
 
+  get completedStopSeq(): number {
+    return ['FORMING', 'DISPATCHED'].includes(this.vehicle?.status || '')
+      ? 0 : Number(this.vehicle?.fixed_last_reached_stop_seq || 0);
+  }
+
   openStopDetail(stop: FixedStop): void {
-    const reachedSeq = Number(this.vehicle?.fixed_last_reached_stop_seq || 0);
+    const reachedSeq = this.completedStopSeq;
     const isReached = stop.seq <= reachedSeq;
     const isNext = !isReached && (reachedSeq === 0 ? stop.seq === 1 : stop.seq === reachedSeq + 1);
 
@@ -620,7 +625,7 @@ export class FixedDriverMapPage implements OnDestroy {
   }
 
   private buildStopMarker(stop: FixedStop): HTMLElement {
-    const reachedSeq = Number(this.vehicle?.fixed_last_reached_stop_seq || 0);
+    const reachedSeq = this.completedStopSeq;
     return buildStopMarkerElement({
       seq: stop.seq,
       isReached: Number(stop.seq || 0) <= reachedSeq,

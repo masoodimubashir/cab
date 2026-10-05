@@ -107,6 +107,12 @@ class FixedAvailabilityService
 
     public function firstBookableStopSeq(RouteDeparture $departure): int
     {
+        // Reaching the origin to board passengers does not mean it was passed.
+        // Only departure closes booking from that stop.
+        if (in_array($departure->status, ['FORMING', 'DISPATCHED'], true)) {
+            return 1;
+        }
+
         return max(1, ((int) ($departure->fixed_last_reached_stop_seq ?? 0)) + 1);
     }
 

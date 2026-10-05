@@ -131,17 +131,26 @@ class FixedBookingPhase4Test extends TestCase
         Sanctum::actingAs($this->driver, ['act-as:driver']);
         $url = "/api/fixed/departures/{$this->departure->id}";
         $this->postJson($url . '/depart')->assertStatus(422);
-        $this->postJson($url . '/start')->assertOk()->assertJsonPath('vehicle.status', 'DISPATCHED');
+        $this->postJson($url . '/start')->assertOk()
+            ->assertJsonPath('vehicle.status', 'DISPATCHED')
+            ->assertJsonPath('vehicle.first_bookable_stop_seq', 1);
         $this->departure->refresh();
         $this->assertNotNull($this->departure->trip_id);
         $this->assertNull($this->departure->actual_depart_at);
         $this->assertNull($this->departure->boarding_closed_at);
+        $availability = app(\App\Services\FixedAvailabilityService::class);
+        $availability->assertFutureBoardingStop($this->departure, $this->pickupStop);
         $this->postJson($url . '/start')->assertStatus(422);
-        $this->postJson($url . '/depart')->assertOk()->assertJsonPath('vehicle.status', 'DEPARTED');
+        $this->postJson($url . '/depart')->assertOk()
+            ->assertJsonPath('vehicle.status', 'DEPARTED')
+            ->assertJsonPath('vehicle.first_bookable_stop_seq', 2);
         $this->departure->refresh();
         $this->assertNotNull($this->departure->actual_depart_at);
         $this->assertNotNull($this->departure->boarding_closed_at);
         $this->postJson($url . '/depart')->assertStatus(422);
+        $this->expectException(\App\Exceptions\ReservationException::class);
+        $this->expectExceptionMessage('This pickup stop has already been passed by the vehicle.');
+        $availability->assertFutureBoardingStop($this->departure, $this->pickupStop);
     }
 
     public function test_customer_route_search_and_proximity_include_routes_beyond_default_limit(): void

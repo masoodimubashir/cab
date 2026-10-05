@@ -27,6 +27,35 @@ function load(relative, dependencies = {}, globals = {}) {
 }
 
 const helper = load('driver-mobile/src/app/core/customer-location.helper.ts');
+test('origin remains available during boarding and becomes passed only after departure', () => {
+  const Page = load('driver-mobile/src/app/pages/fixed-driver/fixed-driver.page.ts').FixedDriverPage;
+  const page = Object.create(Page.prototype);
+  Object.assign(page, {
+    activeVehicle: { status: 'DISPATCHED', fixed_last_reached_stop_seq: 1 },
+    stops: [{ id: 1, seq: 1, name: 'Origin' }, { id: 2, seq: 2, name: 'Next' }],
+    passengers: [],
+  });
+  assert.equal(page.reachedStopSeq, 1); // Arrival still enables passenger boarding actions.
+  assert.equal(page.stopGuide[0].status, 'next');
+  assert.equal(page.stopGuide[1].status, 'pending');
+  page.openStopDetail(page.stops[0]);
+  assert.equal(page.selectedStopDetail.isReached, false);
+  page.activeVehicle.status = 'DEPARTED';
+  assert.equal(page.stopGuide[0].status, 'done');
+  assert.equal(page.stopGuide[1].status, 'next');
+
+  const MapPage = load('driver-mobile/src/app/pages/fixed-driver/fixed-driver-map.page.ts').FixedDriverMapPage;
+  const mapPage = Object.create(MapPage.prototype);
+  Object.assign(mapPage, { vehicle: { status: 'DISPATCHED', fixed_last_reached_stop_seq: 1 },
+    passengers: [], citySettings: null });
+  mapPage.openStopDetail(page.stops[0]);
+  assert.equal(mapPage.selectedStopDetail.isReached, false);
+  assert.equal(mapPage.selectedStopDetail.isNext, true);
+  mapPage.vehicle.status = 'DEPARTED';
+  mapPage.openStopDetail(page.stops[0]);
+  assert.equal(mapPage.selectedStopDetail.isReached, true);
+});
+
 test('live GPS expires and coordinate-only changes invalidate markers', () => {
   const now = Date.now();
   const customer = { id: 1, status: 'BOOKED', customer_lat: 34, customer_lng: 74,

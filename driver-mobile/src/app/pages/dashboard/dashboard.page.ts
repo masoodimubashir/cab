@@ -430,16 +430,28 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   resolveBannerImageUrl(url: string | null | undefined): string {
-    if (!url) return '';
-    if (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1')) {
-      const apiBase = environment.apiUrl.replace(/\/api\/?$/i, '').replace(/\/$/, '');
-      return url.replace(/^https?:\/\/[^\/]+/, apiBase);
+    const value = url?.trim();
+    if (!value) return '';
+    const apiBase = environment.apiUrl.replace(/\/api\/?$/i, '').replace(/\/$/, '');
+
+    try {
+      const apiOrigin = new URL(apiBase);
+      const imageUrl = new URL(value, `${apiBase}/`);
+      if (!['http:', 'https:'].includes(imageUrl.protocol)) return '';
+
+      if (['localhost', '127.0.0.1', '[::1]'].includes(imageUrl.hostname)) {
+        return `${apiBase}${imageUrl.pathname}${imageUrl.search}${imageUrl.hash}`;
+      }
+
+      // Older servers can return HTTP links for uploads on our HTTPS API host.
+      if (apiOrigin.protocol === 'https:' && imageUrl.protocol === 'http:'
+        && imageUrl.host === apiOrigin.host) {
+        imageUrl.protocol = 'https:';
+      }
+      return imageUrl.href;
+    } catch {
+      return '';
     }
-    if (!/^https?:\/\//i.test(url)) {
-      const apiBase = environment.apiUrl.replace(/\/api\/?$/i, '').replace(/\/$/, '');
-      return `${apiBase}/${url.replace(/^\/+/, '')}`;
-    }
-    return url;
   }
 
   async onBannerClick(banner: AppBanner | null): Promise<void> {

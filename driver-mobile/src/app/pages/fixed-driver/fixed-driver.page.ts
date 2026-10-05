@@ -1169,7 +1169,7 @@ export class FixedDriverPage implements OnDestroy {
 
   get stopGuide(): StopGuide[] {
     if (!this.stops.length) return [];
-    const reachedSeq = this.reachedStopSeq;
+    const reachedSeq = this.completedStopSeq;
     const nextStop = this.stops.find((stop) => Number(stop.seq || 0) > reachedSeq) ?? null;
     return this.stops.map((stop) => {
       const seq = Number(stop.seq || 0);
@@ -1198,6 +1198,11 @@ export class FixedDriverPage implements OnDestroy {
 
   get reachedStopSeq(): number {
     return Number(this.activeVehicle?.fixed_last_reached_stop_seq || 0);
+  }
+
+  get completedStopSeq(): number {
+    return ['FORMING', 'DISPATCHED'].includes(this.activeVehicle?.status || '')
+      ? 0 : this.reachedStopSeq;
   }
 
   get activePassengerSummary(): Array<{ label: string; count: number }> {
@@ -2084,7 +2089,7 @@ export class FixedDriverPage implements OnDestroy {
       completedCount: 0,
       status: 'pending' as const,
     };
-    const reachedSeq = Number(this.activeVehicle?.fixed_last_reached_stop_seq || 0);
+    const reachedSeq = this.completedStopSeq;
     const isReached = stop.seq <= reachedSeq;
     const isNext = !isReached && (reachedSeq === 0 ? stop.seq === 1 : stop.seq === reachedSeq + 1);
 
@@ -2439,7 +2444,7 @@ export class FixedDriverPage implements OnDestroy {
   }
 
   private buildStopMarker(stop: FixedStop): HTMLElement {
-    const reachedSeq = Number(this.activeVehicle?.fixed_last_reached_stop_seq || 0);
+    const reachedSeq = this.completedStopSeq;
     return buildStopMarkerElement({
       seq: stop.seq,
       isReached: Number(stop.seq || 0) <= reachedSeq,
