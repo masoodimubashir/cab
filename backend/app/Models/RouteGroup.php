@@ -49,6 +49,11 @@ class RouteGroup extends Model
         return $this->belongsToMany(Route::class, 'route_group_route')->withTimestamps();
     }
 
+    public function vehicleSets(): BelongsToMany
+    {
+        return $this->belongsToMany(VehicleSet::class)->withTimestamps();
+    }
+
     /** Drivers (users) this group is assigned to (many-to-many). */
     public function drivers(): BelongsToMany
     {

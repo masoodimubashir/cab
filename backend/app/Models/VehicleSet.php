@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /**
  * A per-city bundle of related vehicles. Members are CityVehicleType rows
@@ -27,5 +28,10 @@ class VehicleSet extends Model
     public function vehicles(): HasMany
     {
         return $this->hasMany(CityVehicleType::class, 'vehicle_set_id');
+    }
+
+    public function routeGroups(): BelongsToMany
+    {
+        return $this->belongsToMany(RouteGroup::class)->withTimestamps();
     }
 }

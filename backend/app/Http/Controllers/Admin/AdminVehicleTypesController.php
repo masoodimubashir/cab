@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class AdminVehicleTypesController
 {
@@ -69,6 +70,7 @@ class AdminVehicleTypesController
         $data = $request->validate([
             'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
             'vehicle_type_id' => ['required', 'integer', 'exists:vehicle_types,id'],
+            'vehicle_set_id' => ['nullable', 'integer', Rule::exists('vehicle_sets', 'id')->where('city_id', $city->id)],
             'display_name' => ['required', 'string', 'max:120'],
             'display_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'max_people' => ['required', 'integer', 'min:1', 'max:99'],
@@ -126,7 +128,7 @@ class AdminVehicleTypesController
         $data = $request->validate([
             'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
             'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
-            'vehicle_set_id' => ['nullable', 'integer', 'exists:vehicle_sets,id'],
+            'vehicle_set_id' => ['nullable', 'integer', Rule::exists('vehicle_sets', 'id')->where('city_id', $city->id)],
 
             'display_name' => ['sometimes', 'string', 'max:120'],
             'display_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
