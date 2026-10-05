@@ -6,6 +6,7 @@ use App\Models\City;
 use App\Models\Driver;
 use App\Models\Route;
 use App\Models\RouteGroup;
+use App\Models\CityVehicleType;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -20,7 +21,7 @@ class AdminRouteGroupsController
     {
         $groups = RouteGroup::query()
             ->where('city_id', $city->id)
-            ->with(['routes:id,name', 'drivers:id'])
+            ->with(['routes:id,name', 'drivers:id', 'vehicleSets:id,name'])
             ->orderBy('name')
             ->get();
 
@@ -30,6 +31,7 @@ class AdminRouteGroupsController
     public function store(Request $request, City $city)
     {
         $data = $this->validatePayload($request, $city, null);
+        $routeIds = array_key_exists('route_ids', $data) ? $this->validRouteIds($city, $data['route_ids'] ?? []) : null;
 
         $group = RouteGroup::query()->create([
             'city_id' => $city->id,
@@ -39,11 +41,18 @@ class AdminRouteGroupsController
         ]);
 
         if (array_key_exists('route_ids', $data)) {
-            $group->routes()->sync($this->validRouteIds($city, $data['route_ids'] ?? []));
+            $group->routes()->sync($routeIds);
+        }
+
+        // Groups created for a set member are shared with the set immediately.
+        $setId = isset($data['city_vehicle_type_id'])
+            ? CityVehicleType::query()->whereKey($data['city_vehicle_type_id'])->value('vehicle_set_id') : null;
+        if ($setId) {
+            $group->vehicleSets()->syncWithoutDetaching([$setId]);
         }
 
         return response()->json([
-            'route_group' => $this->shape($group->fresh(['routes', 'drivers'])),
+            'route_group' => $this->shape($group->fresh(['routes', 'drivers', 'vehicleSets'])),
             'message' => 'Route group created.',
         ], 201);
     }
@@ -52,6 +61,7 @@ class AdminRouteGroupsController
     {
         $this->assertCityOwnsGroup($city, $routeGroup);
         $data = $this->validatePayload($request, $city, $routeGroup);
+        $routeIds = array_key_exists('route_ids', $data) ? $this->validRouteIds($city, $data['route_ids'] ?? []) : null;
 
         $update = [
             'name' => trim($data['name']),
@@ -65,11 +75,11 @@ class AdminRouteGroupsController
         $routeGroup->update($update);
 
         if (array_key_exists('route_ids', $data)) {
-            $routeGroup->routes()->sync($this->validRouteIds($city, $data['route_ids'] ?? []));
+            $routeGroup->routes()->sync($routeIds);
         }
 
         return response()->json([
-            'route_group' => $this->shape($routeGroup->fresh(['routes', 'drivers'])),
+            'route_group' => $this->shape($routeGroup->fresh(['routes', 'drivers', 'vehicleSets'])),
             'message' => 'Route group updated.',
         ]);
     }
@@ -220,6 +230,7 @@ class AdminRouteGroupsController
             'route_count' => $routes->count(),
             'driver_user_ids' => $driverIds,
             'driver_count' => $driverIds->count(),
+            'vehicle_set_ids' => $group->vehicleSets->pluck('id')->map(fn ($id) => (int) $id)->values(),
         ];
     }
 }

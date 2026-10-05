@@ -6,6 +6,8 @@ use App\Models\City;
 use App\Models\CityVehicleType;
 use App\Models\VehicleSet;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 /**
  * CRUD for Vehicle Sets — per-city groupings of related vehicles.
@@ -15,7 +17,7 @@ class AdminVehicleSetsController
     public function index(Request $request, City $city)
     {
         $sets = VehicleSet::query()
-            ->with(['vehicles:id,vehicle_set_id,display_name,ride_type_id'])
+            ->with(['vehicles:id,vehicle_set_id,display_name,ride_type_id', 'routeGroups:id,name'])
             ->withCount('vehicles')
             ->where('city_id', $city->id)
             ->orderBy('sort_order')
@@ -33,7 +35,9 @@ class AdminVehicleSetsController
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
             // Optional: attach vehicles in the same call.
             'vehicle_ids' => ['nullable', 'array'],
-            'vehicle_ids.*' => ['integer', 'exists:city_vehicle_types,id'],
+            'vehicle_ids.*' => ['integer', Rule::exists('city_vehicle_types', 'id')->where('city_id', $city->id)],
+            'route_group_ids' => ['nullable', 'array'],
+            'route_group_ids.*' => ['integer', Rule::exists('route_groups', 'id')->where('city_id', $city->id)],
         ]);
 
         $existing = VehicleSet::query()
@@ -44,16 +48,19 @@ class AdminVehicleSetsController
             return response()->json(['message' => 'A vehicle set with this name already exists.'], 409);
         }
 
-        $set = VehicleSet::query()->create([
-            'city_id' => $city->id,
-            'name' => $data['name'],
-            'sort_order' => $data['sort_order'] ?? 0,
-        ]);
-
-        $this->attachVehicles($city, $set, $data['vehicle_ids'] ?? []);
+        $set = DB::transaction(function () use ($city, $data) {
+            $set = VehicleSet::query()->create([
+                'city_id' => $city->id,
+                'name' => trim($data['name']),
+                'sort_order' => $data['sort_order'] ?? 0,
+            ]);
+            $this->attachVehicles($city, $set, $data['vehicle_ids'] ?? []);
+            $set->routeGroups()->sync($data['route_group_ids'] ?? []);
+            return $set;
+        });
 
         return response()->json([
-            'vehicle_set' => $this->shape($set->fresh()->loadCount('vehicles')),
+            'vehicle_set' => $this->shape($set->fresh()->load(['vehicles', 'routeGroups'])->loadCount('vehicles'), true),
             'message' => 'Vehicle set created.',
         ], 201);
     }
@@ -66,7 +73,9 @@ class AdminVehicleSetsController
             'name' => ['sometimes', 'string', 'max:120'],
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'vehicle_ids' => ['nullable', 'array'],
-            'vehicle_ids.*' => ['integer', 'exists:city_vehicle_types,id'],
+            'vehicle_ids.*' => ['integer', Rule::exists('city_vehicle_types', 'id')->where('city_id', $city->id)],
+            'route_group_ids' => ['nullable', 'array'],
+            'route_group_ids.*' => ['integer', Rule::exists('route_groups', 'id')->where('city_id', $city->id)],
         ]);
 
         if (isset($data['name']) && $data['name'] !== $vehicleSet->name) {
@@ -80,14 +89,18 @@ class AdminVehicleSetsController
             }
         }
 
-        $vehicleSet->fill($data)->save();
-
-        if (array_key_exists('vehicle_ids', $data)) {
-            $this->attachVehicles($city, $vehicleSet, $data['vehicle_ids'] ?? [], replace: true);
-        }
+        DB::transaction(function () use ($city, $vehicleSet, $data) {
+            $vehicleSet->fill(collect($data)->only(['name', 'sort_order'])->all())->save();
+            if (array_key_exists('vehicle_ids', $data)) {
+                $this->attachVehicles($city, $vehicleSet, $data['vehicle_ids'] ?? [], replace: true);
+            }
+            if (array_key_exists('route_group_ids', $data)) {
+                $vehicleSet->routeGroups()->sync($data['route_group_ids'] ?? []);
+            }
+        });
 
         return response()->json([
-            'vehicle_set' => $this->shape($vehicleSet->fresh()->loadCount('vehicles')),
+            'vehicle_set' => $this->shape($vehicleSet->fresh()->load(['vehicles', 'routeGroups'])->loadCount('vehicles'), true),
             'message' => 'Vehicle set updated.',
         ]);
     }
@@ -141,6 +154,8 @@ class AdminVehicleSetsController
             'sort_order' => (int) $set->sort_order,
             'member_count' => (int) ($set->vehicles_count ?? 0),
             'updated_at' => optional($set->updated_at)->toIso8601String(),
+            'route_group_ids' => $set->routeGroups->pluck('id')->map(fn ($id) => (int) $id)->values(),
+            'route_groups' => $set->routeGroups->map(fn ($group) => ['id' => $group->id, 'name' => $group->name])->values(),
         ];
         if ($includeMembers && $set->relationLoaded('vehicles')) {
             $out['members'] = $set->vehicles->map(fn ($v) => [

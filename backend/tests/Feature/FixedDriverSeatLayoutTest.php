@@ -59,7 +59,7 @@ class FixedDriverSeatLayoutTest extends TestCase
             'origin_name' => "$name O", 'dest_name' => "$name D",
             'origin_lat' => 34.0, 'origin_lng' => 74.0, 'dest_lat' => 34.1, 'dest_lng' => 74.1,
             'fare_config' => json_encode(['seat_fare' => 120]),
-            'max_seats_per_booking' => 4, 'max_luggage_per_vehicle' => 3,
+            'max_luggage_per_vehicle' => 3,
             'is_active' => true,
             'created_at' => now(), 'updated_at' => now(),
         ]);
@@ -256,6 +256,10 @@ class FixedDriverSeatLayoutTest extends TestCase
                 'drop_stop_id' => $dropStopId,
                 'seat_labels' => ['2A', '2B'],
             ])->assertCreated()->json('hold.id');
+
+        Sanctum::actingAs($user, ['act-as:driver']);
+        $this->postJson("/api/fixed/driver/seat-holds/{$holdId}/accept")->assertOk();
+        Sanctum::actingAs($customer, ['act-as:customer']);
 
         $reservationId = (int) $this->withHeaders(['Idempotency-Key' => 'm6-pay'])
             ->postJson("/api/fixed/seat-holds/{$holdId}/test-confirm-payment", [

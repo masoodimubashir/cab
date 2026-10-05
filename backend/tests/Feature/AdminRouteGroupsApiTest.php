@@ -93,6 +93,86 @@ class AdminRouteGroupsApiTest extends TestCase
         $this->assertSame(2, $res->json('route_group.route_count'));
     }
 
+    public function test_vehicle_set_shares_groups_without_copying_routes_or_granting_driver_access(): void
+    {
+        $sumo = $this->makeCityVehicleType($this->cityId);
+        $tavera = $this->makeCityVehicleType($this->cityId);
+        $route = $this->makeRoute($this->cityId, 'Shared route');
+        $group = $this->postJson("/api/admin/cities/{$this->cityId}/route-groups", [
+            'name' => 'Shared work', 'city_vehicle_type_id' => $sumo, 'route_ids' => [$route],
+        ])->assertCreated()->json('route_group.id');
+        $set = $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-sets", [
+            'name' => 'Shared fleet', 'vehicle_ids' => [$sumo], 'route_group_ids' => [$group],
+        ])->assertCreated()->json('vehicle_set.id');
+        $this->patchJson("/api/admin/cities/{$this->cityId}/vehicle-sets/{$set}", [
+            'vehicle_ids' => [$sumo, $tavera],
+        ])->assertOk()->assertJsonPath('vehicle_set.route_group_ids', [$group]);
+        $this->assertDatabaseHas('city_vehicle_types', ['id' => $tavera, 'vehicle_set_id' => $set]);
+        $this->assertDatabaseCount('routes', 1);
+        $this->assertDatabaseCount('route_group_route', 1);
+        $this->getJson("/api/admin/cities/{$this->cityId}/route-groups")
+            ->assertOk()->assertJsonPath('data.0.vehicle_set_ids', [$set]);
+        $driver = $this->makeDriver($this->cityId);
+        $driver->update(['city_vehicle_type_id' => $tavera]);
+        $this->getJson("/api/admin/drivers/{$driver->id}/route-groups")
+            ->assertOk()->assertJsonPath('groups.0.matches_vehicle_set', true)
+            ->assertJsonPath('assigned_group_ids', [])->assertJsonPath('effective_routes', []);
+        $this->putJson("/api/admin/drivers/{$driver->id}/route-groups", ['group_ids' => [$group]])
+            ->assertOk()->assertJsonPath('effective_routes.0.id', $route);
+        // Changing shared membership must not remove explicit assignments.
+        $this->patchJson("/api/admin/cities/{$this->cityId}/vehicle-sets/{$set}", [
+            'vehicle_ids' => [$sumo], 'route_group_ids' => [],
+        ])->assertOk();
+        $this->assertDatabaseHas('city_vehicle_types', ['id' => $tavera, 'vehicle_set_id' => null]);
+        $this->getJson("/api/admin/drivers/{$driver->id}/route-groups")
+            ->assertOk()->assertJsonPath('assigned_group_ids', [$group])->assertJsonPath('effective_routes.0.id', $route);
+    }
+
+    public function test_new_group_under_set_member_is_shared_and_foreign_members_are_rejected(): void
+    {
+        $vehicle = $this->makeCityVehicleType($this->cityId);
+        $foreign = $this->makeCityVehicleType($this->otherCityId);
+        $set = $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-sets", [
+            'name' => 'Local fleet', 'vehicle_ids' => [$vehicle],
+        ])->assertCreated()->json('vehicle_set.id');
+        $group = $this->postJson("/api/admin/cities/{$this->cityId}/route-groups", [
+            'name' => 'New shared group', 'city_vehicle_type_id' => $vehicle,
+        ])->assertCreated()->assertJsonPath('route_group.vehicle_set_ids', [$set])->json('route_group.id');
+        $foreignGroup = $this->postJson("/api/admin/cities/{$this->otherCityId}/route-groups", ['name' => 'Other group'])
+            ->assertCreated()->json('route_group.id');
+        $this->patchJson("/api/admin/cities/{$this->cityId}/vehicle-sets/{$set}", [
+            'name' => 'Wrong change', 'vehicle_ids' => [$foreign],
+        ])->assertUnprocessable();
+        $this->patchJson("/api/admin/cities/{$this->cityId}/vehicle-sets/{$set}", [
+            'vehicle_ids' => [], 'route_group_ids' => [$foreignGroup],
+        ])->assertUnprocessable();
+        $this->assertDatabaseHas('vehicle_sets', ['id' => $set, 'name' => 'Local fleet']);
+        $this->assertDatabaseHas('city_vehicle_types', ['id' => $vehicle, 'vehicle_set_id' => $set]);
+        $this->getJson("/api/admin/cities/{$this->cityId}/vehicle-sets")
+            ->assertOk()->assertJsonPath('data.0.route_group_ids', [$group]);
+        $this->deleteJson("/api/admin/cities/{$this->cityId}/vehicle-sets/{$set}")->assertOk();
+        $this->assertDatabaseHas('route_groups', ['id' => $group]);
+        $this->assertDatabaseCount('route_group_vehicle_set', 0);
+        $this->assertDatabaseHas('city_vehicle_types', ['id' => $vehicle, 'vehicle_set_id' => null]);
+    }
+
+    public function test_vehicle_can_join_an_existing_set_on_creation_but_not_a_foreign_city_set(): void
+    {
+        $set = $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-sets", ['name' => 'Local'])
+            ->assertCreated()->json('vehicle_set.id');
+        $foreignSet = $this->postJson("/api/admin/cities/{$this->otherCityId}/vehicle-sets", ['name' => 'Foreign'])
+            ->assertCreated()->json('vehicle_set.id');
+        $type = DB::table('vehicle_types')->insertGetId(['name' => 'Tavera', 'created_at' => now(), 'updated_at' => now()]);
+        $payload = ['vehicle_type_id' => $type, 'vehicle_set_id' => $set, 'display_name' => 'Tavera', 'max_people' => 7, 'luggage_capacity' => 2];
+        $vehicle = $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-types", $payload)
+            ->assertCreated()->assertJsonPath('vehicle_type.vehicle_set_id', $set)->json('vehicle_type.id');
+        $payload['display_name'] = 'Invalid vehicle'; $payload['vehicle_set_id'] = $foreignSet;
+        $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-types", $payload)->assertUnprocessable();
+        $this->patchJson("/api/admin/cities/{$this->cityId}/vehicle-types/{$vehicle}", ['vehicle_set_id' => $foreignSet])->assertUnprocessable();
+        $this->assertDatabaseHas('city_vehicle_types', ['id' => $vehicle, 'vehicle_set_id' => $set]);
+        $this->assertDatabaseMissing('city_vehicle_types', ['display_name' => 'Invalid vehicle']);
+    }
+
     public function test_cross_city_route_is_rejected(): void
     {
         $foreign = $this->makeRoute($this->otherCityId, 'Foreign');
