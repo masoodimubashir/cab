@@ -93,11 +93,25 @@ export class FixedBookPage implements OnInit, OnDestroy {
   private searchTimer?: ReturnType<typeof setTimeout>;
   private routesSub?: Subscription;
   private routesRequestId = 0;
+  private locationSub?: Subscription;
+  locationAccuracy: number | null = null;
+  locating = false;
+  locationMessage = '';
   radiusFilterActive = true;
+  routeScope: 'all' | 'local' | 'outstation' = 'all';
+
+  get scopedRoutes(): FixedRoute[] {
+    return this.routeScope === 'all' ? this.routes : this.routes.filter(route => route.scope === this.routeScope);
+  }
+
+  setRouteScope(scope: 'all' | 'local' | 'outstation'): void {
+    this.routeScope = scope;
+    this.cdr.markForCheck();
+  }
 
   get nearbyRoutesCount(): number {
-    if (!this.userCoords) return this.routes.length;
-    return this.routes.filter(
+    if (!this.userCoords) return this.scopedRoutes.length;
+    return this.scopedRoutes.filter(
       (r) => r.distance_to_nearest_pickup != null && r.distance_to_nearest_pickup <= 1000,
     ).length;
   }
@@ -169,6 +183,19 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   async ngOnInit(): Promise<void> {
     this.cityId = this.booking.trip.cityId;
+    this.locationSub = this.fixedLocation.fix$.subscribe(fix => {
+      if (!fix || !Number.isFinite(fix.lat) || !Number.isFinite(fix.lng)) return;
+      const firstFix = !this.userCoords;
+      this.userCoords = { lat: fix.lat, lng: fix.lng };
+      this.locationAccuracy = fix.accuracy;
+      this.locationMessage = '';
+      this.annotateRoutesWithProximity();
+      this.sortRoutesByProximity();
+      this.recalculateNearbyStops();
+      // Fetch the closest server results too, rather than only sorting the initial unlocated catalogue.
+      if (firstFix && this.cities.length) this.loadRoutes();
+      this.cdr.markForCheck();
+    });
     void this.fixedLocation.start();
     void this.initUserLocation();
     await this.loadCities();
@@ -182,10 +209,14 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   private async initUserLocation(): Promise<void> {
+    this.locating = true;
+    this.locationMessage = '';
+    this.cdr.markForCheck();
     try {
       const pos = await this.geo.getCurrentPosition();
       if (pos?.lat != null && pos?.lng != null) {
-        this.userCoords = { lat: pos.lat, lng: pos.lng };
+        // A watch may already have delivered a newer fix while this request was pending.
+        if (!this.userCoords) this.userCoords = { lat: pos.lat, lng: pos.lng };
         if (this.cityId == null && this.cities.length) {
           const resolved = resolveCity(this.cities, pos.lat, pos.lng);
           if (resolved) {
@@ -204,13 +235,41 @@ export class FixedBookPage implements OnInit, OnDestroy {
       }
     } catch {
       // Permission denied or browser location fallback
+    } finally {
+      this.locating = false;
+      if (!this.userCoords) this.locationMessage = 'Could not get your location. Allow location access in your browser or phone settings, then try again.';
+      this.cdr.markForCheck();
     }
+  }
+
+  async refreshLocation(): Promise<void> {
+    if (this.locating) return;
+    this.locating = true;
+    this.locationMessage = '';
+    this.cdr.markForCheck();
+    // An explicit retry must replace a previous reading, while the background watch stays active.
+    const fix = await this.geo.getCurrentFix();
+    this.locating = false;
+    if (fix && Number.isFinite(fix.lat) && Number.isFinite(fix.lng)) {
+      this.userCoords = { lat: fix.lat, lng: fix.lng };
+      this.locationAccuracy = fix.accuracy;
+      this.locationMessage = '';
+      this.annotateRoutesWithProximity();
+      this.sortRoutesByProximity();
+      this.recalculateNearbyStops();
+      this.loadRoutes();
+      this.cdr.markForCheck();
+      return;
+    }
+    this.locationMessage = 'Could not get a fresh location. Allow location access in your browser or phone settings, then try again.';
+    this.cdr.markForCheck();
   }
 
   ngOnDestroy(): void {
     this.stopApprovalWaiting();
     clearTimeout(this.searchTimer);
     this.routesSub?.unsubscribe();
+    this.locationSub?.unsubscribe();
   }
 
   async loadCities(): Promise<void> {
@@ -347,6 +406,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
   private annotateRoutesWithProximity(): void {
     if (!this.userCoords) return;
     for (const r of this.routes) {
+      r.nearest_pickup_stop = null;
+      r.distance_to_nearest_pickup = null;
+      for (const stop of r.stops || []) stop.is_nearest_pickup = false;
       if (!r.stops?.length) continue;
       let minD = Infinity;
       let nearest: any = null;
@@ -412,16 +474,16 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   get visibleRoutes(): FixedRoute[] {
     const q = this.search.trim().toLowerCase();
-    if (q) return this.routes;
+    if (q) return this.scopedRoutes;
 
     // Default view: if radius filter is active and user coordinates are available, only show routes within 1 km (1000m)
     if (this.radiusFilterActive && this.userCoords) {
-      return this.routes.filter(
+      return this.scopedRoutes.filter(
         (r) => r.distance_to_nearest_pickup != null && r.distance_to_nearest_pickup <= 1000,
       );
     }
 
-    return this.routes;
+    return this.scopedRoutes;
   }
 
   setRadiusFilter(active: boolean): void {

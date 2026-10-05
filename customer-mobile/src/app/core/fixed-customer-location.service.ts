@@ -30,6 +30,8 @@ export class FixedCustomerLocationService {
   private readonly maxSessionMs = 6 * 60 * 60 * 1000;
   private readonly stateSubject = new BehaviorSubject<FixedLocationState>({ streaming: false, degraded: false, message: null });
   readonly state$ = this.stateSubject.asObservable();
+  private readonly fixSubject = new BehaviorSubject<GeoFix | null>(null);
+  readonly fix$ = this.fixSubject.asObservable();
 
   constructor(private api: ApiService, private geo: GeolocationService, private auth: AuthService) {
     auth.registerSessionCleanup(() => this.stop());
@@ -55,6 +57,7 @@ export class FixedCustomerLocationService {
     }
     this.lastSentAt = 0;
     this.startedAt = 0;
+    this.fixSubject.next(null);
     this.publishState(false, null);
   }
 
@@ -69,7 +72,10 @@ export class FixedCustomerLocationService {
             this.publishState(true, 'Location tracking is unavailable. Fixed pickup status may be less accurate.');
             return;
           }
-          if (fix) this.postFix(fix);
+          if (fix && generation === this.generation) {
+            this.fixSubject.next(fix);
+            this.postFix(fix);
+          }
         },
       );
       if (generation !== this.generation || !this.auth.getToken()) {
