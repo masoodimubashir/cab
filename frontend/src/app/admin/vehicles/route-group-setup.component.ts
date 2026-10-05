@@ -6,7 +6,7 @@ import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
 import { MasterDriver, MasterGroup, MasterRoute } from './master-explorer.component';
 
-export interface SetupVehicle { id: number; display_name: string; vehicle_type_id: number | null; ride_type_name?: string | null; vehicle_set_id?: number | null; }
+export interface SetupVehicle { id: number; display_name: string; vehicle_type_id: number | null; ride_type_name?: string | null; vehicle_set_id?: number | null; is_active?: boolean; }
 export interface SetupVehicleSet { id: number; name: string; members?: { id: number; display_name?: string }[]; route_group_ids?: number[]; }
 
 @Component({
@@ -65,13 +65,25 @@ export class RouteGroupSetupComponent implements OnChanges {
         this.beforeRouteCreate = null;
       }
     }
-    if (!this.routeVehicleId && this.vehicles.length) this.routeVehicleId = this.vehicles[0].id;
+    if (!this.routeVehicleOptions.some(vehicle => vehicle.id === this.routeVehicleId)) this.routeVehicleId = this.routeVehicleOptions[0]?.id ?? null;
     if (changes['vehicles'] && this.beforeVehicleCreate) {
       const added = this.vehicles.filter(vehicle => !this.beforeVehicleCreate!.has(vehicle.id));
       if (added.length) { added.forEach(vehicle => vehicle.vehicle_set_id ? this.setIds.add(vehicle.vehicle_set_id) : this.vehicleIds.add(vehicle.id)); this.beforeVehicleCreate = null; }
     }
   }
   constructor(private api: ApiService, private toast: ToastService) {}
+  get routeVehicleOptions(): SetupVehicle[] {
+    const choices = new Map<string, SetupVehicle>();
+    for (const vehicle of this.vehicles) {
+      const mode = (vehicle.ride_type_name ?? '').trim().toLowerCase();
+      if (vehicle.is_active === false || (mode && !mode.includes('fixed'))) continue;
+      const key = `${vehicle.vehicle_type_id}:${vehicle.display_name.trim().toLowerCase()}`;
+      const previous = choices.get(key);
+      // Prefer an explicit fixed configuration over a legacy base row.
+      if (!previous || (!previous.ride_type_name && mode)) choices.set(key, vehicle);
+    }
+    return [...choices.values()];
+  }
   get standaloneVehicles(): { name: string; ids: number[] }[] {
     const families = new Map<string, { name: string; ids: number[] }>();
     this.vehicles.filter(vehicle => !vehicle.vehicle_set_id).forEach(vehicle => {
@@ -101,7 +113,7 @@ export class RouteGroupSetupComponent implements OnChanges {
   get selectedVehicleCount(): number { return this.setIds.size + this.standaloneVehicles.filter(vehicle => this.familySelected(vehicle.ids)).length; }
   private signature(): string { return JSON.stringify([this.groupNames, this.active, this.ownerVehicleId, ...[this.routeIds, this.driverIds, this.setIds, this.vehicleIds].map(ids => [...ids].sort((a, b) => a - b))]); }
   get dirty(): boolean { return !this.group || this.signature() !== this.initial; }
-  createRoute(): void { if (!this.routeVehicleId || this.saving) return; this.beforeRouteCreate = new Set(this.routes.map(route => route.id)); this.addRoute.emit(this.routeVehicleId); }
+  createRoute(): void { if (!this.routeVehicleOptions.some(vehicle => vehicle.id === this.routeVehicleId) || this.saving) return; this.beforeRouteCreate = new Set(this.routes.map(route => route.id)); this.addRoute.emit(this.routeVehicleId!); }
   createVehicles(): void { if (!this.saving) { this.beforeVehicleCreate = new Set(this.vehicles.map(vehicle => vehicle.id)); this.addVehicle.emit(); } }
   close(): void { if (!this.saving && (!this.dirty || !this.groupNames.some(name => !!name) || confirm('Discard your unsaved group changes?'))) this.closed.emit(); }
   save(): void {

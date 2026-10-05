@@ -169,6 +169,7 @@ describe('Combined route group setup', () => {
     expect(editor.error).toBe('Try again'); expect(editor.routeIds.has(20)).toBeTrue(); expect(editor.saving).toBeFalse();
   });
   it('keeps edits while adding a route and automatically selects the new priced route', () => {
+    editor.vehicles = [{ id: 1, display_name: 'Sumo', vehicle_type_id: 1 }];
     editor.routes = [{ id: 20, name: 'Existing', origin_name: 'A', dest_name: 'B', flat_fare: 20, scope: 'local', is_active: true, city_vehicle_type_id: 1, booking_window_hours: null }];
     editor.routeVehicleId = 1; editor.createRoute();
     editor.routes = [...editor.routes, { ...editor.routes[0], id: 21, name: 'New' }];
@@ -179,6 +180,23 @@ describe('Combined route group setup', () => {
     editor.vehicles = [{ id: 1, display_name: 'Sumo', vehicle_type_id: 1 }, { id: 2, display_name: 'Sumo', vehicle_type_id: 1 }, { id: 3, display_name: 'Bus', vehicle_type_id: 2, vehicle_set_id: 10 }];
     expect(editor.standaloneVehicles).toEqual([{ name: 'Sumo', ids: [1, 2] }]);
     editor.toggleFamily([1, 2]); expect([...editor.vehicleIds]).toEqual([1, 2]);
+  });
+  it('shows plain fixed-route choices once and emits the correct fixed configuration', () => {
+    editor.vehicles = [
+      { id: 1, display_name: 'Sumo', vehicle_type_id: 1 },
+      { id: 2, display_name: 'Sumo', vehicle_type_id: 1, ride_type_name: 'Private' },
+      { id: 3, display_name: 'Sumo', vehicle_type_id: 1, ride_type_name: 'Fixed' },
+      { id: 4, display_name: 'Sumo', vehicle_type_id: 1, ride_type_name: 'Shuttle' },
+      { id: 5, display_name: 'Bus', vehicle_type_id: 2, ride_type_name: 'Fixed', is_active: false },
+      { id: 6, display_name: 'Town Sumo', vehicle_type_id: 1, ride_type_name: 'Fixed' },
+    ];
+    editor.routeVehicleId = 2;
+    editor.ngOnChanges({ vehicles: new SimpleChange([], editor.vehicles, false) });
+    expect(editor.routeVehicleOptions.map(vehicle => vehicle.id)).toEqual([3, 6]);
+    expect(editor.routeVehicleId).toBe(3);
+    const emitted = jasmine.createSpy(); editor.addRoute.subscribe(emitted);
+    editor.createRoute(); expect(emitted).toHaveBeenCalledOnceWith(3);
+    editor.routeVehicleId = 2; editor.createRoute(); expect(emitted).toHaveBeenCalledTimes(1);
   });
   it('keeps the vehicle checkbox stable while toggling a grouped family', () => {
     TestBed.configureTestingModule({ imports: [RouteGroupSetupComponent], providers: [{ provide: ApiService, useValue: api }, { provide: ToastService, useValue: { success: () => undefined } }] });
