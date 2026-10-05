@@ -22,6 +22,40 @@ use Illuminate\Validation\Rule;
 class AdminVehicleTypesController
 {
     public function __construct(private readonly VehicleFamilyImageService $vehicleImages) {}
+    public function storeBatch(Request $request, City $city)
+    {
+        $data = $request->validate([
+            'vehicles' => ['required', 'array', 'min:1', 'max:30'], 'vehicles.*' => ['required', 'array'],
+            'vehicle_set_id' => ['nullable', 'integer', Rule::exists('vehicle_sets', 'id')->where('city_id', $city->id)],
+            'set_name' => ['nullable', 'string', 'max:100'],
+            'route_group_ids' => ['present', 'array'],
+            'route_group_ids.*' => ['integer', 'distinct', Rule::exists('route_groups', 'id')->where('city_id', $city->id)],
+        ]);
+        $rows = DB::transaction(function () use ($data, $city) {
+            $setId = $data['vehicle_set_id'] ?? null;
+            if (!$setId && $data['route_group_ids']) {
+                $base = trim($data['set_name'] ?? '') ?: 'New vehicles';
+                $name = $base;
+                for ($suffix = 2; \App\Models\VehicleSet::where('city_id', $city->id)->where('name', $name)->exists(); $suffix++) $name = $base.' ('.$suffix.')';
+                $setId = \App\Models\VehicleSet::create(['city_id' => $city->id, 'name' => $name, 'sort_order' => 0])->id;
+            }
+            $rows = [];
+            foreach ($data['vehicles'] as $index => $vehicle) {
+                try {
+                    $response = $this->store(new Request(array_merge($vehicle, ['vehicle_set_id' => $setId])), $city);
+                } catch (\Illuminate\Validation\ValidationException $error) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['vehicles.'.$index => 'Vehicle '.($index + 1).': '.collect($error->errors())->flatten()->first()]);
+                }
+                if ($response->getStatusCode() >= 400) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['vehicles.'.$index => 'Vehicle '.($index + 1).': '.$response->getData(true)['message']]);
+                }
+                $rows[] = $response->getData(true)['vehicle_type'];
+            }
+            if ($setId && $data['route_group_ids']) \App\Models\VehicleSet::findOrFail($setId)->routeGroups()->syncWithoutDetaching($data['route_group_ids']);
+            return $rows;
+        });
+        return response()->json(['data' => $rows, 'message' => count($rows).' vehicles added.'], 201);
+    }
     /**
      * List all vehicle types for a city. The Enabled/Disabled split in the
      * Jugnoo UI is just is_active=true|false; the frontend filters client-side.
@@ -69,7 +103,8 @@ class AdminVehicleTypesController
     {
         $data = $request->validate([
             'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
-            'vehicle_type_id' => ['required', 'integer', 'exists:vehicle_types,id'],
+            'vehicle_type_id' => ['required_without:vehicle_type_name', 'nullable', 'integer', 'exists:vehicle_types,id'],
+            'vehicle_type_name' => ['required_without:vehicle_type_id', 'nullable', 'string', 'max:120'],
             'vehicle_set_id' => ['nullable', 'integer', Rule::exists('vehicle_sets', 'id')->where('city_id', $city->id)],
             'display_name' => ['required', 'string', 'max:120'],
             'display_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
@@ -102,14 +137,21 @@ class AdminVehicleTypesController
             $data['display_order'] = $this->nextDisplayOrder($city);
         }
 
-        $row = CityVehicleType::query()->create(array_merge(
-            [
-                'city_id' => $city->id,
-                'is_active' => true,
-                'reverse_bidding_enabled' => true,
-            ],
-            $data,
-        ));
+        $row = DB::transaction(function () use ($city, $data) {
+            if (empty($data['vehicle_type_id'])) {
+                $type = \App\Models\VehicleType::query()->firstOrCreate(['name' => trim($data['vehicle_type_name'])], ['is_active' => true, 'sort_order' => 0]);
+                $data['vehicle_type_id'] = $type->id;
+            }
+            unset($data['vehicle_type_name']);
+            return CityVehicleType::query()->create(array_merge(
+                [
+                    'city_id' => $city->id,
+                    'is_active' => true,
+                    'reverse_bidding_enabled' => true,
+                ],
+                $data,
+            ));
+        });
 
         return response()->json([
             'vehicle_type' => $this->shape($row->fresh()->load(['rideType:id,name', 'vehicleType:id,name'])),

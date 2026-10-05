@@ -93,6 +93,54 @@ class AdminRouteGroupsApiTest extends TestCase
         $this->assertSame(2, $res->json('route_group.route_count'));
     }
 
+    public function test_workspace_setup_saves_routes_vehicles_and_drivers_together_and_can_pause_access(): void
+    {
+        $sumo = $this->makeCityVehicleType($this->cityId);
+        $bus = $this->makeCityVehicleType($this->cityId);
+        $route = $this->makeRoute($this->cityId, 'Town route');
+        $driver = $this->makeDriver($this->cityId);
+        $payload = ['name' => 'Town service', 'route_ids' => [$route], 'vehicle_ids' => [$sumo, $bus], 'vehicle_set_ids' => [], 'driver_user_ids' => [$driver->user_id], 'is_active' => true];
+        $result = $this->postJson("/api/admin/cities/{$this->cityId}/route-groups/setup", $payload)->assertCreated();
+        $group = $result->json('route_group.id');
+        $set = $result->json('route_group.vehicle_set_ids.0');
+        $this->assertDatabaseHas('city_vehicle_types', ['id' => $bus, 'vehicle_set_id' => $set]);
+        $this->assertDatabaseHas('city_vehicle_types', ['id' => $sumo, 'vehicle_set_id' => $set]);
+        $this->getJson("/api/admin/drivers/{$driver->id}/route-groups")->assertOk()->assertJsonPath('effective_routes.0.id', $route);
+        $payload['vehicle_ids'] = []; $payload['vehicle_set_ids'] = [$set]; $payload['is_active'] = false; $payload['name'] = 'Renamed service';
+        $this->putJson("/api/admin/cities/{$this->cityId}/route-groups/{$group}/setup", $payload)->assertOk();
+        $this->getJson("/api/admin/drivers/{$driver->id}/route-groups")->assertOk()->assertJsonPath('assigned_group_ids', [$group])->assertJsonPath('effective_routes', []);
+        $payload['is_active'] = true;
+        $this->putJson("/api/admin/cities/{$this->cityId}/route-groups/{$group}/setup", $payload)->assertOk();
+        $this->getJson("/api/admin/drivers/{$driver->id}/route-groups")->assertOk()->assertJsonPath('effective_routes.0.id', $route);
+        $this->assertDatabaseCount('routes', 1); $this->assertDatabaseCount('vehicle_sets', 1);
+    }
+
+    public function test_workspace_invalid_selection_rolls_back_entire_setup_and_does_not_move_set_members(): void
+    {
+        $vehicle = $this->makeCityVehicleType($this->cityId);
+        $foreignDriver = $this->makeDriver($this->otherCityId);
+        $payload = ['name' => 'Bad service', 'route_ids' => [], 'vehicle_ids' => [$vehicle], 'vehicle_set_ids' => [], 'driver_user_ids' => [$foreignDriver->user_id]];
+        $this->postJson("/api/admin/cities/{$this->cityId}/route-groups/setup", $payload)->assertUnprocessable();
+        $this->assertDatabaseCount('route_groups', 0); $this->assertDatabaseCount('vehicle_sets', 0);
+        $set = $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-sets", ['name' => 'Existing', 'vehicle_ids' => [$vehicle]])->assertCreated()->json('vehicle_set.id');
+        $payload['driver_user_ids'] = [];
+        $this->postJson("/api/admin/cities/{$this->cityId}/route-groups/setup", $payload)->assertUnprocessable();
+        $this->assertDatabaseCount('route_groups', 0); $this->assertDatabaseHas('city_vehicle_types', ['id' => $vehicle, 'vehicle_set_id' => $set]);
+        $payload['vehicle_ids'] = []; $payload['vehicle_set_ids'] = [$set]; $payload['name'] = 'Existing set service';
+        $this->postJson("/api/admin/cities/{$this->cityId}/route-groups/setup", $payload)->assertCreated();
+        $this->assertDatabaseCount('vehicle_sets', 1);
+    }
+
+    public function test_vehicle_type_and_city_vehicle_can_be_created_in_one_step(): void
+    {
+        $payload = ['vehicle_type_name' => 'Bicycle', 'display_name' => 'Town bicycle', 'max_people' => 1, 'luggage_capacity' => 0];
+        $result = $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-types", $payload)->assertCreated();
+        $this->assertDatabaseHas('vehicle_types', ['id' => $result->json('vehicle_type.vehicle_type_id'), 'name' => 'Bicycle']);
+        $payload['display_name'] = 'Second bicycle';
+        $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-types", $payload)->assertCreated();
+        $this->assertDatabaseCount('vehicle_types', 1);
+    }
+
     public function test_vehicle_set_shares_groups_without_copying_routes_or_granting_driver_access(): void
     {
         $sumo = $this->makeCityVehicleType($this->cityId);
@@ -348,10 +396,12 @@ class AdminRouteGroupsApiTest extends TestCase
     public function test_city_drivers_endpoint_lists_only_this_city(): void
     {
         $a = $this->makeDriver($this->cityId);
+        $a->user()->update(['avatar_path' => 'avatars/driver.jpg']);
         $this->makeDriver($this->otherCityId);
 
         $res = $this->getJson("/api/admin/cities/{$this->cityId}/route-group-drivers");
         $res->assertOk();
+        $res->assertJsonPath('data.0.avatar_url', url('/storage/avatars/driver.jpg'));
         $userIds = collect($res->json('data'))->pluck('user_id')->all();
         $this->assertContains($a->user_id, $userIds);
         $this->assertCount(1, $userIds);
