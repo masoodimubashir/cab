@@ -83,7 +83,7 @@ class FixedRouteService
 
         if ($userLat !== null && $userLng !== null) {
             $mapped = $mapped->sortBy(function ($r) {
-                return $r['distance_to_nearest_pickup'] ?? PHP_INT_MAX;
+                return $r['distance_to_start'] ?? PHP_INT_MAX;
             })->values();
         }
 
@@ -230,6 +230,10 @@ class FixedRouteService
             }
         }
 
+        // The vehicle's starting location stays the first stop in route order,
+        // even when a later pickup is closer to the customer.
+        $startingStop = collect($stops)->sortBy('seq')->first();
+
         return [
             'id' => $route->id,
             'city_id' => $route->city_id,
@@ -254,6 +258,8 @@ class FixedRouteService
             'luggage_surcharge_amount' => (float) $route->luggage_surcharge_amount,
             'max_luggage_per_vehicle' => (int) $route->max_luggage_per_vehicle,
             'stops' => $stops,
+            'starting_stop' => $startingStop,
+            'distance_to_start' => $startingStop['distance_meters'] ?? null,
             'nearest_pickup_stop' => $nearestPickup,
             'distance_to_nearest_pickup' => $nearestPickup ? $nearestPickup['distance_meters'] : null,
             'image_url' => $image['image_url'],
