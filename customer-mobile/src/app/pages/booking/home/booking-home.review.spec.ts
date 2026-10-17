@@ -16,7 +16,8 @@ describe('Booking Home location regressions', () => {
     await TestBed.configureTestingModule({
       declarations: [BookingHomePage], imports: [CommonModule], schemas: [NO_ERRORS_SCHEMA],
       providers: [ApiService, AuthService, GeolocationService, PlacesService, RealtimeService,
-        BookingService, Router, AlertController].map(provide => ({ provide, useValue: {} })),
+        BookingService, Router, AlertController].map(provide => ({ provide, useValue: provide === AuthService
+          ? { getUser: () => null, resolveAvatarUrl: () => null } : {} })),
     }).compileComponents();
   });
 
@@ -26,6 +27,43 @@ describe('Booking Home location regressions', () => {
     spyOn(fixture.componentInstance, 'ngOnDestroy').and.stub();
     return fixture;
   }
+
+  it('opens the clicked Home route in fixed booking with its route ID', () => {
+    const view = fixture();
+    const page = view.componentInstance;
+    const booking = TestBed.inject(BookingService);
+    const router = TestBed.inject(Router);
+    booking.setMode = jasmine.createSpy();
+    booking.setScope = jasmine.createSpy();
+    router.navigate = jasmine.createSpy().and.resolveTo(true);
+    page.tiles = [{ mode: 'fixed', rideTypeId: 2 }] as any;
+    page.homeRoutes = [{ id: 42, name: 'Selected route', scope: 'local' }];
+    view.detectChanges();
+    (view.nativeElement.querySelector('.bh-route-card') as HTMLButtonElement).click();
+    expect(router.navigate).toHaveBeenCalledWith(['/customer-tabs/go/fixed'], { queryParams: { routeId: 42 } });
+    expect(booking.setMode).toHaveBeenCalledWith('fixed', 2);
+    expect(booking.setScope).toHaveBeenCalledWith(page.scope);
+  });
+
+  it('falls back to the profile icon if the photo fails, and accepts an updated photo URL', () => {
+    const view = fixture();
+    const auth = TestBed.inject(AuthService);
+    let avatar = 'https://example.invalid/profile.png';
+    spyOn(auth, 'resolveAvatarUrl').and.callFake(() => avatar);
+    view.detectChanges();
+    const root = view.nativeElement as HTMLElement;
+    const image = root.querySelector('.bh-profile-image') as HTMLImageElement;
+    expect(image).not.toBeNull();
+    image.dispatchEvent(new Event('error'));
+    view.detectChanges();
+    expect(root.querySelector('.bh-profile-image')).toBeNull();
+    expect(root.querySelector('ion-menu-button ion-icon')?.getAttribute('name')).toBe('person-outline');
+    avatar = 'https://example.invalid/updated.png';
+    // A subsequent bound event triggers the same OnPush refresh as returning from profile.
+    root.querySelector('ion-segment')!.dispatchEvent(new CustomEvent('ionChange', { detail: { value: 'offers' } }));
+    view.detectChanges();
+    expect(root.querySelector('.bh-profile-image')?.getAttribute('src')).toBe(avatar);
+  });
 
   it('keeps banner controls usable while location is loading', () => {
     const view = fixture();
@@ -43,6 +81,38 @@ describe('Booking Home location regressions', () => {
     (root.querySelector('.dc-banner-close-btn') as HTMLButtonElement).click();
     expect(page.isHalfBannerCollapsed).toBeTrue();
     expect(page.locationFetching).toBeTrue();
+  });
+
+  it('keeps available coupons separate from promotional banners', () => {
+    const view = fixture();
+    const page = view.componentInstance;
+    page.locationFetching = false;
+    page.halfBanner = { id: 1, title: 'Banner-only offer', image_url: '' } as any;
+    page.homeOffers = [{ id: 2, title: 'COUPON_ONLY', discount_label: '10% off', status: 'available', is_available: true }];
+    page.promotionTab = 'offers';
+    view.detectChanges();
+    const root = view.nativeElement as HTMLElement;
+    expect(root.querySelector('[aria-label="Offer banners"]')?.textContent).toContain('Banner-only offer');
+    expect(root.querySelector('[aria-label="Available coupons"]')).toBeNull();
+    root.querySelector('ion-segment')!.dispatchEvent(new CustomEvent('ionChange', { detail: { value: 'coupons' } }));
+    view.detectChanges();
+    expect(root.querySelector('[aria-label="Available coupons"]')?.textContent).toContain('COUPON_ONLY');
+    expect(root.querySelector('[aria-label="Offer banners"]')).toBeNull();
+  });
+
+  it('replaces a failed banner image with the standard fallback', () => {
+    const view = fixture();
+    const page = view.componentInstance;
+    page.halfBanner = { id: 1, title: 'Offer', image_url: 'https://example.invalid/banner.png' } as any;
+    view.detectChanges();
+    const root = view.nativeElement as HTMLElement;
+    const image = root.querySelector('.bh-offer-banner-image') as HTMLImageElement;
+    expect(image).not.toBeNull();
+    image.dispatchEvent(new Event('error'));
+    view.detectChanges();
+    expect(root.querySelector('.bh-offer-banner-image')).toBeNull();
+    expect(root.querySelector('.bh-inline-offer .bh-offer-art ion-icon')?.getAttribute('name')).toBe('gift-outline');
+    expect(root.querySelector('.bh-inline-offer')?.textContent).toContain('Offer');
   });
 
   for (const gps of [null, { lat: 34.02, lng: 74.02 }]) {

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
 import { interval, Subscription } from 'rxjs';
 
@@ -181,7 +181,27 @@ export class FixedBookPage implements OnInit, OnDestroy {
     private fixedLocation: FixedCustomerLocationService,
     private realtime: RealtimeService,
     private audioAlert: AudioAlertService,
+    private activatedRoute: ActivatedRoute,
   ) {}
+
+  private requestedHomeRouteId: number | null = null;
+
+  ionViewWillEnter(): void {
+    const id = Number(this.activatedRoute.snapshot.queryParamMap.get('routeId'));
+    this.requestedHomeRouteId = Number.isSafeInteger(id) && id > 0 ? id : null;
+    if (!this.loading && this.routes.length) this.openRequestedHomeRoute();
+  }
+
+  private openRequestedHomeRoute(): void {
+    if (!this.requestedHomeRouteId) return;
+    const id = this.requestedHomeRouteId;
+    this.requestedHomeRouteId = null;
+    // An existing seat hold keeps priority over starting another booking.
+    if (this.hold) return;
+    const route = this.routes.find(item => item.id === id);
+    if (route) this.pickRoute(route);
+    else this.error = 'This route is no longer available here. Please choose another route.';
+  }
 
   async ngOnInit(): Promise<void> {
     this.cityId = this.booking.trip.cityId;
@@ -364,6 +384,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
         this.annotateRoutesWithProximity();
         this.sortRoutesByProximity();
         this.loading = false;
+        this.openRequestedHomeRoute();
         this.cdr.markForCheck();
       },
       error: () => {

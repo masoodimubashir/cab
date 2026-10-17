@@ -9,7 +9,7 @@ import {
   ViewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { AlertController, ViewDidEnter, ViewDidLeave, ViewWillEnter } from '@ionic/angular';
+import { AlertController, createAnimation, IonPopover, ViewDidEnter, ViewDidLeave, ViewWillEnter } from '@ionic/angular';
 import { Subscription, interval } from 'rxjs';
 
 import { ApiService } from '../../../core/api.service';
@@ -73,6 +73,26 @@ export interface ActiveFixedRide {
   latest_driver_location?: { lat: number; lng: number; recorded_at?: string } | null;
 }
 
+interface HomeRoute {
+  id: number;
+  name: string;
+  scope: TripScope;
+  origin_name?: string;
+  dest_name?: string;
+  flat_fare?: number | null;
+  stops?: Array<{ id: number }>;
+}
+
+interface HomeOffer {
+  id: number;
+  title: string;
+  discount_label: string;
+  subtitle?: string | null;
+  description?: string | null;
+  status: 'available' | 'used' | 'expired';
+  is_available: boolean;
+}
+
 /**
  * Home — Google Maps behind the bottom sheet, live GPS tracking & Active Ride overlay.
  */
@@ -85,6 +105,56 @@ export interface ActiveFixedRide {
 })
 export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, ViewDidLeave, OnDestroy {
   @ViewChild('mapEl', { static: true }) mapElRef!: ElementRef<HTMLDivElement>;
+  @ViewChild('tripsPopover') tripsPopover?: IonPopover;
+
+  tripsOpen = false;
+  private failedProfileImageUrl: string | null = null;
+
+  get profileImageUrl(): string | null {
+    const url = this.auth.resolveAvatarUrl(this.auth.getUser());
+    return url && url !== this.failedProfileImageUrl ? url : null;
+  }
+
+  onProfileImageError(url: string): void {
+    this.failedProfileImageUrl = url;
+    this.cdr.markForCheck();
+  }
+
+  get motionEnabled(): boolean {
+    return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+  readonly tripsLeaveAnimation = (baseEl: HTMLElement) => {
+    const root = baseEl.shadowRoot ?? baseEl;
+    const panel = root.querySelector<HTMLElement>('[part="content"]');
+    const arrow = root.querySelector<HTMLElement>('[part="arrow"]');
+    const backdrop = root.querySelector<HTMLElement>('ion-backdrop');
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const animation = createAnimation()
+      .duration(reducedMotion ? 0 : 180)
+      .easing('cubic-bezier(.4, 0, 1, 1)');
+    if (panel) {
+      animation.addAnimation(createAnimation().addElement(panel)
+        .beforeStyles({ 'transform-origin': 'bottom center' })
+        .fromTo('opacity', '1', '0')
+        .fromTo('transform', 'translateY(0) scale(1)', reducedMotion ? 'none' : 'translateY(4px) scale(.99)')
+        .afterClearStyles(['opacity', 'transform']));
+    }
+    if (arrow) animation.addAnimation(createAnimation().addElement(arrow).fromTo('opacity', '1', '0'));
+    if (backdrop) animation.addAnimation(createAnimation().addElement(backdrop).fromTo('opacity', 'var(--backdrop-opacity)', '0'));
+    // Preserve Ionic's positioning lifecycle for the next presentation.
+    return animation.afterAddWrite(() => {
+      baseEl.style.removeProperty('--width');
+      baseEl.classList.remove('popover-bottom');
+      for (const property of ['top', 'left', 'bottom', 'transform-origin']) panel?.style.removeProperty(property);
+      for (const property of ['top', 'left', 'display']) arrow?.style.removeProperty(property);
+    });
+  };
+  readonly tripSections = [
+    { title: 'Fixed route bookings', description: 'Your seats on fixed routes', icon: 'bus-outline', path: '/customer-tabs/fixed-rides' },
+    { title: 'Private rides', description: 'Your whole-car journeys', icon: 'car-outline', path: '/customer-tabs/my-trips' },
+    { title: 'Shuttle bookings', description: 'Your shared shuttle rides', icon: 'git-merge-outline', path: '/customer-tabs/shuttle-rides' },
+    { title: 'Scheduled rides', description: 'Trips planned for later', icon: 'calendar-outline', path: '/customer-tabs/scheduled-rides' },
+  ];
 
   loading = true;
   locationFetching = true;
@@ -98,6 +168,18 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   city: City | null = null;
   located = false;
+  homeExpanded = false;
+  savedPlaces: Array<{ label: string }> = [];
+  homeOffers: HomeOffer[] = [];
+  promotionTab: 'coupons' | 'offers' = 'offers';
+  offerBanners: AppBanner[] = [];
+  private dismissedHomeBanners = new Set<number>();
+  private failedHomeBannerImages = new Set<string>();
+  private homeOffersSub?: Subscription;
+  homeRoutes: HomeRoute[] = [];
+  routesLoading = false;
+  routesError = false;
+  private homeRoutesSub?: Subscription;
 
   // ── App Banners ─────────────────────────────────────────────────────────
   fullScreenBanner: AppBanner | null = null;
@@ -148,6 +230,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   ionViewWillEnter(): void {
+    this.loadSavedPlaces();
+    this.loadHomeOffers();
     if (!this.located || !this.city) {
       void this.initHome();
     }
@@ -179,6 +263,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   ngOnDestroy(): void {
+    this.homeOffersSub?.unsubscribe();
+    this.homeRoutesSub?.unsubscribe();
     if (this.watchId) {
       void this.geo.clearWatch(this.watchId);
       this.watchId = null;
@@ -214,6 +300,15 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.api.get<{ data: AppBanner[] }>('/app-banners?app=customer').subscribe({
       next: (res) => {
         const banners = res?.data ?? [];
+        const nextOffers = banners.filter(banner => banner.position === 'half');
+        for (const banner of nextOffers) {
+          const previous = this.offerBanners.find(item => item.id === banner.id);
+          if (!previous || previous.title !== banner.title || previous.image_url !== banner.image_url || previous.url_link !== banner.url_link) {
+            this.dismissedHomeBanners.delete(banner.id);
+            this.failedHomeBannerImages.delete(`${banner.id}:${banner.image_url}`);
+          }
+        }
+        this.offerBanners = nextOffers;
         const newFullScreen = banners.find((b) => b.position === 'full_screen') || null;
         const newHalf = banners.find((b) => b.position === 'half') || null;
 
@@ -277,6 +372,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   reopenOfferBanner(): void {
+    this.promotionTab = 'offers';
+    this.dismissedHomeBanners.clear();
     if (this.fullScreenBanner && this.isFullScreenDismissed) {
       this.isFullScreenDismissed = false;
     } else if (this.halfBanner && this.isHalfBannerCollapsed) {
@@ -285,6 +382,29 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
       this.isFullScreenDismissed = false;
       this.isHalfBannerCollapsed = false;
     }
+    this.cdr.markForCheck();
+  }
+
+  get visibleHomeBanners(): AppBanner[] {
+    const banners = this.offerBanners.length ? this.offerBanners : (this.halfBanner ? [this.halfBanner] : []);
+    return banners.filter(banner => !this.dismissedHomeBanners.has(banner.id)
+      && !(banner.id === this.halfBanner?.id && this.isHalfBannerCollapsed));
+  }
+
+  trackHomeBanner = (_: number, banner: AppBanner): number => banner.id;
+
+  homeBannerImage(banner: AppBanner): string {
+    return this.failedHomeBannerImages.has(`${banner.id}:${banner.image_url}`) ? '' : this.resolveBannerImageUrl(banner.image_url);
+  }
+
+  onHomeBannerImageError(banner: AppBanner): void {
+    this.failedHomeBannerImages.add(`${banner.id}:${banner.image_url}`);
+    this.cdr.markForCheck();
+  }
+
+  dismissHomeBanner(banner: AppBanner): void {
+    this.dismissedHomeBanners.add(banner.id);
+    if (banner.id === this.halfBanner?.id) this.collapseHalfBanner();
     this.cdr.markForCheck();
   }
 
@@ -399,7 +519,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     if (this.activeFixedRide) {
       this.fitActiveRideBounds(true);
     } else if (this.currentCoords) {
-      this.map.panTo(this.currentCoords);
+      this.centerUserOnMap(this.currentCoords);
       this.map.setZoom(16);
     } else {
       void this.requestLocation();
@@ -463,8 +583,16 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     }
 
     if (pan) {
-      this.map.setCenter(latlng);
+      this.centerUserOnMap(latlng);
       this.map.setZoom(16);
+    }
+  }
+
+  private centerUserOnMap(coords: { lat: number; lng: number }): void {
+    this.map.setCenter(coords);
+    // Keep the location pin in the visible map above the mobile booking panel.
+    if (window.innerWidth < 768) {
+      this.map.panBy(0, Math.round(this.mapElRef.nativeElement.clientHeight * 0.22));
     }
   }
 
@@ -555,6 +683,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
         this.scopes = offered.length ? offered : ['local'];
         this.scope = this.scopes[0];
         this.rebuildTiles();
+        this.loadHomeRoutes();
         this.locationFetching = false;
         this.loading = false;
         this.cdr.markForCheck();
@@ -603,6 +732,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.booking.setScope(scope);
     this.mode = null;
     this.rebuildTiles();
+    this.loadHomeRoutes();
     this.cdr.markForCheck();
   }
 
@@ -633,6 +763,91 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
       this.mode = first.mode;
       this.booking.setMode(first.mode, first.rideTypeId);
     }
+  }
+
+  get offersFixed(): boolean {
+    return this.tiles.some(tile => tile.mode === 'fixed');
+  }
+
+  private loadSavedPlaces(): void {
+    this.booking.savedPlaces().then(res => {
+      this.savedPlaces = (res.data ?? [])
+        .filter(place => typeof place.label === 'string' && place.label.trim())
+        .slice(0, 4);
+      this.cdr.markForCheck();
+    }).catch(() => {
+      this.savedPlaces = [];
+      this.cdr.markForCheck();
+    });
+  }
+
+  private loadHomeOffers(): void {
+    this.homeOffersSub?.unsubscribe();
+    this.homeOffersSub = this.api.get<{ data: HomeOffer[] }>('/me/coupons').subscribe({
+      next: res => {
+        this.homeOffers = (res.data ?? []).filter(offer => offer.is_available && offer.status === 'available').slice(0, 5);
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.homeOffers = [];
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  private loadHomeRoutes(): void {
+    this.homeRoutesSub?.unsubscribe();
+    this.homeRoutes = [];
+    this.routesError = false;
+    this.routesLoading = false;
+    if (!this.city || !this.offersFixed) return;
+    const params = new URLSearchParams({ city_id: String(this.city.id) });
+    if (this.currentCoords) {
+      params.set('lat', String(this.currentCoords.lat));
+      params.set('lng', String(this.currentCoords.lng));
+    }
+    this.routesLoading = true;
+    this.homeRoutesSub = this.api.get<{ data: HomeRoute[] }>('/fixed/routes?' + params).subscribe({
+      next: res => {
+        this.homeRoutes = (res.data ?? []).filter(route => route.scope === this.scope).slice(0, 3);
+        this.routesLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.routesLoading = false;
+        this.routesError = true;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  openHomeRoute(route: HomeRoute): void {
+    const fixed = this.tiles.find(tile => tile.mode === 'fixed');
+    if (!fixed) return;
+    this.pickMode(fixed);
+    this.booking.setScope(this.scope);
+    void this.router.navigate(['/customer-tabs/go/fixed'], { queryParams: { routeId: route.id } });
+  }
+
+  browseFixedRoutes(): void {
+    const fixed = this.tiles.find(tile => tile.mode === 'fixed');
+    if (!fixed) return;
+    this.pickMode(fixed);
+    this.whereTo();
+  }
+
+  async openVoice(): Promise<void> {
+    const alert = await this.alertCtrl.create({
+      header: 'DreamCabs AI',
+      message: 'Voice booking is coming soon. For now, use “Where to?” to book your ride.',
+      buttons: [{ text: 'Got it', role: 'cancel' }],
+    });
+    await alert.present();
+  }
+
+  async navigateToTripList(path: string): Promise<void> {
+    await this.tripsPopover?.dismiss();
+    void this.router.navigateByUrl(path);
   }
 
   // ── Active Live Fixed Ride Tracking & Map ────────────────────────────────

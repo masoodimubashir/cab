@@ -18,6 +18,39 @@ describe('Customer route category filters', () => {
     });
   });
 
+  it('opens the requested Home route once, using the loaded catalogue', () => {
+    const target = page as any;
+    target.activatedRoute = { snapshot: { queryParamMap: { get: () => '2' } } };
+    target.loading = false;
+    const pick = spyOn(page, 'pickRoute');
+    page.ionViewWillEnter();
+    expect(pick).toHaveBeenCalledOnceWith(page.routes[1]);
+    target.openRequestedHomeRoute();
+    expect(pick).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for route data and handles a removed Home route without selecting another', () => {
+    const target = page as any;
+    target.activatedRoute = { snapshot: { queryParamMap: { get: () => '99' } } };
+    target.loading = true;
+    const pick = spyOn(page, 'pickRoute');
+    page.ionViewWillEnter();
+    expect(pick).not.toHaveBeenCalled();
+    target.openRequestedHomeRoute();
+    expect(pick).not.toHaveBeenCalled();
+    expect(page.error).toContain('no longer available');
+  });
+
+  it('keeps an existing hold when arriving from a Home route card', () => {
+    const target = page as any;
+    target.requestedHomeRouteId = 2;
+    target.hold = { id: 7 };
+    const pick = spyOn(page, 'pickRoute');
+    target.openRequestedHomeRoute();
+    expect(pick).not.toHaveBeenCalled();
+    expect(target.hold.id).toBe(7);
+  });
+
   it('keeps nearby and all-route results within the selected category', () => {
     page.setRouteScope('outstation');
     expect(page.visibleRoutes.map(route => route.id)).toEqual([2]);
