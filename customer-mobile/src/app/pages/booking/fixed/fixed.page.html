@@ -48,7 +48,7 @@
     <div class="fb-location-control">
       <button type="button" class="fb-location-button dc-press" [disabled]="locating" (click)="refreshLocation()"><ion-icon name="locate-outline"></ion-icon>{{ locating ? 'Finding your location…' : (userCoords ? 'Refresh location' : 'Use current location') }}</button>
       <p class="fb-location-note" *ngIf="locationMessage" role="status">{{ locationMessage }}</p>
-      <p class="fb-location-note" *ngIf="userCoords">Distance is measured directly to the pickup stop.<span *ngIf="locationAccuracy != null && locationAccuracy > 50"> Your GPS location is approximate.</span></p>
+      <p class="fb-location-note" *ngIf="userCoords">Distance is measured directly to the first stop, where the vehicle starts.<span *ngIf="locationAccuracy != null && locationAccuracy > 50"> Your GPS location is approximate.</span></p>
     </div>
 
     <!-- Active Search Scope Indicator (when searching) -->
@@ -93,9 +93,9 @@
           <small class="fb-route-fare-unit">a seat</small>
         </span>
         <span class="fb-route-bottom">
-          <span class="fb-route-nearest" *ngIf="r.nearest_pickup_stop">
+          <span class="fb-route-nearest" *ngIf="r.starting_stop">
             <ion-icon name="walk-outline"></ion-icon>
-            <span class="fb-route-nearest__txt">Nearest: <b>{{ r.nearest_pickup_stop.name }}</b> ({{ formatDistance(r.nearest_pickup_stop.distance_meters) }})</span>
+            <span class="fb-route-nearest__txt">Starts at: <b>{{ r.starting_stop.name }}</b><ng-container *ngIf="r.distance_to_start != null"> ({{ formatDistance(r.distance_to_start) }})</ng-container></span>
           </span>
           <ion-icon name="chevron-forward-outline" class="fb-route-arrow" aria-hidden="true"></ion-icon>
         </span>
@@ -121,13 +121,13 @@
         </button>
       </ng-container>
 
-      <!-- Case 2: Radius filter active, but 0 routes within 1 km (while routes exist in city) -->
+      <!-- Case 2: No route starts within 1 km (while routes exist in city). -->
       <ng-container *ngIf="!search.trim() && radiusFilterActive && userCoords && scopedRoutes.length">
         <p class="fb-empty-title">
-          No pickup stops within 1 km
+          No routes start within 1 km
         </p>
         <p class="fb-empty-sub">
-          There are {{ scopedRoutes.length }} {{ routeScope === 'all' ? '' : routeScope }} routes in {{ selectedCityName }} further from your current spot.
+          There are {{ scopedRoutes.length }} {{ routeScope === 'all' ? '' : routeScope }} routes in {{ selectedCityName }}. Select All routes to see their starting stops.
         </p>
         <button type="button" class="fb-switch-city-btn dc-press" (click)="setRadiusFilter(false)">
           <ion-icon name="layers-outline"></ion-icon>

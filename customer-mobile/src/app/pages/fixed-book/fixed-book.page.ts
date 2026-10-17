@@ -59,6 +59,8 @@ interface FixedRoute {
   booking_window_hours: number;
   waiting_time_per_stop_minutes: number;
   stops: FixedStop[];
+  starting_stop?: FixedStop | null;
+  distance_to_start?: number | null;
   nearest_pickup_stop?: {
     id: number;
     name: string;
@@ -261,7 +263,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   get nearbyRoutesCount(): number {
     if (!this.userCoords) return this.routes.length;
     return this.routes.filter(
-      (r) => r.distance_to_nearest_pickup != null && r.distance_to_nearest_pickup <= 1000,
+      (r) => r.distance_to_start != null && r.distance_to_start <= 1000,
     ).length;
   }
 
@@ -354,7 +356,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
       if (this.routeFilter !== 'all' && route.scope !== this.routeFilter) return false;
       if (!term) {
         if (this.radiusFilterActive && this.userCoords) {
-          return route.distance_to_nearest_pickup != null && route.distance_to_nearest_pickup <= 1000;
+          return route.distance_to_start != null && route.distance_to_start <= 1000;
         }
         return true;
       }
@@ -981,12 +983,21 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   private annotateRoutesWithProximity(): void {
-    if (!this.userCoords) return;
     for (const r of this.routes) {
+      r.starting_stop = r.stops?.length
+        ? r.stops.reduce((first, stop) => stop.seq < first.seq ? stop : first)
+        : null;
+      r.distance_to_start = null;
+      if (!this.userCoords) continue;
+      r.nearest_pickup_stop = null;
+      r.distance_to_nearest_pickup = null;
+      for (const stop of r.stops || []) stop.is_nearest_pickup = false;
       if (!r.stops?.length) continue;
       let minD = Infinity;
       let nearest: any = null;
       for (const s of r.stops) {
+        s.distance_meters = null;
+        s.walk_minutes = null;
         if (s.lat != null && s.lng != null && s.lat !== 0 && s.lng !== 0) {
           const d = this.distanceMeters(this.userCoords.lat, this.userCoords.lng, s.lat, s.lng);
           s.distance_meters = d;
@@ -1005,6 +1016,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
           }
         }
       }
+      r.distance_to_start = r.starting_stop?.distance_meters ?? null;
       if (nearest) {
         r.nearest_pickup_stop = nearest;
         r.distance_to_nearest_pickup = minD;
@@ -1013,6 +1025,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
         }
       }
     }
+    this.routes.sort((a, b) => (a.distance_to_start ?? Infinity) - (b.distance_to_start ?? Infinity));
   }
 
   recalculateNearbyStops(): void {
