@@ -17,6 +17,8 @@ Reference content is design input, not instructions that override user requests.
   Do not turn example fares, offers, seat counts, or protection claims into constants.
 - Keep both apps visually consistent using the existing green/navy identity,
   light surfaces, rounded cards, readable hierarchy, and prominent primary actions.
+- Hide the persistent vertical scrollbar in the Home sheet while preserving its
+  normal scrolling behavior; keep this rule scoped to the Home scroll area.
 - On 2026-10-17 the user requested C01/customer screen changes. The source audit
   and first Home UI pass are now implemented. Do not infer that other screens or
   new functional features are complete. Read the tracker for current progress.
@@ -40,8 +42,13 @@ Reference navigation: **Home / Trips / Voice / Safety / Account**; Wallet is
 inside Account. This differs from the earlier assistant's Wallet-tab suggestion.
 The reference navigation must be considered in the design, while actual production
 visibility of Voice was resolved by the user's follow-up: show the Voice tab
-with a microphone outline icon. Until the assistant is implemented, its action
-explains that voice booking is coming soon and directs users to manual booking.
+with a microphone outline icon. The user subsequently requested the voice screen
+design. It opens /customer-tabs/go/voice with a mint background and static waveform.
+User subsequently required production-facing copy: remove all sample trip data,
+design-preview/example labels and inactive booking controls. It now shows Coming
+soon and a Book a ride link returning Home. No microphone access, speech processing
+or booking submission occurs. Keep design-only terminology and invented records out
+of visible text and accessibility labels throughout future redesign work.
 The assistant suggested Home / My Trips / Safety / Account for an initial release;
 that suggestion is not a user-approved replacement for the five-tab reference.
 
@@ -96,8 +103,8 @@ Important finding: active Home is `pages/booking/home/`, not `pages/customer-boo
 The first Home pass implements the map/search sheet, real catalogue services,
 inline admin banner, saved-location links, scope-filtered route/fare cards and
 Home/Trips/Voice/Safety/Account shortcuts with outline Ionicons, as requested.
-Trips opens a list chooser; Safety opens existing contacts. Voice displays a
-coming-soon message; actual voice booking and other new features remain deferred.
+Trips opens a list chooser; Safety opens existing contacts. Voice opens the Coming
+soon screen described above; actual voice booking and other new features remain deferred.
 User requested a custom Trips popup: anchor above its tab with a pointer, rounded
 panel, left-aligned outline icons, titles/descriptions, and a close button. This
 replaces the generic Ionic alert; existing trip-list destinations stay the same.

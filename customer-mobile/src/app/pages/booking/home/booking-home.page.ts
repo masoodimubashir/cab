@@ -836,13 +836,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.whereTo();
   }
 
-  async openVoice(): Promise<void> {
-    const alert = await this.alertCtrl.create({
-      header: 'DreamCabs AI',
-      message: 'Voice booking is coming soon. For now, use “Where to?” to book your ride.',
-      buttons: [{ text: 'Got it', role: 'cancel' }],
-    });
-    await alert.present();
+  openVoice(): void {
+    void this.router.navigate(['/customer-tabs/go/voice']);
   }
 
   async navigateToTripList(path: string): Promise<void> {
