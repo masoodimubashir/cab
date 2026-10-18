@@ -5,6 +5,7 @@ import { IonicModule } from '@ionic/angular';
 import { RouterModule, Routes } from '@angular/router';
 
 import { BookingHomePage } from './home/booking-home.page';
+import { BookingVoicePage } from './voice/voice.page';
 
 /**
  * The redesigned booking flow (rev 5). Home is the bottom-sheet screen; the
@@ -12,6 +13,7 @@ import { BookingHomePage } from './home/booking-home.page';
  * shared StepShell so every step looks the same.
  */
 const routes: Routes = [
+  { path: 'voice', component: BookingVoicePage },
   {
     // The mode flows are nested here rather than beside 'go' in the tabs
     // router: Angular doesn't backtrack out of a lazy module, so a sibling
@@ -32,6 +34,6 @@ const routes: Routes = [
 
 @NgModule({
   imports: [CommonModule, FormsModule, IonicModule, RouterModule.forChild(routes)],
-  declarations: [BookingHomePage],
+  declarations: [BookingHomePage, BookingVoicePage],
 })
 export class BookingPageModule {}

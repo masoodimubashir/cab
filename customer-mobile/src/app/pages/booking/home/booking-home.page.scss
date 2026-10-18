@@ -1211,7 +1211,8 @@
   cursor: pointer;
   span { width: 34px; height: 4px; border-radius: 4px; background: #cbd4df; }
 }
-.bh-home-scroll { overflow-y: auto; overscroll-behavior-y: contain; padding: 0 18px 24px; min-height: 0; scrollbar-width: thin; }
+.bh-home-scroll { overflow-y: auto; overscroll-behavior-y: contain; padding: 0 18px 24px; min-height: 0; scrollbar-width: none; -ms-overflow-style: none; }
+.bh-home-scroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .bh-home-title { font-size: 18px; font-weight: 750; letter-spacing: -.4px; margin: 0 0 12px; }
 .bh-search {
   width: 100%;
