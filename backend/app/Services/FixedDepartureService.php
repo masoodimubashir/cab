@@ -10,6 +10,7 @@ use App\Models\Driver;
 use App\Models\Route;
 use App\Models\RouteDeparture;
 use App\Models\SeatReservation;
+use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,7 @@ class FixedDepartureService
         private readonly FixedBookingEventService $events,
         private readonly NotificationCenter $notifier,
         private readonly VehicleFamilyImageService $vehicleImages,
+        private readonly TripStateMachineService $tripStateMachine,
     ) {}
 
     public function customerDepartures(Route $route): Collection
@@ -234,7 +236,7 @@ class FixedDepartureService
             }
         }
 
-        $dep = DB::transaction(function () use ($departure) {
+        $dep = DB::transaction(function () use ($departure, $reason) {
             /** @var RouteDeparture $dep */
             $dep = RouteDeparture::query()->lockForUpdate()->findOrFail($departure->id);
             $dep->update([
@@ -242,6 +244,16 @@ class FixedDepartureService
                 'visible_to_customers' => false,
                 'boarding_closed_at' => $dep->boarding_closed_at ?: now(),
             ]);
+
+            if ($dep->trip_id) {
+                $trip = Trip::query()->lockForUpdate()->find($dep->trip_id);
+                if ($trip && !in_array($trip->status, ['CANCELLED', 'COMPLETED'], true)) {
+                    $this->tripStateMachine->transition($trip, 'CANCELLED', [
+                        'cancelled_reason' => $reason ?: 'Admin cancelled the fixed vehicle.',
+                        'cancelled_by' => AutoRefundService::BY_OPERATOR,
+                    ]);
+                }
+            }
 
             return $dep->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
         });

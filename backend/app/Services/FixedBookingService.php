@@ -69,7 +69,7 @@ class FixedBookingService
 
     public function shapeSeatHold(FixedSeatHold $hold): array
     {
-        $hold->loadMissing(['heldSeats', 'boardStop', 'dropStop', 'routeDeparture.driver', 'customer']);
+        $hold->loadMissing(['heldSeats', 'boardStop', 'dropStop', 'routeDeparture.driver', 'customer', 'couponAssignment.coupon']);
 
         return [
             'id' => $hold->id,
@@ -94,6 +94,9 @@ class FixedBookingService
             'original_amount' => $hold->original_amount !== null ? (float) $hold->original_amount : (float) $hold->amount,
             'discount_amount' => $hold->discount_amount !== null ? (float) $hold->discount_amount : 0.0,
             'coupon_assignment_id' => $hold->coupon_assignment_id,
+            'coupon_title' => $hold->couponAssignment?->coupon?->title,
+            'coupon_editable' => $hold->status === 'ACCEPTED' && $hold->expires_at?->isFuture()
+                && !$hold->razorpay_order_id && !$hold->razorpay_payment_id && !$hold->payment_reference,
             'has_extra_luggage' => (bool) $hold->has_extra_luggage,
             'extra_luggage_count' => (int) $hold->extra_luggage_count,
             'luggage_surcharge_amount' => (float) $hold->luggage_surcharge_amount,

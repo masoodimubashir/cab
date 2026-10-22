@@ -559,6 +559,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/fixed/coupon-preview', [FixedBookingsController::class, 'couponPreview'])->middleware('throttle:booking');
     Route::post('/fixed/seat-holds', [FixedBookingsController::class, 'storeSeatHold'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/fixed/seat-holds/{fixedSeatHold}/release', [FixedBookingsController::class, 'releaseSeatHold'])->middleware('throttle:booking');
+    Route::post('/fixed/seat-holds/{fixedSeatHold}/coupon', [FixedBookingsController::class, 'updateSeatHoldCoupon'])->middleware('throttle:booking');
     Route::post('/fixed/seat-holds/{fixedSeatHold}/razorpay-order', [FixedBookingsController::class, 'createSeatHoldRazorpayOrder'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/fixed/seat-holds/{fixedSeatHold}/confirm-payment', [FixedBookingsController::class, 'confirmSeatHoldPayment'])->middleware(['throttle:booking', 'idempotent']);
     Route::get('/fixed/bookings', [FixedBookingsController::class, 'index']);
