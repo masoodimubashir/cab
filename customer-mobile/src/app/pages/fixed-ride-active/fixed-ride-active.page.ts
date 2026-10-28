@@ -6,7 +6,6 @@ import { finalize } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import {
-  buildPassengerMarkerElement,
   buildReusableCarMarkerElement,
   buildStopMarkerElement,
   updateCarMarkerBearing,
@@ -55,6 +54,8 @@ interface FixedBooking {
   drop_lat?: number | null;
   drop_lng?: number | null;
   seats: number;
+  seat_labels?: string[];
+  latest_driver_location_stale?: boolean;
   status: string;
   boarding_code?: string | null;
   fixed_live_status?: FixedLiveStatus | null;
@@ -94,13 +95,24 @@ export class FixedRideActivePage implements OnDestroy {
   ratingScore = 5;
   ratingComment = '';
   error: string | null = null;
+  mapError: string | null = null;
+  sosBusy = false;
+  walkingDistanceMeters: number | null = null;
+  walkingDurationSeconds: number | null = null;
+  walkingLoading = false;
+  walkingMessage = 'Waiting for your current location…';
+  private walkingRequest = 0;
+  private walkingLeftPage = false;
+  private walkingLastKey = '';
+  private walkingLastAttempt = 0;
   booking: FixedBooking | null = null;
+  stopScrollPercent = 0;
   sheetExpanded = false;
+  toggleSheet(): void { this.sheetExpanded = !this.sheetExpanded; }
 
   private map: any | null = null;
   private pickupMarker: any | null = null;
   private dropMarker: any | null = null;
-  private userLiveMarker: any | null = null;
   private driverMarker: any | null = null;
   private stopMarkers: any[] = [];
   private routePolylines: any[] = [];
@@ -131,6 +143,7 @@ export class FixedRideActivePage implements OnDestroy {
   ) {}
 
   ionViewWillEnter(): void {
+    this.walkingLeftPage = false;
     this.load();
     this.pollSub ??= interval(5000).subscribe(() => this.silentReload());
     this.backButtonSub = this.platform.backButton.subscribeWithPriority(10, () => {
@@ -140,6 +153,9 @@ export class FixedRideActivePage implements OnDestroy {
   }
 
   ionViewWillLeave(): void {
+    this.walkingLeftPage = true;
+    this.walkingRequest++;
+    this.walkingLoading = false;
     this.pollSub?.unsubscribe();
     this.pollSub = undefined;
     this.backButtonSub?.unsubscribe();
@@ -150,10 +166,8 @@ export class FixedRideActivePage implements OnDestroy {
   }
 
   ngOnDestroy(): void {
-    void this.fixedLocation.stop();
+    this.ionViewWillLeave();
     this.clearMap();
-    this.stopRealtimeTracking();
-    void this.stopUserLocationWatch();
   }
 
   load(): void {
@@ -176,6 +190,7 @@ export class FixedRideActivePage implements OnDestroy {
           this.syncRealtimeTracking();
         }
         this.syncFixedLocationStream();
+        void this.refreshWalkingDistance();
       },
       error: (err) => {
         this.loading = false;
@@ -204,14 +219,23 @@ export class FixedRideActivePage implements OnDestroy {
           this.initOrUpdateMap();
           this.syncRealtimeTracking();
           this.syncFixedLocationStream();
+          void this.refreshWalkingDistance();
         }
       },
       error: () => {},
     });
   }
 
-  toggleSheet(): void {
-    this.sheetExpanded = !this.sheetExpanded;
+  updateStopScroll(event: Event): void {
+    const rail = event.target as HTMLElement;
+    const overflow = rail.scrollWidth - rail.clientWidth;
+    this.stopScrollPercent = overflow > 0 ? rail.scrollLeft / overflow * 100 : 0;
+  }
+
+  scrollStopTimeline(rail: HTMLElement, event: Event): void {
+    const percent = Number((event.target as HTMLInputElement).value);
+    rail.scrollTo({ left: Math.max(0, rail.scrollWidth - rail.clientWidth) * percent / 100 });
+    this.stopScrollPercent = percent;
   }
 
   back(): void {
@@ -223,6 +247,143 @@ export class FixedRideActivePage implements OnDestroy {
     if (phone) {
       window.open('tel:' + phone, '_system');
     }
+  }
+
+  orderedStops(ride: FixedBooking): StopItem[] {
+    return [...(ride.stops || [])].sort((a, b) => a.seq - b.seq);
+  }
+
+  isBoardStop(ride: FixedBooking, stop: StopItem): boolean {
+    if (ride.board_lat != null && ride.board_lng != null && stop.lat != null && stop.lng != null) {
+      return Math.abs(ride.board_lat - stop.lat) < .00001 && Math.abs(ride.board_lng - stop.lng) < .00001;
+    }
+    return !!ride.board && stop.name === ride.board;
+  }
+
+  hasReached(ride: FixedBooking, stop: StopItem): boolean {
+    return this.hasJourneyStarted(ride) && ride.fixed_last_reached_stop_seq != null && stop.seq <= ride.fixed_last_reached_stop_seq;
+  }
+
+  hasJourneyStarted(ride: FixedBooking): boolean {
+    return ['DISPATCHED', 'DEPARTED', 'COMPLETED'].includes((ride.departure_status || '').toUpperCase()) ||
+      ['BOARDED', 'DROPPED', 'COMPLETED'].includes(ride.status.toUpperCase());
+  }
+
+  isCurrentStop(ride: FixedBooking, stop: StopItem): boolean {
+    return this.hasReached(ride, stop) && stop.seq === ride.fixed_last_reached_stop_seq;
+  }
+
+  hasPassed(ride: FixedBooking, stop: StopItem): boolean {
+    return this.hasReached(ride, stop) && stop.seq < ride.fixed_last_reached_stop_seq!;
+  }
+
+  progressTitle(ride: FixedBooking): string {
+    if (ride.status.toUpperCase() === 'BOARDED') return 'You’re on your way';
+    if (!this.hasJourneyStarted(ride)) return this.bookingStatusLabel(ride);
+    if (['driver_arrived', 'leaving_soon', 'vehicle_approaching'].includes(ride.fixed_live_status?.key || '')) return this.bookingStatusLabel(ride);
+    const stops = this.orderedStops(ride);
+    const pickup = stops.findIndex(stop => this.isBoardStop(ride, stop));
+    const last = stops.findIndex(stop => stop.seq === ride.fixed_last_reached_stop_seq);
+    if (pickup >= 0 && last >= 0) {
+      if (last === pickup) return 'Cab reached your pickup stop';
+      if (last > pickup) return 'Cab has passed your pickup stop';
+      const remaining = pickup - last;
+      return `Cab is ${remaining} ${remaining === 1 ? 'stop' : 'stops'} away`;
+    }
+    return this.bookingStatusLabel(ride);
+  }
+
+  canWalkToPickup(ride: FixedBooking): boolean {
+    return ['BOOKED', 'CONFIRMED'].includes(ride.status.toUpperCase()) &&
+      ride.board_lat != null && ride.board_lng != null &&
+      Number.isFinite(Number(ride.board_lat)) && Number.isFinite(Number(ride.board_lng));
+  }
+
+
+  walkingDistanceLabel(): string {
+    const meters = this.walkingDistanceMeters;
+    if (meters == null) return this.walkingLoading ? 'Calculating walking distance…' : this.walkingMessage;
+    const distance = meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`;
+    const duration = this.walkingDurationSeconds;
+    return `${distance} walk${duration != null ? ` · about ${Math.max(1, Math.ceil(duration / 60))} min` : ''}`;
+  }
+
+  async refreshWalkingDistance(): Promise<void> {
+    const ride = this.booking;
+    if (this.walkingLeftPage) return;
+    if (!ride || !this.canWalkToPickup(ride)) {
+      this.walkingRequest++;
+      this.walkingDistanceMeters = null; this.walkingDurationSeconds = null; this.walkingLoading = false;
+      return;
+    }
+    const origin = this.userPosition;
+    if (!origin) { this.walkingMessage = 'Current location unavailable. Enable location to see walking distance.'; return; }
+    const destination = { lat: Number(ride.board_lat), lng: Number(ride.board_lng) };
+    const key = `${ride.id}:${destination.lat},${destination.lng}`;
+    // Avoid a billable route request on each GPS ping or five-second booking poll.
+    if (key === this.walkingLastKey && Date.now() - this.walkingLastAttempt < 30000) return;
+    if (key !== this.walkingLastKey) { this.walkingDistanceMeters = null; this.walkingDurationSeconds = null; }
+    this.walkingLastKey = key; this.walkingLastAttempt = Date.now();
+    const request = ++this.walkingRequest;
+    this.walkingLoading = true;
+    try {
+      const metrics = await this.fetchWalkingRoute(origin, destination);
+      if (request !== this.walkingRequest || this.walkingLeftPage) return;
+      this.walkingDistanceMeters = metrics.meters; this.walkingDurationSeconds = metrics.seconds;
+      this.walkingMessage = '';
+    } catch {
+      if (request !== this.walkingRequest || this.walkingLeftPage) return;
+      this.walkingDistanceMeters = null; this.walkingDurationSeconds = null;
+      this.walkingMessage = 'Walking distance unavailable. Please try refreshing.';
+    } finally { if (request === this.walkingRequest) this.walkingLoading = false; }
+  }
+
+  private async fetchWalkingRoute(origin: { lat: number; lng: number }, destination: { lat: number; lng: number }): Promise<{ meters: number; seconds: number | null }> {
+    await this.places.ensureLoaded();
+    try {
+      const { Route } = await google.maps.importLibrary('routes');
+      const result = await Route.computeRoutes({ origin, destination, travelMode: 'WALKING', fields: ['distanceMeters', 'durationMillis'] });
+      const route = result.routes?.[0];
+      if (typeof route?.distanceMeters === 'number' && Number.isFinite(route.distanceMeters) && route.distanceMeters >= 0) {
+        return { meters: route.distanceMeters, seconds: typeof route.durationMillis === 'number' && Number.isFinite(route.durationMillis) ? route.durationMillis / 1000 : null };
+      }
+    } catch { /* Existing deployments may only have the legacy Directions API enabled. */ }
+    const result = await new google.maps.DirectionsService().route({ origin, destination, travelMode: 'WALKING' });
+    const leg = result.routes?.[0]?.legs?.[0];
+    if (typeof leg?.distance?.value !== 'number' || !Number.isFinite(leg.distance.value) || leg.distance.value < 0) throw new Error('No walking route');
+    return { meters: leg.distance.value, seconds: typeof leg.duration?.value === 'number' ? leg.duration.value : null };
+  }
+
+  seatLine(ride: FixedBooking): string {
+    if (ride.seat_labels?.length) return `Seat ${ride.seat_labels.join(', ')}`;
+    return `${ride.seats} ${ride.seats === 1 ? 'seat' : 'seats'}`;
+  }
+
+  paymentMethodLabel(ride: FixedBooking): string {
+    return ride.payment_method ? this.prettyToken(ride.payment_method) : 'Method unavailable';
+  }
+
+  vehicleDetails(ride: FixedBooking): string {
+    return [this.carLine(ride), ride.vehicle_reg_no].filter(Boolean).join(' · ');
+  }
+
+  async triggerSOS(): Promise<void> {
+    if (!this.booking?.trip_id || !this.isActiveBooking(this.booking) || this.sosBusy) return;
+    const tripId = this.booking.trip_id;
+    const alert = await this.alerts.create({
+      header: 'Send SOS?', message: 'Alert the support team with your ride and current location, if available.',
+      buttons: [{ text: 'Go back', role: 'cancel' }, { text: 'Send SOS', role: 'confirm' }],
+    });
+    await alert.present();
+    const result = await alert.onDidDismiss();
+    if (result.role !== 'confirm' || this.sosBusy || this.booking?.trip_id !== tripId || !this.isActiveBooking(this.booking)) return;
+    this.sosBusy = true;
+    try {
+      await this.api.post(`/trips/${tripId}/sos`, this.userPosition || {}).toPromise();
+      await this.showToast('SOS alert sent to the support team.');
+    } catch (err: any) {
+      await this.showToast(err?.error?.message || 'Could not send SOS. Please try again or contact support.');
+    } finally { this.sosBusy = false; }
   }
 
   // ── Smart Route Corridor Naming ───────────────────────────────────────────
@@ -269,12 +430,14 @@ export class FixedRideActivePage implements OnDestroy {
   }
 
   private async ensureMap(): Promise<void> {
+    if (this.walkingLeftPage) return;
     if (!this.mapElRef?.nativeElement) {
       setTimeout(() => void this.ensureMap(), 80);
       return;
     }
 
     try {
+      this.mapError = null;
       await this.places.ensureLoaded();
       if (!this.mapElRef?.nativeElement || typeof google === 'undefined') return;
 
@@ -295,7 +458,7 @@ export class FixedRideActivePage implements OnDestroy {
       this.updateMarkers();
       this.fitMapBounds();
     } catch {
-      /* ignore map init errors on connection loss */
+      this.mapError = 'The map is unavailable. Your ride details are still shown. Refresh to try again.';
     }
   }
 
@@ -304,7 +467,6 @@ export class FixedRideActivePage implements OnDestroy {
     if (this.booking?.board_lat != null && this.booking?.board_lng != null) {
       return { lat: Number(this.booking.board_lat), lng: Number(this.booking.board_lng) };
     }
-    if (this.userPosition) return this.userPosition;
     return { lat: 34.2985, lng: 74.4712 };
   }
 
@@ -351,27 +513,6 @@ export class FixedRideActivePage implements OnDestroy {
     // 3. Intermediate Stops eliminated: customer sees only their own pickup & drop pins
     for (const m of this.stopMarkers) m.map = null;
     this.stopMarkers = [];
-
-    // 4. Customer Device Actual Live Location (Person Avatar)
-    if (this.userPosition) {
-      if (!this.userLiveMarker) {
-        this.userLiveMarker = new google.maps.marker.AdvancedMarkerElement({
-          position: this.userPosition,
-          map: this.map,
-          title: 'You (Actual Location)',
-          content: buildPassengerMarkerElement({
-            kind: 'pickup',
-            name: this.auth.getUser()?.name || 'You',
-            isLive: true,
-            avatarUrl: this.auth.resolveAvatarUrl(this.auth.getUser()),
-          }),
-          zIndex: 1100,
-        });
-      } else {
-        this.userLiveMarker.position = this.userPosition;
-        if (!this.userLiveMarker.map) this.userLiveMarker.map = this.map;
-      }
-    }
 
     // 5. Driver Vehicle Live Marker (active booking only)
     if (this.driverPosition && this.isActiveBooking(b)) {
@@ -446,7 +587,6 @@ export class FixedRideActivePage implements OnDestroy {
     addPoint(this.booking?.board_lat, this.booking?.board_lng);
     addPoint(this.booking?.drop_lat, this.booking?.drop_lng);
     addPoint(this.driverPosition?.lat, this.driverPosition?.lng);
-    addPoint(this.userPosition?.lat, this.userPosition?.lng);
 
     if (this.booking?.stops) {
       for (const s of this.booking.stops) {
@@ -455,14 +595,19 @@ export class FixedRideActivePage implements OnDestroy {
     }
 
     if (count > 0) {
-      this.map.fitBounds(bounds, 50);
+      const sheet = this.mapElRef?.nativeElement.parentElement?.querySelector('.live-sheet');
+      const mapHeight = this.mapElRef?.nativeElement.clientHeight || 600;
+      const mapWidth = this.mapElRef?.nativeElement.clientWidth || 400;
+      const sheetHeight = sheet?.getBoundingClientRect().height || mapHeight * .56;
+      this.map.fitBounds(bounds, mapWidth >= 900
+        ? { top: 90, bottom: 40, left: 440, right: 40 }
+        : { top: 95, bottom: Math.min(sheetHeight + 20, mapHeight - 160), left: 30, right: 30 });
     }
   }
 
   private clearMap(): void {
     if (this.pickupMarker) { this.pickupMarker.map = null; this.pickupMarker = null; }
     if (this.dropMarker) { this.dropMarker.map = null; this.dropMarker = null; }
-    if (this.userLiveMarker) { this.userLiveMarker.map = null; this.userLiveMarker = null; }
     if (this.driverMarker) { this.driverMarker.map = null; this.driverMarker = null; }
     for (const m of this.stopMarkers) m.map = null;
     this.stopMarkers = [];
@@ -514,9 +659,11 @@ export class FixedRideActivePage implements OnDestroy {
     if (this.watchId) return;
     try {
       const initialFix = await this.geo.getCurrentPosition();
+      if (this.walkingLeftPage) return;
       if (initialFix) {
         this.zone.run(() => {
           this.userPosition = { lat: initialFix.lat, lng: initialFix.lng };
+          void this.refreshWalkingDistance();
           if (this.map) this.updateMarkers();
         });
       }
@@ -527,13 +674,15 @@ export class FixedRideActivePage implements OnDestroy {
           if (fix) {
             this.zone.run(() => {
               this.userPosition = { lat: fix.lat, lng: fix.lng };
+              void this.refreshWalkingDistance();
               if (this.map) this.updateMarkers();
             });
           }
         },
       );
+      if (this.walkingLeftPage) await this.stopUserLocationWatch();
     } catch {
-      /* ignore */
+      this.walkingMessage = 'Current location unavailable. Enable location to see walking distance.';
     }
   }
 
@@ -616,6 +765,26 @@ export class FixedRideActivePage implements OnDestroy {
     return (booking.boarding_code || '').split('');
   }
 
+  journeyStage(booking: FixedBooking): number {
+    switch ((booking.status || '').toUpperCase()) {
+      case 'BOOKED':
+      case 'CONFIRMED': return 0;
+      case 'BOARDED': return 1;
+      case 'DROPPED': return 2;
+      case 'COMPLETED': return 3;
+      default: return -1;
+    }
+  }
+
+  showBoardingCode(booking: FixedBooking): boolean {
+    return this.journeyStage(booking) === 0 && !!booking.boarding_code;
+  }
+
+  journeyIcon(booking: FixedBooking): string {
+    const stage = this.journeyStage(booking);
+    return stage >= 2 ? 'checkmark-circle-outline' : stage === 1 ? 'car-outline' : 'ticket-outline';
+  }
+
   canCancel(booking: FixedBooking): boolean {
     const status = (booking.status || '').toUpperCase();
     const depStatus = (booking.departure_status || '').toUpperCase();
@@ -625,7 +794,7 @@ export class FixedRideActivePage implements OnDestroy {
   bookingStatusLabel(booking: FixedBooking): string {
     switch ((booking.status || '').toUpperCase()) {
       case 'BOOKED':
-      case 'CONFIRMED': return 'Booking confirmed';
+      case 'CONFIRMED': return booking.fixed_live_status?.label || 'Booking confirmed';
       case 'BOARDED': return 'Boarded';
       case 'DROPPED': return 'Dropped off';
       case 'COMPLETED': return 'Ride completed';
@@ -636,6 +805,7 @@ export class FixedRideActivePage implements OnDestroy {
   }
 
   statusClass(booking: FixedBooking): string {
+    if (['BOOKED', 'CONFIRMED'].includes(booking.status.toUpperCase()) && booking.fixed_live_status?.tone) return 'status--' + booking.fixed_live_status.tone;
     switch ((booking.status || '').toUpperCase()) {
       case 'BOARDED':
       case 'DROPPED':
@@ -647,7 +817,7 @@ export class FixedRideActivePage implements OnDestroy {
   }
 
   statusDetail(booking: FixedBooking): string {
-    if (booking.fixed_live_status?.detail) return booking.fixed_live_status.detail;
+    if (['BOOKED', 'CONFIRMED', 'BOARDED'].includes((booking.status || '').toUpperCase()) && booking.fixed_live_status?.detail) return booking.fixed_live_status.detail;
     switch ((booking.status || '').toUpperCase()) {
       case 'BOOKED':
       case 'CONFIRMED': return 'Your seat is booked. The vehicle will pick you up at your stop.';
@@ -679,8 +849,8 @@ export class FixedRideActivePage implements OnDestroy {
   }
 
   paymentLine(booking: FixedBooking): string {
-    const method = booking.payment_method ? this.prettyToken(booking.payment_method) : 'Online';
-    const status = booking.payment_status ? this.prettyToken(booking.payment_status) : 'PAID';
+    const method = this.paymentMethodLabel(booking);
+    const status = booking.payment_status ? this.prettyToken(booking.payment_status) : 'Status unavailable';
     return method + ' · ' + status;
   }
 

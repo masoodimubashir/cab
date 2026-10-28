@@ -1,6 +1,7 @@
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Platform, ViewDidEnter, ViewWillLeave } from '@ionic/angular';
+import { AlertController, Platform, ViewDidEnter, ViewWillLeave } from '@ionic/angular';
+import { PushService } from '../../core/push.service';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { forkJoin, of, Subscription } from 'rxjs';
@@ -72,6 +73,35 @@ export class ProfilePage implements OnInit, OnDestroy {
 
   // Tab segment switcher: 'profile' | 'vehicle' | 'documents'
   activeSegment: 'profile' | 'vehicle' | 'documents' = 'profile';
+  editingProfile = false;
+  accountWallet: number | null = null;
+
+  get showAccountOverview(): boolean {
+    return !this.onboarding && this.activeSegment === 'profile' && !this.editingProfile;
+  }
+
+  backToAccount(): void {
+    this.activeSegment = 'profile'; this.editingProfile = false;
+  }
+
+  editAccountProfile(): void {
+    this.activeSegment = 'profile'; this.editingProfile = true;
+  }
+
+  openAccountPage(path: string): void { void this.router.navigateByUrl(path); }
+
+  async signOutAccount(): Promise<void> {
+    const alert = await this.alerts.create({ header: 'Log out?', message: 'You will need to sign in again to access your driver account.', buttons: [{ text: 'Cancel', role: 'cancel' }, { text: 'Log out', role: 'confirm' }] });
+    await alert.present();
+    if ((await alert.onDidDismiss()).role !== 'confirm') return;
+    try { await this.push.unregister(); } catch { /* best-effort */ }
+    this.api.post('/me/logout', {}).subscribe({ next: () => void this.finishAccountLogout(), error: () => void this.finishAccountLogout() });
+  }
+
+  private async finishAccountLogout(): Promise<void> {
+    await this.auth.logout();
+    void this.router.navigateByUrl('/auth/login', { replaceUrl: true });
+  }
 
   // Personal Profile fields
   photoFile: File | null = null;
@@ -169,6 +199,8 @@ export class ProfilePage implements OnInit, OnDestroy {
     private geo: GeolocationService,
     private places: PlacesService,
     private platform: Platform,
+    private alerts: AlertController,
+    private push: PushService,
   ) {}
 
   get onboardingTitle(): string {
@@ -247,6 +279,7 @@ export class ProfilePage implements OnInit, OnDestroy {
         this.activeSegment = 'vehicle';
       } else if (params['tab'] === 'profile') {
         this.activeSegment = 'profile';
+        this.editingProfile = true;
       }
     });
 
@@ -379,6 +412,7 @@ export class ProfilePage implements OnInit, OnDestroy {
 
   switchSegment(seg: 'profile' | 'vehicle' | 'documents'): void {
     this.activeSegment = seg;
+    if (seg === 'profile') this.editingProfile = false;
     this.error = null;
     this.message = null;
   }
@@ -407,6 +441,7 @@ export class ProfilePage implements OnInit, OnDestroy {
   }
 
   reload(): void {
+    if (!this.onboarding) this.api.get<{ balance: number }>('/drivers/me/wallet').subscribe({ next: res => this.accountWallet = Number.isFinite(Number(res.balance)) && res.balance != null ? Number(res.balance) : null, error: () => this.accountWallet = null });
     this.error = null;
     this.message = null;
     this.busy = true;
