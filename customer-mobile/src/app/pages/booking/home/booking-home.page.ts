@@ -9,7 +9,7 @@ import {
   ViewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { AlertController, createAnimation, IonPopover, ViewDidEnter, ViewDidLeave, ViewWillEnter } from '@ionic/angular';
+import { AlertController, ViewDidEnter, ViewDidLeave, ViewWillEnter } from '@ionic/angular';
 import { Subscription, interval } from 'rxjs';
 
 import { ApiService } from '../../../core/api.service';
@@ -24,7 +24,6 @@ import { PlacesService } from '../../../core/places.service';
 import { RealtimeService, TripLocationPayload } from '../../../core/realtime.service';
 import {
   BookingService,
-  resolveCity,
   nearestCity,
   distanceKm,
   pointInPolygon,
@@ -105,9 +104,6 @@ interface HomeOffer {
 })
 export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, ViewDidLeave, OnDestroy {
   @ViewChild('mapEl', { static: true }) mapElRef!: ElementRef<HTMLDivElement>;
-  @ViewChild('tripsPopover') tripsPopover?: IonPopover;
-
-  tripsOpen = false;
   private failedProfileImageUrl: string | null = null;
 
   get profileImageUrl(): string | null {
@@ -120,45 +116,19 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.cdr.markForCheck();
   }
 
-  get motionEnabled(): boolean {
-    return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  }
-  readonly tripsLeaveAnimation = (baseEl: HTMLElement) => {
-    const root = baseEl.shadowRoot ?? baseEl;
-    const panel = root.querySelector<HTMLElement>('[part="content"]');
-    const arrow = root.querySelector<HTMLElement>('[part="arrow"]');
-    const backdrop = root.querySelector<HTMLElement>('ion-backdrop');
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const animation = createAnimation()
-      .duration(reducedMotion ? 0 : 180)
-      .easing('cubic-bezier(.4, 0, 1, 1)');
-    if (panel) {
-      animation.addAnimation(createAnimation().addElement(panel)
-        .beforeStyles({ 'transform-origin': 'bottom center' })
-        .fromTo('opacity', '1', '0')
-        .fromTo('transform', 'translateY(0) scale(1)', reducedMotion ? 'none' : 'translateY(4px) scale(.99)')
-        .afterClearStyles(['opacity', 'transform']));
-    }
-    if (arrow) animation.addAnimation(createAnimation().addElement(arrow).fromTo('opacity', '1', '0'));
-    if (backdrop) animation.addAnimation(createAnimation().addElement(backdrop).fromTo('opacity', 'var(--backdrop-opacity)', '0'));
-    // Preserve Ionic's positioning lifecycle for the next presentation.
-    return animation.afterAddWrite(() => {
-      baseEl.style.removeProperty('--width');
-      baseEl.classList.remove('popover-bottom');
-      for (const property of ['top', 'left', 'bottom', 'transform-origin']) panel?.style.removeProperty(property);
-      for (const property of ['top', 'left', 'display']) arrow?.style.removeProperty(property);
-    });
-  };
-  readonly tripSections = [
-    { title: 'Fixed route bookings', description: 'Your seats on fixed routes', icon: 'bus-outline', path: '/customer-tabs/fixed-rides' },
-    { title: 'Private rides', description: 'Your whole-car journeys', icon: 'car-outline', path: '/customer-tabs/my-trips' },
-    { title: 'Shuttle bookings', description: 'Your shared shuttle rides', icon: 'git-merge-outline', path: '/customer-tabs/shuttle-rides' },
-    { title: 'Scheduled rides', description: 'Trips planned for later', icon: 'calendar-outline', path: '/customer-tabs/scheduled-rides' },
-  ];
-
   loading = true;
   locationFetching = true;
   locationPermissionNeeded = false;
+  locationMessage = 'We couldn’t access your location. Enable location access and try again.';
+  private locationRevision = 0;
+  private pageActive = true;
+  private homeInitPromise: Promise<void> | null = null;
+  private mapInitPromise: Promise<void> | null = null;
+  private watchStarting = false;
+  private watchRevision = 0;
+  private catalogFix: { lat: number; lng: number } | null = null;
+  private resolvingFix: { lat: number; lng: number } | null = null;
+  private catalogRetryAfter = 0;
   mapReady = false;
 
   scope: TripScope = 'local';
@@ -230,6 +200,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   ionViewWillEnter(): void {
+    this.pageActive = true;
     this.loadSavedPlaces();
     this.loadHomeOffers();
     if (!this.located || !this.city) {
@@ -242,7 +213,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   ionViewDidEnter(): void {
-    if (this.map && !this.watchId) {
+    if (!this.watchId) {
       void this.startWatch();
     }
     if (this.map && this.activeFixedRide) {
@@ -251,6 +222,13 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   ionViewDidLeave(): void {
+    this.pageActive = false;
+    ++this.locationRevision;
+    ++this.watchRevision;
+    this.watchStarting = false;
+    this.resolvingFix = null;
+    this.homeInitPromise = null;
+    this.homeRoutesSub?.unsubscribe();
     if (this.watchId) {
       void this.geo.clearWatch(this.watchId);
       this.watchId = null;
@@ -263,6 +241,9 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   ngOnDestroy(): void {
+    this.pageActive = false;
+    ++this.locationRevision;
+    ++this.watchRevision;
     this.homeOffersSub?.unsubscribe();
     this.homeRoutesSub?.unsubscribe();
     if (this.watchId) {
@@ -455,36 +436,54 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     await alert.present();
   }
 
-  private async initHome(): Promise<void> {
-    this.locationFetching = true;
-    this.locationPermissionNeeded = false;
-    this.cdr.markForCheck();
-
-    await Promise.all([this.loadLocationAndCatalog(), this.initMap()]);
+  private initHome(): Promise<void> {
+    if (this.homeInitPromise) return this.homeInitPromise;
+    const work = Promise.all([this.loadLocationAndCatalog(), this.ensureMap(), this.startWatch()]).then(() => {});
+    this.homeInitPromise = work;
+    void work.finally(() => { if (this.homeInitPromise === work) this.homeInitPromise = null; });
+    return work;
   }
 
   async requestLocation(): Promise<void> {
+    if (this.locationFetching) return;
+    const request = this.beginLocationRequest();
     this.locationPermissionNeeded = false;
     this.locationFetching = true;
     this.cdr.markForCheck();
 
     try {
+      // A permission-denied watch may have no native registration left. Retry
+      // must replace it after permissions change, rather than retain a dead ID.
+      ++this.watchRevision;
+      this.watchStarting = false;
+      const previousWatch = this.watchId;
+      this.watchId = null;
+      if (previousWatch) await this.geo.clearWatch(previousWatch);
       await this.geo.requestPermissions();
     } catch {
       /* ignore */
     }
 
-    await this.loadLocationAndCatalog();
-    if (this.located && this.map) {
-      await this.startWatch();
-    }
+    if (!this.isCurrentLocationRequest(request)) return;
+    await this.loadLocationAndCatalog(request);
+    if (this.pageActive) void this.startWatch();
   }
 
   // ── Map setup ────────────────────────────────────────────────────────────
 
+  private ensureMap(): Promise<void> {
+    if (this.map) return Promise.resolve();
+    if (this.mapInitPromise) return this.mapInitPromise;
+    const work = this.initMap();
+    this.mapInitPromise = work;
+    void work.finally(() => { if (this.mapInitPromise === work) this.mapInitPromise = null; });
+    return work;
+  }
+
   private async initMap(): Promise<void> {
     try {
       await this.places.ensureLoaded();
+      if (!this.pageActive) return;
 
       const el = this.mapElRef.nativeElement;
 
@@ -502,11 +501,11 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
         this.cdr.markForCheck();
       });
 
-      // Start watching GPS once map is ready
-      await this.startWatch();
+      if (this.currentCoords) {
+        await this.updateMapPosition(this.currentCoords.lat, this.currentCoords.lng, 40, !this.activeFixedRide);
+      }
     } catch {
       // Maps unavailable (offline / key missing)
-      this.locationFetching = false;
       this.cdr.markForCheck();
     }
   }
@@ -527,40 +526,50 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   private async startWatch(): Promise<void> {
-    // Quick first fix — centre the map immediately if no active ride.
+    if (!this.pageActive || this.watchId || this.watchStarting) return;
+    const watchRequest = ++this.watchRevision;
+    this.watchStarting = true;
     try {
-      const fix = await this.geo.getCurrentFix();
-      if (fix) {
-        this.updateMapPosition(fix.lat, fix.lng, fix.accuracy ?? 40, !this.activeFixedRide, fix.bearing);
-      }
-    } catch {
-      /* ignore */
-    }
-
-    // Continuous watch — moves user avatar marker smoothly as user walks without jarring map pans.
-    try {
-      if (this.watchId) {
-        await this.geo.clearWatch(this.watchId);
-      }
-      this.watchId = await this.geo.watchPosition(
+      const id = await this.geo.watchPosition(
         { enableHighAccuracy: true, maximumAge: 2000 },
         (pos, err) => {
-          if (err || !pos) return;
-          this.updateMapPosition(pos.lat, pos.lng, pos.accuracy ?? 40, false, pos.bearing);
+          if (!this.pageActive || watchRequest !== this.watchRevision) return;
+          if (err) {
+            // A failed initial watch must not supersede an in-flight GPS/catalog
+            // request. A later valid fix can still recover without a page reload.
+            if (!this.locationFetching) this.failLocation(++this.locationRevision);
+            return;
+          }
+          if (pos) void this.onLocationFix(pos);
         },
       );
+      if (!this.pageActive || watchRequest !== this.watchRevision) await this.geo.clearWatch(id);
+      else this.watchId = id;
     } catch {
-      /* ignore */
+      // The explicit GPS request owns the initial error and retry state.
+    } finally {
+      if (watchRequest === this.watchRevision) this.watchStarting = false;
     }
+  }
+
+  private async onLocationFix(fix: { lat: number; lng: number; accuracy?: number | null; bearing?: number | null }): Promise<void> {
+    if (!this.pageActive || !this.validCoords(fix)) return;
+    void this.updateMapPosition(fix.lat, fix.lng, fix.accuracy ?? 40, false, fix.bearing).catch(() => {});
+    if (Date.now() < this.catalogRetryAfter) return;
+    const reference = this.resolvingFix || this.catalogFix;
+    // GPS jitter must not continuously restart catalog loading. Re-evaluate
+    // after meaningful movement, or immediately when no catalog was resolved.
+    if (reference && distanceKm(fix.lat, fix.lng, reference.lat, reference.lng) < 0.5) return;
+    const request = this.beginLocationRequest();
+    await this.resolveLocationCatalog(fix, request);
   }
 
   private async updateMapPosition(
     lat: number, lng: number, accuracy: number, pan: boolean, bearing?: number | null,
   ): Promise<void> {
-    if (!this.map) return;
     const latlng = { lat, lng };
     this.currentCoords = latlng;
-    this.located = true;
+    if (!this.map) return;
 
     if (!this.userMarker) {
       const { AdvancedMarkerElement } = await (google.maps as any).importLibrary('marker');
@@ -598,37 +607,75 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   // ── City / catalogue loading ─────────────────────────────────────────────
 
-  private async loadLocationAndCatalog(): Promise<void> {
+  private validCoords(fix: { lat: number; lng: number } | null | undefined): fix is { lat: number; lng: number } {
+    return !!fix && Number.isFinite(fix.lat) && Number.isFinite(fix.lng)
+      && Math.abs(fix.lat) <= 90 && Math.abs(fix.lng) <= 180;
+  }
+
+  private isCurrentLocationRequest(request: number): boolean {
+    return this.pageActive && request === this.locationRevision;
+  }
+
+  private beginLocationRequest(): number {
+    const request = ++this.locationRevision;
     this.zone.run(() => {
       this.loading = true;
+      this.locationFetching = true;
+      this.located = false;
+      this.city = null;
+      this.catalog = [];
+      this.tiles = [];
+      this.mode = null;
+      this.homeRoutesSub?.unsubscribe();
+      this.homeRoutes = [];
+      this.catalogRetryAfter = 0;
+      this.resolvingFix = null;
       this.cdr.markForCheck();
     });
+    return request;
+  }
 
+  private failLocation(request: number, message = 'We couldn’t access your location. Enable location access and try again.'): void {
+    if (!this.isCurrentLocationRequest(request)) return;
+    this.zone.run(() => {
+      this.located = false;
+      this.loading = false;
+      this.locationFetching = false;
+      this.locationPermissionNeeded = true;
+      this.locationMessage = message;
+      this.city = null;
+      this.catalog = [];
+      this.tiles = [];
+      this.homeRoutesSub?.unsubscribe();
+      this.homeRoutes = [];
+      this.catalogFix = null;
+      this.resolvingFix = null;
+      this.cdr.markForCheck();
+    });
+  }
+
+  private async loadLocationAndCatalog(request = this.beginLocationRequest()): Promise<void> {
     try {
-      const cities = await this.booking.cities().catch(() => [] as City[]);
-
-      // Attempt to retrieve real coordinates from device GPS
       let fix = await this.geo.getCurrentPosition();
+      if (!this.isCurrentLocationRequest(request)) return;
       if (!fix) {
         const longFix = await this.geo.getCurrentFix();
         if (longFix) fix = { lat: longFix.lat, lng: longFix.lng };
       }
+      if (!this.isCurrentLocationRequest(request)) return;
+      if (!this.validCoords(fix)) { this.failLocation(request); return; }
+      await this.resolveLocationCatalog(fix, request);
+    } catch {
+      this.failLocation(request);
+    }
+  }
 
-      const hasGpsFix = !!fix;
-      if (!fix) {
-        // Fall back gracefully to the first city or default center without blocking the user with a modal
-        const defaultCity = cities[0] || {
-          id: 1,
-          name: 'Sopore',
-          center_lat: 34.2985,
-          center_lng: 74.4712,
-        };
-        fix = {
-          lat: Number(defaultCity.center_lat ?? 34.2985),
-          lng: Number(defaultCity.center_lng ?? 74.4712),
-        };
-      }
-
+  private async resolveLocationCatalog(fix: { lat: number; lng: number }, request: number): Promise<void> {
+    if (!this.isCurrentLocationRequest(request)) return;
+    this.resolvingFix = fix;
+    try {
+      const cities = await this.booking.cities();
+      if (!this.isCurrentLocationRequest(request)) return;
       // 1. Check if user coordinates match an active Admin City's boundary polygon
       let adminCity = cities.find((c) =>
         Array.isArray(c.boundary_polygon) &&
@@ -657,6 +704,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
       } else {
         // City does not exist in Admin -> Detect real city / town name from device coordinates
         const detectedName = await this.places.reverseGeocodeCity(fix.lat, fix.lng).catch(() => null);
+        if (!this.isCurrentLocationRequest(request)) return;
         const nearest = nearestCity(cities, fix.lat, fix.lng);
         const fallbackId = nearest?.id ?? cities[0]?.id ?? 1;
 
@@ -669,11 +717,15 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
       }
 
       const catalogData = activeCity.id
-        ? await this.booking.catalog(activeCity.id).catch(() => [])
+        ? await this.booking.catalog(activeCity.id)
         : [];
+      if (!this.isCurrentLocationRequest(request)) return;
 
       this.zone.run(() => {
-        this.located = hasGpsFix || !!this.currentCoords;
+        this.currentCoords = fix;
+        this.located = true;
+        this.catalogFix = fix;
+        this.resolvingFix = null;
         this.city = activeCity;
         this.locationPermissionNeeded = false;
         this.booking.setCity(activeCity.id);
@@ -689,30 +741,12 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
         this.cdr.markForCheck();
       });
 
-      // Pan map to user fix
       if (this.map) {
-        if (hasGpsFix) {
-          await this.updateMapPosition(fix.lat, fix.lng, 40, true);
-        } else if (!this.currentCoords) {
-          this.map.setCenter(fix);
-          this.map.setZoom(12);
-        }
+        await this.updateMapPosition(fix.lat, fix.lng, 40, true).catch(() => {});
       }
     } catch {
-      this.zone.run(() => {
-        const fallbackCity = {
-          id: 1,
-          name: 'Sopore',
-          center_lat: 34.2985,
-          center_lng: 74.4712,
-        };
-        this.located = !!this.currentCoords;
-        this.city = fallbackCity as City;
-        this.locationPermissionNeeded = false;
-        this.locationFetching = false;
-        this.loading = false;
-        this.cdr.markForCheck();
-      });
+      this.failLocation(request, 'Your location is available, but we couldn’t load rides for this area. Please retry.');
+      if (this.isCurrentLocationRequest(request)) this.catalogRetryAfter = Date.now() + 15000;
     }
   }
 
@@ -838,11 +872,6 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   openVoice(): void {
     void this.router.navigate(['/customer-tabs/go/voice']);
-  }
-
-  async navigateToTripList(path: string): Promise<void> {
-    await this.tripsPopover?.dismiss();
-    void this.router.navigateByUrl(path);
   }
 
   // ── Active Live Fixed Ride Tracking & Map ────────────────────────────────

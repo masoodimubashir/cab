@@ -65,22 +65,19 @@ describe('Booking Home location regressions', () => {
     expect(root.querySelector('.bh-profile-image')?.getAttribute('src')).toBe(avatar);
   });
 
-  it('keeps banner controls usable while location is loading', () => {
+  it('blocks Home with a non-dismissible full-screen gate while location is loading', () => {
     const view = fixture();
     const page = view.componentInstance;
     page.locationFetching = true;
     page.halfBanner = { title: 'Test offer', image_url: '' } as any;
     view.detectChanges();
     const root = view.nativeElement as HTMLElement;
-    expect(root.querySelector('.loc-loader-overlay')).toBeNull();
-    const indicator = root.querySelector('.bh-location-status') as HTMLElement;
-    expect(indicator).not.toBeNull();
-    expect(getComputedStyle(indicator).pointerEvents).toBe('none');
-    expect(indicator.getBoundingClientRect().height).toBeLessThan(100);
-    expect(root.querySelector('ion-menu-button')).not.toBeNull();
-    (root.querySelector('.dc-banner-close-btn') as HTMLButtonElement).click();
-    expect(page.isHalfBannerCollapsed).toBeTrue();
-    expect(page.locationFetching).toBeTrue();
+    const gate = root.querySelector('.bh-location-gate') as HTMLElement;
+    expect(gate.textContent).toContain('No location available');
+    expect(gate.querySelectorAll('button').length).toBe(1);
+    expect(gate.querySelector('button')!.disabled).toBeTrue();
+    expect(root.querySelector('.bh-home-content')!.hasAttribute('inert')).toBeTrue();
+    expect(gate.querySelector('[aria-label*="Close"]')).toBeNull();
   });
 
   it('keeps available coupons separate from promotional banners', () => {
@@ -116,7 +113,7 @@ describe('Booking Home location regressions', () => {
   });
 
   for (const gps of [null, { lat: 34.02, lng: 74.02 }]) {
-    it(gps ? 'uses GPS for the customer pin' : 'uses a city fallback only for the map view', async () => {
+    it(gps ? 'uses GPS for the customer pin' : 'blocks booking without inventing a city when GPS is unavailable', async () => {
       const view = fixture();
       const page = view.componentInstance as any;
       page.booking = {
@@ -135,8 +132,9 @@ describe('Booking Home location regressions', () => {
         expect(pin).not.toHaveBeenCalled();
         expect(page.userMarker).toBeNull();
         expect(page.currentCoords).toBeNull();
-        expect(page.map.setCenter).toHaveBeenCalledWith({ lat: 34, lng: 74 });
-        expect(page.map.setZoom).toHaveBeenCalledWith(12);
+        expect(page.map.setCenter).not.toHaveBeenCalled();
+        expect(page.city).toBeNull();
+        expect(page.tiles).toEqual([]);
         expect(page.located).toBeFalse();
       }
     });

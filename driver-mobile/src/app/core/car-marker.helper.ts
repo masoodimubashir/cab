@@ -183,6 +183,7 @@ export interface StopMarkerOptions {
   seq: number | string;
   name?: string;
   isReached?: boolean;
+  isNext?: boolean;
   tone?: string;
 }
 
@@ -192,9 +193,17 @@ export interface StopMarkerOptions {
 export function buildStopMarkerElement(options: StopMarkerOptions): HTMLElement {
   const el = document.createElement('div');
   el.className = 'fixed-driver-stop-marker';
-  const tone = options.tone || (options.isReached ? '#64748B' : '#12B35B');
+  const tone = options.tone || (options.isNext ? '#e74848' : options.isReached ? '#64748B' : '#12B35B');
   el.style.setProperty('--stop-color', tone);
   el.innerHTML = `<span>${options.seq}</span>`;
+  if (options.isNext) {
+    el.classList.add('is-next-stop');
+    el.setAttribute('aria-label', `Next stop ${options.seq}${options.name ? ': ' + options.name : ''}`);
+    const label = document.createElement('small');
+    label.className = 'next-stop-marker-label';
+    label.textContent = 'Next stop';
+    el.appendChild(label);
+  }
   return el;
 }
 

@@ -1,13 +1,15 @@
 <ion-header class="ion-no-border">
+  <app-driver-topbar></app-driver-topbar>
   <ion-toolbar class="pg-toolbar">
     <ion-buttons slot="start">
-      <ion-back-button *ngIf="!onboarding" defaultHref="/tabs/dashboard"></ion-back-button>
+      <ion-button *ngIf="!onboarding && !showAccountOverview" (click)="backToAccount()" aria-label="Back to account"><ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon></ion-button>
+      <ion-back-button *ngIf="showAccountOverview" defaultHref="/tabs/dashboard"></ion-back-button>
       <ion-button *ngIf="onboarding && onboardingStep !== 'profile'" (click)="handleOnboardingBack()" aria-label="Back">
         <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
       </ion-button>
     </ion-buttons>
-    <ion-title class="pg-brandtitle">
-      <span class="b-white">Dream</span><span class="b-green">Cabs</span>
+    <ion-title class="pg-brandtitle" [class.account-header-title]="!onboarding">
+      <ng-container *ngIf="onboarding"><span class="b-white">Cabbies</span></ng-container><ng-container *ngIf="!onboarding">{{ showAccountOverview ? 'Account' : activeSegment === 'documents' ? 'Documents' : activeSegment === 'vehicle' ? 'Vehicle & Service' : 'Edit Profile' }}</ng-container>
     </ion-title>
     <ion-buttons slot="end" *ngIf="!onboarding">
       <ion-button class="header-refresh-btn" (click)="reloadAll()" aria-label="Reload profile">
@@ -19,9 +21,9 @@
 
 <ion-content class="pg-content" (touchstart)="onTouchStart($event)" (touchend)="onTouchEnd($event)">
   <!-- Hero Section -->
-  <div class="pg-hero">
-    <h1 class="pg-title">{{ onboarding ? onboardingTitle : 'Driver Profile' }}</h1>
-    <p class="pg-subtitle">{{ onboarding ? onboardingSubtitle : 'Manage your profile details, view vehicle configuration &amp; verification documents.' }}</p>
+  <div class="pg-hero" *ngIf="onboarding">
+    <h1 class="pg-title">{{ onboardingTitle }}</h1>
+    <p class="pg-subtitle">{{ onboardingSubtitle }}</p>
   </div>
 
   <!-- Onboarding 3-Step Stepper Progress Bar -->
@@ -123,8 +125,26 @@
       <span>{{ error }}</span>
     </div>
 
+    <section class="account-reference" *ngIf="showAccountOverview" aria-label="Driver account">
+      <div class="account-identity"><img [src]="photoPreview || defaultAvatar" (error)="onPhotoError($event)" alt="Driver profile" /><div><h1>{{ name || 'Driver account' }}</h1><p>{{ phone || 'Phone unavailable' }}</p></div><button type="button" (click)="editAccountProfile()" aria-label="Edit profile"><ion-icon name="create-outline"></ion-icon></button></div>
+      <h2 class="account-section-title">Drive</h2><div class="account-links account-drive-links"><button type="button" (click)="openAccountPage('/tabs/rides')"><ion-icon name="car-outline"></ion-icon><span>Rides</span><ion-icon name="chevron-forward-outline"></ion-icon></button>
+<button type="button" (click)="openAccountPage('/tabs/scheduled')"><ion-icon name="calendar-outline"></ion-icon><span>Scheduled rides</span><ion-icon name="chevron-forward-outline"></ion-icon></button>
+<button type="button" (click)="openAccountPage('/tabs/earnings')"><ion-icon name="bar-chart-outline"></ion-icon><span>Earnings</span><ion-icon name="chevron-forward-outline"></ion-icon></button>
+<button type="button" (click)="openAccountPage('/tabs/history')"><ion-icon name="time-outline"></ion-icon><span>Trip history</span><ion-icon name="chevron-forward-outline"></ion-icon></button>
+<button type="button" (click)="openAccountPage('/refunds')"><ion-icon name="receipt-outline"></ion-icon><span>Trip refunds</span><ion-icon name="chevron-forward-outline"></ion-icon></button></div>
+      <h2 class="account-section-title">Account & Support</h2><div class="account-links">
+        <button type="button" (click)="openAccountPage('/tabs/wallet')"><ion-icon name="wallet-outline"></ion-icon><span>Wallet & Payments</span><strong *ngIf="accountWallet != null">{{ accountWallet | currency:'INR':'symbol':'1.0-2' }}</strong><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        <button type="button" (click)="openAccountPage('/performance')"><ion-icon name="stats-chart-outline"></ion-icon><span>Performance</span><ion-icon name="chevron-forward-outline"></ion-icon></button>
+<button type="button" (click)="openAccountPage('/subscriptions')"><ion-icon name="ribbon-outline"></ion-icon><span>Subscriptions</span><ion-icon name="chevron-forward-outline"></ion-icon></button><button type="button" (click)="openAccountPage('/emergency-contacts')"><ion-icon name="people-outline"></ion-icon><span>SOS contacts</span><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        <button type="button" (click)="openAccountPage('/support')"><ion-icon name="help-circle-outline"></ion-icon><span>Help & Support</span><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        <button type="button" (click)="openAccountPage('/terms')"><ion-icon name="document-text-outline"></ion-icon><span>Terms & Conditions</span><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        <button type="button" (click)="openAccountPage('/privacy')"><ion-icon name="shield-checkmark-outline"></ion-icon><span>Privacy Policy</span><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        <button type="button" class="account-logout" (click)="signOutAccount()"><ion-icon name="log-out-outline"></ion-icon><span>Log out</span><ion-icon name="chevron-forward-outline"></ion-icon></button>
+      </div>
+    </section>
+
     <!-- ==================== TAB 1: PROFILE DETAILS ==================== -->
-    <ng-container *ngIf="(!onboarding && activeSegment === 'profile') || (onboarding && onboardingStep === 'profile')">
+    <ng-container *ngIf="(!onboarding && activeSegment === 'profile' && editingProfile) || (onboarding && onboardingStep === 'profile')">
       <div class="pg-card pf-head">
         <label class="pf-avatar dc-press">
           <img

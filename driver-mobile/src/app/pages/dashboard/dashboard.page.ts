@@ -1,5 +1,8 @@
+import { HomeSessionService } from '../../core/home-session.service';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import { DocumentRequirement, DocumentRequirementsModalComponent } from '../../shared/document-requirements-modal.component';
-import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, HostListener, OnDestroy, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertController, ModalController } from '@ionic/angular';
 import { firstValueFrom, interval, Subscription } from 'rxjs';
@@ -25,17 +28,6 @@ import { environment } from '../../../environments/environment';
 
 declare const google: any;
 
-interface NavItem {
-  label: string;
-  sub: string;
-  icon: string;
-  path: string;
-}
-
-interface NavGroup {
-  title: string;
-  items: NavItem[];
-}
 
 /** Operator-configured subscription prompt (Operator Settings → Subscription). */
 interface SubscriptionPrompt {
@@ -145,6 +137,12 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   isGoingOffline = false;
   error: string | null = null;
   driver: Record<string, unknown> | null = null;
+  homeEarnings: number | null = null;
+  earningsCurrency = 'INR';
+  earningsLoading = false;
+  earningsUnavailable = false;
+  homeDate = new Date();
+  homeWalletBalance: number | null = null;
 
   /**
    * The driver's (city, vehicle type) wallet-gate config from /drivers/me.
@@ -167,7 +165,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private mapReady = false;
 
   /** Left navigation drawer (replaces the removed bottom tab bar). */
-  drawerOpen = false;
   /** Recenter FAB busy spinner while we fetch a one-shot fix. */
   locating = false;
   /** True once we've plotted at least one real GPS fix. */
@@ -193,45 +190,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   get activeFixedVehicleOpen(): boolean {
     return !!this.activeFixedVehicle && !['COMPLETED', 'CANCELLED'].includes(this.activeFixedVehicle.status);
   }
-
-  /** Destinations the drawer exposes — everything the tab bar used to reach. */
-  readonly navGroups: NavGroup[] = [
-    {
-      title: 'Drive',
-      items: [
-        { label: 'Rides', sub: 'Available & active trips', icon: 'car-outline', path: '/tabs/rides' },
-        { label: 'Scheduled rides', sub: 'Upcoming booked trips', icon: 'calendar-outline', path: '/tabs/scheduled' },
-        { label: 'Earnings', sub: 'Gross earnings, chart & commission', icon: 'bar-chart-outline', path: '/tabs/earnings' },
-        { label: 'Wallet', sub: 'Balance & top-ups', icon: 'wallet-outline', path: '/tabs/wallet' },
-        { label: 'Trip history', sub: 'Your past rides', icon: 'time-outline', path: '/tabs/history' },
-        { label: 'Trip refunds', sub: 'Passenger refunds — paid by DreamCabs, not you', icon: 'receipt-outline', path: '/refunds' },
-      ],
-    },
-    {
-      title: 'Account',
-      items: [
-        { label: 'Performance', sub: 'Rating & trip metrics', icon: 'stats-chart-outline', path: '/performance' },
-        { label: 'Profile', sub: 'Name, vehicle & documents', icon: 'person-outline', path: '/profile' },
-        { label: 'Documents', sub: 'Verification & uploads', icon: 'document-text-outline', path: '/profile' },
-        { label: 'Subscriptions', sub: 'Commission-free plans', icon: 'ribbon-outline', path: '/subscriptions' },
-        { label: 'Notifications', sub: 'Messages & ride updates', icon: 'notifications-outline', path: '/notifications' },
-      ],
-    },
-    {
-      title: 'Help & Support',
-      items: [
-        { label: 'Contact', sub: 'SOS contacts', icon: 'people-outline', path: '/emergency-contacts' },
-        { label: 'Help & Support', sub: 'Contact us, FAQ & report', icon: 'help-buoy-outline', path: '/support' },
-      ],
-    },
-    {
-      title: 'Legal & Policies',
-      items: [
-        { label: 'Terms & Conditions', sub: 'Driver terms, rules & agreements', icon: '', path: '/terms' },
-        { label: 'Privacy Policy', sub: 'Data protection & GPS disclosures', icon: '', path: '/privacy' },
-      ],
-    },
-  ];
 
   // ── App Banners ─────────────────────────────────────────────────────────
   fullScreenBanner: AppBanner | null = null;
@@ -268,7 +226,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     private push: PushService,
     private modalCtrl: ModalController,
     private realtime: RealtimeService,
+    private homeSession: HomeSessionService,
   ) {
+    this.homeLoading = !this.homeSession.locationLoaderShown;
+    this.homeSession.locationLoaderShown = true;
     this.presence.onError((err) => {
       this.error = err.message;
     });
@@ -289,7 +250,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private dashboardActive = false;
   private lastDocumentCheck = 0;
   private documentCheckBusy = false;
-  private greetingInProgress = false;
+  private greetingInProgress = true;
 
   private applyDocumentRequirements(requirements: DocumentRequirement[]): void {
     this.documentRequirements = requirements.filter(doc => doc.status !== 'approved');
@@ -332,6 +293,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private syncTimer: ReturnType<typeof setInterval> | null = null;
 
   ionViewWillEnter(): void {
+    this.homeDate = new Date();
     this.dashboardActive = true;
     this.greetingInProgress = true;
     this.hasInitialOverviewFramed = false;
@@ -343,6 +305,15 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   // ── App Banners handlers ────────────────────────────────────────────────
+  get showFullScreenBanner(): boolean {
+    return !this.greetingInProgress && !!this.fullScreenBanner && !this.isFullScreenDismissed;
+  }
+
+  get showHalfBanner(): boolean {
+    return !this.greetingInProgress && !!this.halfBanner && !this.isHalfBannerCollapsed &&
+      (!this.fullScreenBanner || this.isFullScreenDismissed);
+  }
+
   setupBannerSubscription(): void {
     if (!this.bannerRealtimeUnsub) {
       this.bannerRealtimeUnsub = this.realtime.subscribeAppBanners((payload) => {
@@ -364,32 +335,9 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         const newFullScreen = banners.find((b) => b.position === 'full_screen') || null;
         const newHalf = banners.find((b) => b.position === 'half') || null;
 
-        // If a full-screen banner was added or changed by admin, make it visible live!
-        if (newFullScreen) {
-          const changed = !this.fullScreenBanner ||
-            this.fullScreenBanner.id !== newFullScreen.id ||
-            this.fullScreenBanner.title !== newFullScreen.title ||
-            this.fullScreenBanner.image_url !== newFullScreen.image_url;
-          if (changed) {
-            this.isFullScreenDismissed = false;
-          }
-        } else {
-          this.isFullScreenDismissed = false;
-        }
-
-        // If a half banner was added or changed by admin, make it visible live!
-        if (newHalf) {
-          const changed = !this.halfBanner ||
-            this.halfBanner.id !== newHalf.id ||
-            this.halfBanner.title !== newHalf.title ||
-            this.halfBanner.image_url !== newHalf.image_url;
-          if (changed) {
-            this.isHalfBannerCollapsed = false;
-          }
-        } else {
-          this.isHalfBannerCollapsed = false;
-        }
-
+        // Recreated pages restore the driver's choice for this exact offer.
+        this.isFullScreenDismissed = !!newFullScreen && this.homeSession.dismissedOffers.has(this.offerKey(newFullScreen));
+        this.isHalfBannerCollapsed = !!newHalf && this.homeSession.dismissedOffers.has(this.offerKey(newHalf));
         this.fullScreenBanner = newFullScreen;
         this.halfBanner = newHalf;
       },
@@ -397,19 +345,34 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     });
   }
 
+  private offerKey(banner: AppBanner): string {
+    return JSON.stringify([banner.position, banner.id, banner.title, banner.image_url, banner.url_link]);
+  }
+
+  private rememberOffer(banner: AppBanner | null, dismissed: boolean): void {
+    if (!banner) return;
+    const key = this.offerKey(banner);
+    if (dismissed) this.homeSession.dismissedOffers.add(key);
+    else this.homeSession.dismissedOffers.delete(key);
+  }
+
   dismissFullScreenBanner(): void {
+    this.rememberOffer(this.fullScreenBanner, true);
     this.isFullScreenDismissed = true;
   }
 
   collapseHalfBanner(): void {
+    this.rememberOffer(this.halfBanner, true);
     this.isHalfBannerCollapsed = true;
   }
 
   expandHalfBanner(): void {
+    this.rememberOffer(this.halfBanner, false);
     this.isHalfBannerCollapsed = false;
   }
 
   get showOfferPill(): boolean {
+    if (this.greetingInProgress) return false;
     if (this.fullScreenBanner && !this.isFullScreenDismissed) return false;
     if (this.halfBanner && !this.isHalfBannerCollapsed) return false;
     return (
@@ -420,11 +383,15 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
   reopenOfferBanner(): void {
     if (this.fullScreenBanner && this.isFullScreenDismissed) {
+      this.rememberOffer(this.fullScreenBanner, false);
       this.isFullScreenDismissed = false;
     } else if (this.halfBanner && this.isHalfBannerCollapsed) {
+      this.rememberOffer(this.halfBanner, false);
       this.isHalfBannerCollapsed = false;
     } else {
+      this.rememberOffer(this.fullScreenBanner, false);
       this.isFullScreenDismissed = false;
+      this.rememberOffer(this.halfBanner, false);
       this.isHalfBannerCollapsed = false;
     }
   }
@@ -493,6 +460,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   ionViewDidEnter(): void {
+    void this.refreshLocationQuietly();
     // App-open greeting: the AI mode chooser (Voice / Self), then — if the
     // operator enabled it — the subscription nudge.
     void this.greetOnAppOpen();
@@ -538,7 +506,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       componentProps: { current: this.readDriverMode() },
     });
     await modal.present();
-    const { data } = await modal.onWillDismiss<{ mode?: DriverMode }>();
+    const { data } = await modal.onDidDismiss<{ mode?: DriverMode }>();
     if (data?.mode) {
       try { localStorage.setItem('dc_driver_mode', data.mode); } catch { /* ignore */ }
     }
@@ -581,6 +549,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         componentProps: { title: cfg.title, desc: cfg.desc },
       });
       await modal.present();
+      await modal.onDidDismiss();
     } catch {
       /* best-effort prompt — never block the dashboard */
     } finally {
@@ -599,15 +568,22 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   async ngAfterViewInit(): Promise<void> {
+    if (Capacitor.isNativePlatform()) {
+      this.resumeListener = CapacitorApp.addListener('appStateChange', state => {
+        if (state.isActive && this.dashboardActive) void this.refreshLocationQuietly();
+      });
+    }
     this.subscribeVerificationUpdates();
     try {
-      await this.mapsLoader.ensureLoaded();
-      this.initMap();
-      await this.startLiveTracking();
+      if (this.mapDiv?.nativeElement) {
+        await this.mapsLoader.ensureLoaded();
+        this.initMap();
+      }
+      await this.refreshLocationQuietly();
     } catch (e) {
       this.error = (e as Error).message;
     } finally {
-      // Map is up (or failed) — release that half of the skeleton gate.
+      // Home no longer displays a map; location tracking still resolves normally.
       this.mapReady = true;
       this.maybeFinishHome();
     }
@@ -623,6 +599,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    void this.resumeListener?.then(handle => handle.remove());
     this.stopSyncTimer();
     this.stopFixedManifestPolling();
     this.clearFixedMapObjects();
@@ -660,8 +637,61 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     const n = this.user?.name?.trim() || 'Driver';
     return n.split(/\s+/)[0];
   }
+  get homeGreeting(): string {
+    const hour = this.homeDate.getHours();
+    return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  }
+  get operatingCityLabel(): string {
+    const cities = this.driver?.['cities'];
+    if (Array.isArray(cities)) {
+      const names = cities.map(city => typeof city?.name === 'string' ? city.name : '').filter(Boolean);
+      if (names.length) return names.join(' / ');
+    }
+    return typeof this.driver?.['city_name'] === 'string' ? this.driver['city_name'] : '';
+  }
+  get homeNotice(): { title: string; text: string; icon: string; path?: string; action?: string } {
+    if (!this.isApproved) return { title: 'Account under review', text: 'Check your application before starting your next shift.', icon: 'time-outline', path: '/driver-pending-review', action: 'View application' };
+    if (this.isWalletBelowLimit) return { title: 'Your wallet needs attention', text: `Add ₹${this.walletShortfall} to reach the minimum balance for going online.`, icon: 'wallet-outline', path: '/tabs/wallet', action: 'View wallet' };
+    if (this.documentRequirements.length) return { title: 'Documents need attention', text: 'Review the documents requested for your driver account.', icon: 'document-text-outline', path: '/profile?tab=documents', action: 'Review documents' };
+    return { title: this.isOnline ? 'Ready for your next ride' : 'Before you go online', text: 'Keep your phone charged and your vehicle ready for the next ride.', icon: 'shield-checkmark-outline' };
+  }
   get avatarUrl(): string | null {
     return this.auth.resolveAvatarUrl(this.user);
+  }
+  get vehicleRegistration(): string {
+    return String(this.driver?.['vehicle_reg_no'] || '');
+  }
+  get homeVehicleIdentity(): string {
+    const driver = this.driver as any;
+    const name = driver?.city_vehicle_type?.display_name || driver?.vehicle_type_ref?.name || driver?.vehicle_type || '';
+    return [this.vehicleRegistration, name].filter(Boolean).join(' · ');
+  }
+  get registeredServiceMode(): string {
+    return String(this.driver?.['service_mode'] || this.driveMode || '');
+  }
+  get registeredServiceLabel(): string {
+    if (!this.registeredServiceMode) return '';
+    return `${this.scopeLabel(String(this.driver?.['service_scope'] || this.driveScope || ''))} · ${this.serviceLabel(this.registeredServiceMode)}`;
+  }
+
+  private refreshHomeEarnings(): void {
+    if (this.earningsLoading) return;
+    this.earningsLoading = true;
+    this.earningsUnavailable = false;
+    this.api.get<{ ride_earnings?: number; currency?: string }>('/drivers/me/earnings?period=week').subscribe({
+      next: res => {
+        const amount = res.ride_earnings;
+        this.homeEarnings = typeof amount === 'number' && Number.isFinite(amount) ? amount : null;
+        this.earningsCurrency = res.currency || 'INR';
+        this.earningsUnavailable = this.homeEarnings === null;
+        this.earningsLoading = false;
+      },
+      error: () => {
+        this.homeEarnings = null;
+        this.earningsUnavailable = true;
+        this.earningsLoading = false;
+      },
+    });
   }
   readonly defaultAvatar = 'assets/default-avatar.svg';
   /** Swap a broken/unreachable avatar for the bundled default image. */
@@ -699,16 +729,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
   // ------------------------------------------------------------------ drawer --
 
-  openDrawer(): void {
-    this.drawerOpen = true;
-  }
-  closeDrawer(): void {
-    this.drawerOpen = false;
-    // Pick up any status change made on another screen.
-    this.refresh();
-  }
   navTo(path: string): void {
-    this.drawerOpen = false;
     this.router.navigateByUrl(path);
   }
 
@@ -1118,7 +1139,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   async confirmDeleteAccount(): Promise<void> {
-    this.drawerOpen = false;
     const alert = await this.alertCtrl.create({
       header: 'Delete account',
       message: 'You are about to delete your account. Some data will be lost forever.',
@@ -1131,7 +1151,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   async confirmSignOut(): Promise<void> {
-    this.drawerOpen = false;
     const alert = await this.alertCtrl.create({
       header: 'Sign out?',
       message: 'You will need to sign in again to go online and accept rides.',
@@ -1165,6 +1184,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   refresh(): void {
     this.loading = true;
     this.error = null;
+    this.refreshHomeEarnings();
     this.api.get<{
       driver: Record<string, unknown> | null;
       user: { name?: string; roles?: string[]; avatar_path?: string | null; avatar_url?: string | null };
@@ -1187,6 +1207,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         // service fetch below keeps walletBalance in sync.
         if (typeof res.wallet_balance === 'number') {
           this.walletBalance = res.wallet_balance;
+          this.homeWalletBalance = res.wallet_balance;
         }
         this.refreshWalletBalance();
         if (res.user) {
@@ -1255,6 +1276,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       next: (res) => {
         const prevBelow = this.isWalletBelowLimit;
         if (typeof res?.balance === 'number') this.walletBalance = res.balance;
+        this.homeWalletBalance = typeof res?.balance === 'number' && Number.isFinite(res.balance) ? res.balance : null;
         if (typeof res?.minimum_wallet_limit === 'number') this.minWalletLimit = res.minimum_wallet_limit;
         const nextBelow = this.isWalletBelowLimit;
 
@@ -1266,7 +1288,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         }
         this.previousWarningState = nextBelow;
       },
-      error: () => undefined,
+      error: () => { this.homeWalletBalance = null; },
     });
   }
 
@@ -1334,6 +1356,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   private waitForMap(timeoutMs = 5000): Promise<boolean> {
+    if (!this.mapDiv?.nativeElement) return Promise.resolve(false);
     return new Promise((resolve) => {
       if (this.map) return resolve(true);
       const start = Date.now();
@@ -1352,6 +1375,26 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
    * Show the driver where they are the instant the map is ready, then keep the
    * marker moving as they do. Runs on every page entry; safe to call repeatedly.
    */
+  private locationRefreshBusy = false;
+  private resumeListener?: Promise<PluginListenerHandle>;
+
+  @HostListener('document:visibilitychange')
+  onAppVisibilityChange(): void {
+    if (document.visibilityState === 'visible' && this.dashboardActive) {
+      void this.refreshLocationQuietly();
+    }
+  }
+
+  private async refreshLocationQuietly(): Promise<void> {
+    if (this.locationRefreshBusy) return;
+    this.locationRefreshBusy = true;
+    try {
+      await this.startLiveTracking();
+    } finally {
+      this.locationRefreshBusy = false;
+    }
+  }
+
   private async startLiveTracking(): Promise<void> {
     try {
       await this.geo.requestPermissions();
@@ -1373,7 +1416,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
     // Offline → we own the watch (purely to animate the marker). Online → the
     // presence service already streams + feeds onLocated, so we stay out of it.
-    if (!this.isOnline) {
+    if (this.dashboardActive && !this.isOnline) {
       await this.startVisualWatch();
     }
   }
@@ -1430,10 +1473,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     bearing: number | null,
     recenter = false,
   ): void {
-    if (!this.map) return;
     this.hasFix = true;
     this.maybeFinishHome();
     this.lastPos = { lat, lng };
+    if (!this.map) return;
     const pos = { lat, lng };
 
     if (this.accuracyCircle) {

@@ -158,7 +158,7 @@ interface TabDef { key: string; label: string; count?: number; }
 
       <div class="grid" *ngIf="cityId != null">
         @defer (when masterSection === 'routes') {
-          <app-route-operations *ngIf="masterSection === 'routes'" [cityId]="cityId!" [cityName]="cityName" [loading]="operationsLoading" [loadError]="operationsLoadError" [vehicles]="vehicles" [vehicleRows]="rows" [sets]="vehicleSets" [routes]="routes" [groups]="groups" [drivers]="cityDrivers" [fareModes]="fareRideTypes" [vehicleTypeOptions]="vehicleTypeOptions" [editId]="editId" [editField]="editField" [editValue]="editValue" (cellEdit)="handleOperationsCellEdit($event)" (action)="handleOperationsAction($event)" (refresh)="refresh()" />
+          <app-route-operations *ngIf="masterSection === 'routes'" [cityId]="cityId!" [cityName]="cityName" [countryCode]="operationsCountryCode" [loading]="operationsLoading" [loadError]="operationsLoadError" [vehicles]="vehicles" [vehicleRows]="rows" [sets]="vehicleSets" [routes]="routes" [groups]="groups" [drivers]="cityDrivers" [fareModes]="fareRideTypes" [vehicleTypeOptions]="vehicleTypeOptions" [editId]="editId" [editField]="editField" [editValue]="editValue" (cellEdit)="handleOperationsCellEdit($event)" (action)="handleOperationsAction($event)" (refresh)="refresh()" />
         } @placeholder { <p *ngIf="masterSection === 'routes'">Opening Routes workspace…</p> }
         <app-master-explorer *ngIf="masterSection && masterSection !== 'vehicle-configuration' && masterSection !== 'routes'" [section]="masterSection" [cityId]="cityId" [cityName]="cityName" [loading]="loading" [vehicles]="vehicles" [routes]="routes" [groups]="groups" [drivers]="cityDrivers" [groupCreating]="groupSaving" [groupCreatedVersion]="masterGroupCreatedVersion" (groupCreate)="createMasterInlineGroup($event)" (action)="handleMasterAction($event)" />
         <ng-container *ngIf="!masterSection || masterSection === 'vehicle-configuration'">
@@ -2553,6 +2553,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   copyModalOpen = false;
   copyingToLocation = false;
   allCities: CityOption[] = [];
+  get operationsCountryCode(): string { return this.allCities.find(city => city.id === this.cityId)?.country_code || ''; }
   copyForm = {
     target_city_ids: [] as number[],
     vehicle_ids: [] as number[],

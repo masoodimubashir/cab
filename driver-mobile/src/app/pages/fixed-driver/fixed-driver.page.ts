@@ -71,6 +71,7 @@ interface FixedRoute {
   dest_lng?: number | null;
   path_polyline?: Array<{ lat: number; lng: number }> | string | null;
   flat_fare: number | null;
+  image_url?: string | null;
   max_luggage_per_vehicle: number;
   stops?: FixedStop[];
 }
@@ -204,6 +205,40 @@ interface ManifestResponse {
   standalone: false,
 })
 export class FixedDriverPage implements OnDestroy {
+  private configuredDriverMarkerUrl: string | null = null;
+  get driverMapMarkerUrl(): string | null {
+    return this.activeVehicle?.map_marker_url || this.configuredDriverMarkerUrl || (this.auth.getUser() as any)?.vehicle?.map_marker_url || null;
+  }
+
+  get stopDistanceLabel(): string {
+    const stop = this.selectedStopDetail?.stop;
+    if (!this.driverPosition || stop?.lat == null || stop.lng == null) return stop ? `Stop ${stop.seq}` : '';
+    const distance = haversineDistanceMeters(this.driverPosition.lat, this.driverPosition.lng, stop.lat, stop.lng);
+    return distance >= 1000 ? `${(distance / 1000).toFixed(1)} km away` : `${Math.round(distance)} m away`;
+  }
+
+  get nextPassengerAtStop(): FixedPassenger | null {
+    return this.selectedStopDetail?.boardingPassengers.find(passenger =>
+      this.boardReady(passenger) && this.boardCooldown(passenger) <= 0) ?? null;
+  }
+
+  async verifyStopPassengers(): Promise<void> {
+    const passenger = this.nextPassengerAtStop;
+    if (passenger && !this.busy && !this.otpSending) await this.board(passenger);
+  }
+
+  private failedPassengerAvatars = new Set<string>();
+
+  passengerAvatarUrl(passenger: FixedPassenger): string | null {
+    const url = passenger.customer_avatar_url?.trim();
+    return url && !this.failedPassengerAvatars.has(url) ? url : null;
+  }
+
+  onPassengerAvatarError(passenger: FixedPassenger): void {
+    const url = passenger.customer_avatar_url?.trim();
+    if (url) this.failedPassengerAvatars.add(url);
+  }
+
   loading = false;
   busy = false;
   error: string | null = null;
@@ -212,6 +247,28 @@ export class FixedDriverPage implements OnDestroy {
   routes: FixedRoute[] = [];
   vehicles: FixedVehicle[] = [];
   selectedRouteId: number | null = null;
+  routeChoiceId: number | null = null;
+  failedRouteImages = new Set<string>();
+
+  routeCardImage(route: FixedRoute): string | null {
+    const url = route.image_url?.trim();
+    return url && !this.failedRouteImages.has(url) ? url : null;
+  }
+
+  onRouteImageError(route: FixedRoute): void {
+    const url = route.image_url?.trim();
+    if (url) this.failedRouteImages.add(url);
+  }
+
+  get chosenRoute(): FixedRoute | null {
+    return this.filteredRoutes.find(route => route.id === this.routeChoiceId) ?? null;
+  }
+
+  reviewChosenRoute(): void {
+    const route = this.chosenRoute;
+    if (!route || this.loading || this.busy || this.error || this.activeVehicle) return;
+    this.selectRoute(route);
+  }
   capacity = 4;
 
   // Filters for available routes list
@@ -220,9 +277,35 @@ export class FixedDriverPage implements OnDestroy {
   selectedCityFilter: number | 'all' = 'all';
   selectedScopeFilter: 'all' | 'local' | 'outstation' = 'all';
   routeSearchQuery = '';
+  routeProximityFilter: 'all' | 'nearby' = 'all';
+  nearbyLocationLoading = false;
+
+  async setProximityFilter(filter: 'all' | 'nearby'): Promise<void> {
+    this.routeProximityFilter = filter;
+    if (filter !== 'nearby' || this.nearbyLocationLoading) return;
+    this.nearbyLocationLoading = true;
+    try {
+      const fix = await this.geo.getCurrentPosition({ timeout: 8000, maximumAge: 15000 });
+      this.driverPosition = fix ? { lat: fix.lat, lng: fix.lng } : null;
+    } catch {
+      this.driverPosition = null;
+    } finally {
+      this.nearbyLocationLoading = false;
+    }
+  }
+
+  private routeStartsNearby(route: FixedRoute): boolean {
+    if (!this.driverPosition || this.nearbyLocationLoading) return false;
+    const firstStop = route.stops?.[0];
+    const lat = route.origin_lat ?? firstStop?.lat;
+    const lng = route.origin_lng ?? firstStop?.lng;
+    if (lat == null || lng == null || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return false;
+    return haversineDistanceMeters(this.driverPosition.lat, this.driverPosition.lng, Number(lat), Number(lng)) <= 5000;
+  }
 
   get filteredRoutes(): FixedRoute[] {
     return this.routes.filter((r) => {
+      if (this.routeProximityFilter === 'nearby' && !this.routeStartsNearby(r)) return false;
       // 1. City Filter (matches city_id, origin_city_id, dest_city_id)
       if (this.selectedCityFilter !== 'all') {
         const cId = Number(this.selectedCityFilter);
@@ -264,6 +347,7 @@ export class FixedDriverPage implements OnDestroy {
   }
 
   resetRouteFilters(): void {
+    this.routeProximityFilter = 'all';
     this.selectedCityFilter = 'all';
     this.selectedScopeFilter = 'all';
     this.routeSearchQuery = '';
@@ -283,7 +367,7 @@ export class FixedDriverPage implements OnDestroy {
   citySettings: FixedCitySettings | null = null;
   selectedStopDetail: StopDetailModalData | null = null;
   passengerFilter: 'all' | 'waiting' | 'onboard' | 'done' = 'all';
-  sheetTab: 'passengers' | 'stops' | 'seats' = 'passengers';
+  sheetTab: 'stops' | 'seats' = 'seats';
   showStopsTimeline = false;
   passengerSheetExpanded = true;
   detailsModalOpen = false;
@@ -291,6 +375,32 @@ export class FixedDriverPage implements OnDestroy {
 
   // Seat layout map state
   seatMapData: DepartureSeatMap | null = null;
+  livePanelTab: 'seats' | 'list' = 'seats';
+  boardingSuccess: FixedPassenger | null = null;
+  completionSummary: { route: string; capacity: number; dropped: number; noShows: number } | null = null;
+
+  get onboardSeatCount(): number {
+    return this.passengers.filter(p => p.status === 'BOARDED').reduce((sum, p) => sum + Number(p.seats || 1), 0);
+  }
+
+  get upcomingStopGuides(): StopGuide[] {
+    return this.stopGuide.filter(stop => stop.status !== 'done').slice(0, 3);
+  }
+
+  get nextBoardingPassenger(): FixedPassenger | null {
+    return this.passengers.find(p => p.id !== this.boardingSuccess?.id && this.boardReady(p) && this.boardCooldown(p) <= 0) ?? null;
+  }
+
+  async continueAfterBoarding(): Promise<void> {
+    const next = this.nextBoardingPassenger;
+    this.boardingSuccess = null;
+    if (next) await this.board(next);
+  }
+
+  closeCompletion(destination: 'home' | 'history' | 'routes'): void {
+    this.completionSummary = null;
+    if (destination !== 'routes') void this.router.navigateByUrl(destination === 'home' ? '/tabs/dashboard' : '/tabs/history');
+  }
   seatMapLoading = false;
   seatActionBusy = false;
 
@@ -301,8 +411,9 @@ export class FixedDriverPage implements OnDestroy {
   previewMapLoading = false;
   previewMapFullscreen = false;
 
-  openDetailsModal(tab: 'passengers' | 'stops' | 'seats' = 'passengers'): void {
-    this.sheetTab = tab;
+  openDetailsModal(tab: 'passengers' | 'stops' | 'seats' = 'seats'): void {
+    this.sheetTab = tab === 'passengers' ? 'seats' : tab;
+    if (tab === 'passengers') this.livePanelTab = 'list';
     this.detailsModalOpen = true;
     if (this.activeVehicle) {
       this.loadDepartureSeatMap(this.activeVehicle.id);
@@ -314,7 +425,8 @@ export class FixedDriverPage implements OnDestroy {
   }
 
   selectSheetTab(tab: 'passengers' | 'stops' | 'seats'): void {
-    this.sheetTab = tab;
+    this.sheetTab = tab === 'passengers' ? 'seats' : tab;
+    if (tab === 'passengers') this.livePanelTab = 'list';
     if (tab === 'seats' && this.activeVehicle && !this.seatMapData) {
       this.loadDepartureSeatMap(this.activeVehicle.id);
     }
@@ -404,6 +516,13 @@ export class FixedDriverPage implements OnDestroy {
   }
 
   ionViewWillEnter(): void {
+    this.api.get<{ driver?: { map_marker_url?: string | null; vehicle?: { map_marker_url?: string | null } } }>('/drivers/me').subscribe({
+      next: response => {
+        this.configuredDriverMarkerUrl = response.driver?.vehicle?.map_marker_url || response.driver?.map_marker_url || null;
+        this.cd.markForCheck();
+      },
+      error: () => {},
+    });
     this.subscribeFixedCatalog();
     this.subscribeHoldRequests();
     this.startClock();
@@ -473,7 +592,7 @@ export class FixedDriverPage implements OnDestroy {
       if (pending === 0) this.loading = false;
     };
 
-    this.api.get<{ data: FixedRoute[]; driver_cities?: { id: number; name: string }[]; driver_scope?: string }>('/fixed/driver/routes').subscribe({
+    this.api.get<{ data: FixedRoute[]; driver_cities?: { id: number; name: string }[]; driver_scope?: string }>('/fixed/driver/routes').pipe(finalize(done)).subscribe({
       next: (res) => {
         this.routes = res.data ?? [];
         if (res.driver_cities && res.driver_cities.length) {
@@ -505,10 +624,9 @@ export class FixedDriverPage implements OnDestroy {
         }
       },
       error: (err) => this.error = err?.error?.message || 'Could not load fixed routes.',
-      complete: done,
     });
 
-    this.api.get<{ data: FixedVehicle[] }>('/fixed/driver/vehicles').subscribe({
+    this.api.get<{ data: FixedVehicle[] }>('/fixed/driver/vehicles').pipe(finalize(done)).subscribe({
       next: (res) => {
         this.vehicles = res.data ?? [];
         this.activeVehicle = this.pickActiveVehicle();
@@ -530,7 +648,6 @@ export class FixedDriverPage implements OnDestroy {
         }
       },
       error: (err) => this.error = err?.error?.message || 'Could not load fixed vehicles.',
-      complete: done,
     });
   }
 
@@ -689,6 +806,7 @@ export class FixedDriverPage implements OnDestroy {
   loadManifest(vehicleId: number, showSpinner = true, forceMap = false): void {
     if (showSpinner) this.busy = true;
     const oldRadius = Number(this.citySettings?.fixed_stop_arrival_radius_m || 0);
+    const oldNextStopId = this.nextStopGuide?.id;
     const oldStopsJson = JSON.stringify(this.stops.map((s) => ({ id: s.id, seq: s.seq })));
     const oldPassengersJson = this.renderedPassengerSignature;
     const oldCitySettingsJson = JSON.stringify(this.citySettings || {});
@@ -698,6 +816,22 @@ export class FixedDriverPage implements OnDestroy {
       .pipe(finalize(() => { if (showSpinner) this.busy = false; }))
       .subscribe({
         next: (res) => {
+          if (['CANCELLED', 'COMPLETED'].includes((res.departure.status || '').toUpperCase())) {
+            this.activeVehicle = null;
+            this.passengers = [];
+            this.stops = [];
+            this.incomingSeatRequests = [];
+            this.seatMapData = null;
+            this.boardingSuccess = null;
+            this.closeDetailsModal();
+            this.closeStopDetail();
+            this.otpPassenger = null;
+            this.stopManifestPolling();
+            void this.stopFixedTripLocationStreaming();
+            this.resetEmbeddedMap();
+            this.refresh();
+            return;
+          }
           this.activeVehicle = res.departure;
           this.passengers = res.passengers ?? [];
           this.stops = this.visibleManifestStops(res.stops ?? [], this.passengers);
@@ -705,6 +839,7 @@ export class FixedDriverPage implements OnDestroy {
             this.citySettings = res.city_settings;
           }
           this.loadPendingHolds(vehicleId);
+          this.loadDepartureSeatMap(vehicleId);
           void this.syncFixedTripLocationStreaming();
 
           const newRadius = Number(this.citySettings?.fixed_stop_arrival_radius_m || 0);
@@ -722,6 +857,7 @@ export class FixedDriverPage implements OnDestroy {
             this.ensureEmbeddedMap(forceMap);
           } else if (
             forceMap ||
+            oldNextStopId !== this.nextStopGuide?.id ||
             oldStopsJson !== newStopsJson ||
             oldPassengersJson !== newPassengersJson ||
             oldCitySettingsJson !== newCitySettingsJson ||
@@ -837,6 +973,12 @@ export class FixedDriverPage implements OnDestroy {
     const result = await alert.onDidDismiss();
     if (result.role !== 'confirm') return;
 
+    const completedSnapshot = {
+      route: this.activeVehicle.route_name || 'Fixed route',
+      capacity: this.activeVehicle.capacity,
+      dropped: this.passengers.filter(p => ['DROPPED', 'COMPLETED'].includes(p.status)).reduce((sum, p) => sum + Number(p.seats || 1), 0),
+      noShows: this.passengers.filter(p => p.status === 'NO_SHOW').length,
+    };
     this.busy = true;
     this.error = null;
     this.api.post<{ vehicle: FixedVehicle; message: string }>("/fixed/departures/" + this.activeVehicle.id + "/complete", {})
@@ -848,6 +990,9 @@ export class FixedDriverPage implements OnDestroy {
           await this.stopFixedTripLocationStreaming();
           await this.showToast(res.message || 'Fixed ride completed.');
           this.detailsModalOpen = false;
+          this.closeStopDetail();
+          this.boardingSuccess = null;
+          this.completionSummary = completedSnapshot;
           this.refresh();
         },
         error: (err) => this.error = err?.error?.message || 'Could not complete fixed ride.',
@@ -948,6 +1093,8 @@ export class FixedDriverPage implements OnDestroy {
       .subscribe({
         next: async (res) => {
           this.closeBoardingOtp();
+          this.closeStopDetail();
+          this.boardingSuccess = { ...passenger, status: 'BOARDED' };
           // Boarded — any leftover resend countdown is moot and the Board
           // button hides for this passenger.
           delete this.boardCooldowns[passenger.id];
@@ -1445,11 +1592,13 @@ export class FixedDriverPage implements OnDestroy {
   }
 
   loadDepartureSeatMap(departureId: number): void {
+    if (this.seatMapLoading) return;
     this.seatMapLoading = true;
     this.api.get<DepartureSeatMap>(`/fixed/driver/departures/${departureId}/seat-map`)
       .pipe(finalize(() => { this.seatMapLoading = false; }))
       .subscribe({
         next: (res) => {
+          if (this.activeVehicle?.id !== departureId) return;
           this.seatMapData = res;
         },
         error: (err) => {
@@ -2052,9 +2201,9 @@ export class FixedDriverPage implements OnDestroy {
       const marker = new google.maps.marker.AdvancedMarkerElement({
         position: this.stopPosition(stop),
         map: this.map,
-        title: stop.name,
+        title: this.nextStopGuide?.id === stop.id ? `Next stop ${stop.seq}: ${stop.name}` : stop.name,
         content: this.buildStopMarker(stop),
-        zIndex: Number(stop.seq || 0),
+        zIndex: this.nextStopGuide?.id === stop.id ? 100 : Number(stop.seq || 0),
       });
 
       marker.addListener('click', () => {
@@ -2447,6 +2596,8 @@ export class FixedDriverPage implements OnDestroy {
     const reachedSeq = this.completedStopSeq;
     return buildStopMarkerElement({
       seq: stop.seq,
+      name: stop.name,
+      isNext: this.nextStopGuide?.id === stop.id,
       isReached: Number(stop.seq || 0) <= reachedSeq,
     });
   }
@@ -2455,7 +2606,7 @@ export class FixedDriverPage implements OnDestroy {
     return buildReusableCarMarkerElement({
       bearing,
       label: 'You (Car)',
-      markerUrl: this.activeVehicle?.map_marker_url || (this.auth.getUser() as any)?.vehicle?.map_marker_url || null,
+      markerUrl: this.driverMapMarkerUrl,
     });
   }
 

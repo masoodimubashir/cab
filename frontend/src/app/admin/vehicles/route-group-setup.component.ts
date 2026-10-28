@@ -17,6 +17,7 @@ export interface SetupVehicleSet { id: number; name: string; members?: { id: num
 export class RouteGroupSetupComponent implements OnChanges {
   @Input() cityId!: number;
   @Input() group: MasterGroup | null = null;
+  @Input() initialSection: 'routes' | 'vehicles' | 'drivers' = 'routes';
   @Input() initialRouteId: number | null = null;
   @Input() routes: MasterRoute[] = [];
   @Input() vehicles: SetupVehicle[] = [];
@@ -47,6 +48,7 @@ export class RouteGroupSetupComponent implements OnChanges {
   ngOnChanges(changes: SimpleChanges): void {
     if (!this.initialized || changes['cityId'] || changes['group']) {
       this.initialized = true;
+      this.section = this.initialSection;
       this.name = this.group?.name ?? '';
       this.extraNames = [];
       this.active = this.group?.is_active ?? true;

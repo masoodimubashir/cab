@@ -14,11 +14,20 @@ import { City, EMPTY_TRIP, MODE_COPY, Place, RideMode, ServiceTile, TripDraft, T
 export class BookingService {
   // rev5 — draft trip + catalogue, wired to existing endpoints.
   private draft: TripDraft = { ...EMPTY_TRIP };
+  private readonly supportCityKey = 'dc.support.city-id';
 
   constructor(private api: ApiService) {}
 
   get trip(): TripDraft {
     return this.draft;
+  }
+
+  get supportCityId(): number | null {
+    if (this.draft.cityId) return this.draft.cityId;
+    try {
+      const cityId = Number(sessionStorage.getItem(this.supportCityKey));
+      return Number.isSafeInteger(cityId) && cityId > 0 ? cityId : null;
+    } catch { return null; }
   }
 
   setScope(scope: TripScope): void {
@@ -40,6 +49,11 @@ export class BookingService {
 
   setCity(cityId: number | null): void {
     this.draft.cityId = cityId;
+    try {
+      if (cityId && Number.isSafeInteger(cityId) && cityId > 0) {
+        sessionStorage.setItem(this.supportCityKey, String(cityId));
+      } else { sessionStorage.removeItem(this.supportCityKey); }
+    } catch { /* In-memory city remains usable when storage is unavailable. */ }
   }
 
   reset(): void {
