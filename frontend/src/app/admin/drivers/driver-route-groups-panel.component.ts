@@ -21,23 +21,23 @@ interface Payload { assigned_group_ids: number[]; groups: GroupOpt[]; effective_
     <section class="drg">
       <header class="drg__head">
         <h3>Fixed route access</h3>
-        <span class="drg__sub">Routes are granted by route groups across this driver's registered operating cities.</span>
+        <span class="drg__sub">Routes are granted by stands across this driver's registered operating cities.</span>
       </header>
 
       <p *ngIf="loading" role="status">Loading route assignments…</p><p *ngIf="loadFailed" role="alert">Could not load assignments. Close and try again.</p><div class="drg__body" *ngIf="!loading && !loadFailed">
         <div class="drg__col">
-          <div class="drg__label">Route groups</div>
-          <div class="drg__empty" *ngIf="!groups.length">No route groups found in this driver's cities yet.</div>
+          <div class="drg__label">Stands</div>
+          <div class="drg__empty" *ngIf="!groups.length">No stands found in this driver's cities yet.</div>
           <label class="drg__grp" *ngFor="let g of groups">
             <input type="checkbox" [disabled]="saving" [checked]="assigned.has(g.id)" (change)="toggle(g.id)" />
             <span>
               <strong>{{ g.name }}</strong>
               <small class="drg__city" *ngIf="g.city_name">· {{ g.city_name }}</small>
-              <small class="drg__city" *ngIf="!g.is_active">· Inactive group: route access paused</small>
+              <small class="drg__city" *ngIf="!g.is_active">· Inactive stand: route access paused</small>
               <small class="drg__city" *ngIf="g.vehicle_set_names?.length">· {{ g.vehicle_set_names?.join(', ') }}{{ g.matches_vehicle_set ? ' · Matches driver vehicle' : '' }}</small>
             </span>
           </label>
-          <button class="drg__save" [disabled]="saving || !driverId" (click)="save()">{{ saving ? 'Saving…' : 'Save route groups' }}</button>
+          <button class="drg__save" [disabled]="saving || !driverId" (click)="save()">{{ saving ? 'Saving…' : 'Save stands' }}</button>
         </div>
 
         <div class="drg__col">
@@ -50,7 +50,7 @@ interface Payload { assigned_group_ids: number[]; groups: GroupOpt[]; effective_
             </div>
           </div>
           <div class="drg__empty" *ngIf="!filteredEffective.length">
-            {{ effective.length ? 'No routes match the selected scope filter.' : 'No routes — assign a group to give this driver work.' }}
+            {{ effective.length ? 'No routes match the selected scope filter.' : 'No routes — assign a stand to give this driver work.' }}
           </div>
           <div class="drg__route" *ngFor="let r of filteredEffective">
             <div class="drg__route-top">
@@ -149,9 +149,9 @@ export class DriverRouteGroupsPanelComponent implements OnChanges {
         this.saving = false;
         this.effective = res?.effective_routes || [];
         this.assigned = new Set<number>(res?.assigned_group_ids || []);
-        this.toast.success('Route groups updated.'); this.saved.emit();
+        this.toast.success('Stands updated.'); this.saved.emit();
       },
-      error: (e) => { this.saving = false; this.toast.error(e?.error?.message || 'Could not update route groups.'); },
+      error: (e) => { this.saving = false; this.toast.error(e?.error?.message || 'Could not update stands.'); },
     });
   }
 }

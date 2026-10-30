@@ -15,6 +15,51 @@ describe('Routes operations workspace', () => {
     page.routes = [{ id: 20, name: 'Market route', origin_name: 'Town', dest_name: 'Market', city_vehicle_type_id: 1, scope: 'local', flat_fare: 20, booking_window_hours: 2, is_active: true }, { id: 21, name: 'Incomplete', origin_name: 'Town', dest_name: 'Station', city_vehicle_type_id: 1, scope: 'outstation', flat_fare: null, booking_window_hours: 2, is_active: false }];
     page.drivers = [{ id: 3, user_id: 50, name: 'Driver One', phone: null, vehicle_type_id: 2, city_vehicle_type_id: 2, vehicle_reg_no: null, vehicle_model: null, vehicle_color: null }];
   });
+  it('opens the dedicated rename dialog and updates the displayed name without changing assignments', async () => {
+    const response = new Subject<any>();
+    const api = { patch: jasmine.createSpy().and.returnValue(response) };
+    TestBed.configureTestingModule({ imports: [RouteOperationsComponent], providers: [
+      { provide: ApiService, useValue: api }, { provide: ToastService, useValue: { success: () => undefined } },
+    ] });
+    const fixture = TestBed.createComponent(RouteOperationsComponent); Object.assign(fixture.componentInstance, page);
+    const component = fixture.componentInstance, root: HTMLElement = fixture.nativeElement;
+    component.openGroupManagement(); fixture.detectChanges();
+    const before = JSON.stringify([component.groups[0].route_ids, component.groups[0].driver_user_ids, component.groups[0].vehicle_set_ids]);
+    root.querySelector<HTMLButtonElement>('[aria-label="Rename stand Town service"]')!.click(); fixture.detectChanges();
+    await fixture.whenStable(); fixture.detectChanges();
+    expect(component.groupSetupOpen).toBeFalse();
+    const input = root.querySelector<HTMLInputElement>('#rename-stand-name')!;
+    input.value = 'Town stand'; input.dispatchEvent(new Event('input')); await fixture.whenStable(); fixture.detectChanges();
+    const refreshed = jasmine.createSpy(); component.refresh.subscribe(refreshed);
+    Array.from(root.querySelectorAll<HTMLButtonElement>('app-stand-rename button')).find(button => button.textContent?.trim() === 'Save')!.click();
+    response.next({ route_group: { name: 'Town stand' } }); fixture.detectChanges();
+    expect(root.querySelector('.group-management-identity')?.textContent).toContain('Town stand');
+    expect(root.querySelector('app-stand-rename')).toBeNull(); expect(refreshed).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify([component.groups[0].route_ids, component.groups[0].driver_user_ids, component.groups[0].vehicle_set_ids])).toBe(before);
+    fixture.destroy();
+  });
+  it('opens both copy actions from Browse routes and shows the created route independently', async () => {
+    const response = new Subject<any>(), api = { post: jasmine.createSpy().and.returnValue(response) };
+    TestBed.configureTestingModule({ imports: [RouteOperationsComponent], providers: [
+      { provide: ApiService, useValue: api }, { provide: ToastService, useValue: { success: () => undefined } },
+    ] });
+    const fixture = TestBed.createComponent(RouteOperationsComponent); Object.assign(fixture.componentInstance, page);
+    const component = fixture.componentInstance, root: HTMLElement = fixture.nativeElement;
+    component.routeDetailTab = 'browse'; fixture.detectChanges();
+    root.querySelector<HTMLButtonElement>('[aria-label="Copy route Market route"]')!.click(); fixture.detectChanges();
+    await fixture.whenStable(); fixture.detectChanges();
+    expect(component.copyReverse).toBeFalse();
+    root.querySelector<HTMLButtonElement>('app-route-copy tm-button button')!.click(); fixture.detectChanges();
+    expect(root.querySelector('app-route-copy')).toBeNull(); expect(api.post).not.toHaveBeenCalled();
+    root.querySelector<HTMLButtonElement>('[aria-label="Copy as reverse Market route"]')!.click(); fixture.detectChanges();
+    await fixture.whenStable(); fixture.detectChanges(); expect(component.copyReverse).toBeTrue();
+    const refresh = jasmine.createSpy(); component.refresh.subscribe(refresh);
+    Array.from(root.querySelectorAll<HTMLButtonElement>('app-route-copy button')).find(button => button.textContent?.trim() === 'Create copy')!.click();
+    response.next({ route: { id: 22, name: 'Market → Town' } }); fixture.detectChanges();
+    expect(component.search).toBe('Market → Town'); expect(component.routeGroupId).toBeNull();
+    expect(component.routeDetailTab).toBe('browse'); expect(component.copyRoute).toBeNull(); expect(refresh).toHaveBeenCalledTimes(1);
+    expect(component.routes[0].name).toBe('Market route'); fixture.destroy();
+  });
   it('finds routes through shared groups for another vehicle without copying them', () => {
     page.vehicleId = 2;
     expect(page.filteredRoutes.map(route => route.id)).toEqual([20]);
@@ -43,7 +88,7 @@ describe('Routes operations workspace', () => {
     TestBed.configureTestingModule({ imports: [RouteOperationsComponent] });
     const fixture = TestBed.createComponent(RouteOperationsComponent); Object.assign(fixture.componentInstance, page);
     fixture.componentInstance.groups.push({ ...page.groups[0], id: 6, name: 'Empty group', route_ids: [] });
-    fixture.detectChanges(); const select: HTMLSelectElement = fixture.nativeElement.querySelector('[aria-label="Select route group"]');
+    fixture.detectChanges(); const select: HTMLSelectElement = fixture.nativeElement.querySelector('[aria-label="Select stand"]');
     fixture.componentInstance.search = 'no match'; fixture.componentInstance.status = 'inactive'; fixture.componentInstance.scope = 'outstation';
     select.selectedIndex = 1; select.dispatchEvent(new Event('change')); fixture.detectChanges();
     expect(fixture.componentInstance.routeGroupId).toBe(5); expect(fixture.componentInstance.selectedGroupId).toBe(5);
@@ -59,7 +104,7 @@ describe('Routes operations workspace', () => {
     TestBed.configureTestingModule({ imports: [RouteOperationsComponent] });
     const fixture = TestBed.createComponent(RouteOperationsComponent); Object.assign(fixture.componentInstance, page); fixture.detectChanges();
     const root: HTMLElement = fixture.nativeElement;
-    const input = root.querySelector<HTMLInputElement>('[aria-label="Select group to inspect"]')!;
+    const input = root.querySelector<HTMLInputElement>('[aria-label="Select stand to inspect"]')!;
     input.dispatchEvent(new Event('focus')); input.value = 'Town'; input.dispatchEvent(new Event('input')); fixture.detectChanges();
     expect(root.querySelectorAll('#group-picker-options [role="option"]').length).toBe(1);
     expect(fixture.componentInstance.routeGroupId).toBeNull();
@@ -67,13 +112,13 @@ describe('Routes operations workspace', () => {
     expect(fixture.componentInstance.routeGroupId).toBe(5); expect(input.value).toBe('Town service');
     expect(fixture.componentInstance.filteredRoutes.map(route => route.id)).toEqual([20]);
     await fixture.whenStable(); fixture.detectChanges();
-    expect((root.querySelector('[aria-label="Select route group"]') as HTMLSelectElement).selectedIndex).toBe(1);
+    expect((root.querySelector('[aria-label="Select stand"]') as HTMLSelectElement).selectedIndex).toBe(1);
     input.dispatchEvent(new Event('focus')); input.value = 'missing'; input.dispatchEvent(new Event('input')); fixture.detectChanges();
-    expect(root.querySelector('#group-picker-options')?.textContent).toContain('No matching groups');
+    expect(root.querySelector('#group-picker-options')?.textContent).toContain('No matching stands');
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); fixture.detectChanges(); expect(input.value).toBe('Town service');
     input.dispatchEvent(new Event('focus')); fixture.detectChanges();
     (root.querySelector('#group-option-all') as HTMLButtonElement).click(); fixture.detectChanges();
-    expect(fixture.componentInstance.routeGroupId).toBeNull(); expect(input.value).toBe('All groups');
+    expect(fixture.componentInstance.routeGroupId).toBeNull(); expect(input.value).toBe('All stands');
     input.dispatchEvent(new Event('focus')); fixture.componentInstance.openRoutePicker(); fixture.detectChanges();
     expect(root.querySelector('#group-picker-options')).toBeNull();
     fixture.destroy();
@@ -84,10 +129,10 @@ describe('Routes operations workspace', () => {
     const root: HTMLElement = fixture.nativeElement;
     Array.from(root.querySelectorAll<HTMLButtonElement>('.route-driver-actions button')).find(button => button.textContent?.includes('Add drivers'))!.click(); fixture.detectChanges();
     expect(fixture.componentInstance.editingGroup?.id).toBe(5);
-    expect(root.querySelector('app-route-group-setup')?.textContent).toContain('Who should run this group?');
+    expect(root.querySelector('app-route-group-setup')?.textContent).toContain('Selected drivers receive every route in this stand.');
     expect((root.querySelector('app-route-group-setup .choices input') as HTMLInputElement).checked).toBeTrue();
     fixture.componentInstance.groupSetupOpen = false; fixture.detectChanges();
-    Array.from(root.querySelectorAll<HTMLButtonElement>('.route-driver-actions button')).find(button => button.textContent?.includes('Add to group'))!.click(); fixture.detectChanges();
+    Array.from(root.querySelectorAll<HTMLButtonElement>('.route-driver-actions button')).find(button => button.textContent?.includes('Add to stand'))!.click(); fixture.detectChanges();
     expect(fixture.componentInstance.routeForGroup?.id).toBe(20);
     fixture.destroy();
   });
@@ -185,7 +230,7 @@ describe('Routes operations workspace', () => {
       expect(fixture.nativeElement.querySelector('.driver-reference') !== null).toBe(view === 'drivers');
     }
     fixture.componentInstance.openGroupManagement(); fixture.detectChanges();
-    const remove: HTMLButtonElement = fixture.nativeElement.querySelector('[aria-label="Delete group Town service"]');
+    const remove: HTMLButtonElement = fixture.nativeElement.querySelector('[aria-label="Delete stand Town service"]');
     const events = jasmine.createSpy(); fixture.componentInstance.action.subscribe(events); remove.click();
     expect(events).toHaveBeenCalledWith({ kind: 'delete-group', id: 5, vehicleId: null });
     fixture.destroy();
@@ -219,11 +264,11 @@ describe('Routes operations workspace', () => {
     fixture.componentInstance.groupSearch = 'missing group'; fixture.detectChanges();
     expect(root.querySelector('.group-management-row')).toBeNull();
     fixture.componentInstance.resetGroupFilters(); fixture.detectChanges();
-    (root.querySelector('[aria-label="Manage group Town service"]') as HTMLButtonElement).click();
+    (root.querySelector('[aria-label="Manage stand Town service"]') as HTMLButtonElement).click();
     expect(fixture.componentInstance.editingGroup?.id).toBe(5);
     expect(fixture.componentInstance.groupSetupOpen).toBeTrue();
     fixture.componentInstance.groupSetupOpen = false;
-    const create = Array.from(root.querySelectorAll<HTMLButtonElement>('.group-management button')).find(button => button.textContent?.includes('New group'))!;
+    const create = Array.from(root.querySelectorAll<HTMLButtonElement>('.group-management button')).find(button => button.textContent?.includes('New stand'))!;
     create.click(); expect(fixture.componentInstance.editingGroup).toBeNull(); expect(fixture.componentInstance.groupSetupOpen).toBeTrue();
     fixture.destroy();
   });
@@ -382,7 +427,7 @@ describe('Routes operations workspace', () => {
     expect(root.querySelector('.route-stops-content tm-button')).toBeNull();
     (root.querySelector('[aria-label="Edit route Market route"]') as HTMLButtonElement).click();
     expect(events).toHaveBeenCalledWith({ kind: 'edit-route', id: 20, vehicleId: null });
-    const groupButton = Array.from(root.querySelectorAll<HTMLButtonElement>('.route-driver-actions button')).find(button => button.textContent?.includes('Add to group'))!;
+    const groupButton = Array.from(root.querySelectorAll<HTMLButtonElement>('.route-driver-actions button')).find(button => button.textContent?.includes('Add to stand'))!;
     groupButton.click(); fixture.detectChanges();
     expect(fixture.componentInstance.routeForGroup?.id).toBe(20); fixture.componentInstance.routeForGroup = null;
     (root.querySelector('#route-tab-overview') as HTMLButtonElement).click(); fixture.detectChanges();

@@ -631,6 +631,7 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rid
     Route::post('/admin/cities/{city}/fixed-routes/import-kml-bulk', [AdminFixedRoutesController::class, 'bulkImportKml']);
     Route::post('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'store']);
     Route::patch('/admin/cities/{city}/fixed-routes/{route}', [AdminFixedRoutesController::class, 'update']);
+    Route::post('/admin/cities/{city}/fixed-routes/{route}/copy', [AdminFixedRoutesController::class, 'copy']);
 
     // Route Groups — reusable bundles of fixed routes; the unit of driver route allocation.
     Route::post('/admin/cities/{city}/route-groups/setup', [AdminRouteGroupsController::class, 'setup']);

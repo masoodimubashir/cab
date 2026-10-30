@@ -80,6 +80,7 @@ class FixedDepartureService
             $this->availability->assertCityOwnsRoute($city, $route);
 
             $departure = RouteDeparture::query()->create($this->departureAttributes($route, $data));
+            if ($departure->vehicle_snapshot !== null) app(SeatMapService::class)->snapshotForDeparture($departure);
 
             return $departure->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
         });
@@ -109,6 +110,13 @@ class FixedDepartureService
 
     private function assertAdminDepartureUpdateIsSafe(RouteDeparture $departure, array $data): void
     {
+        if ($departure->vehicle_snapshot !== null) {
+            foreach (['driver_id', 'city_vehicle_type_id', 'capacity'] as $field) {
+                if (array_key_exists($field, $data) && (int) $data[$field] !== (int) $departure->$field) {
+                    throw new ReservationException('This departure’s vehicle and seats are fixed. Close it and open a new departure to change them.', 422);
+                }
+            }
+        }
         if (in_array($departure->status, ['COMPLETED', 'CANCELLED'], true)) {
             throw new ReservationException('This fixed vehicle is already closed.', 422);
         }
@@ -342,6 +350,7 @@ class FixedDepartureService
 
     public function shapeCustomerDeparture(RouteDeparture $departure, ?Collection $images = null): array
     {
+        $identity = app(FixedDepartureVehicleService::class)->identity($departure);
         $this->availability->assertFixedDeparture($departure);
         $departure->loadMissing(['driver:id,name', 'cityVehicleType:id,display_name,vehicle_type_id', 'cityVehicleType.vehicleType:id,name']);
         $driverProfile = $departure->driver_id
@@ -350,7 +359,7 @@ class FixedDepartureService
                 ->where('user_id', $departure->driver_id)
                 ->first(['user_id', 'city_vehicle_type_id', 'vehicle_type_id', 'vehicle_type', 'vehicle_brand', 'vehicle_model', 'vehicle_color', 'vehicle_reg_no'])
             : null;
-        $family = $departure->cityVehicleType?->display_name
+        $family = $identity['vehicle_name'] ?? $departure->cityVehicleType?->display_name
             ?? $driverProfile?->cityVehicleType?->display_name
             ?? $driverProfile?->vehicle_type
             ?? $driverProfile?->vehicleTypeRef?->name;
@@ -391,13 +400,13 @@ class FixedDepartureService
             'driver_name' => $departure->driver?->name,
             'driver_id' => $departure->driver_id,
             'city_vehicle_type_id' => $departure->city_vehicle_type_id,
-            'vehicle_name' => $departure->cityVehicleType?->display_name ?? $driverProfile?->vehicle_type,
+            'vehicle_name' => $identity['vehicle_name'],
             'image_url' => $image['image_url'],
-            'vehicle_type_name' => $departure->cityVehicleType?->vehicleType?->name ?? $driverProfile?->vehicle_type,
-            'vehicle_brand' => $driverProfile?->vehicle_brand,
-            'vehicle_model' => $driverProfile?->vehicle_model,
-            'vehicle_color' => $driverProfile?->vehicle_color,
-            'vehicle_reg_no' => $driverProfile?->vehicle_reg_no,
+            'vehicle_type_name' => $identity['vehicle_type_name'],
+            'vehicle_brand' => $identity['vehicle_brand'],
+            'vehicle_model' => $identity['vehicle_model'],
+            'vehicle_color' => $identity['vehicle_color'],
+            'vehicle_reg_no' => $identity['vehicle_reg_no'],
             'status' => $departure->status,
             'departure_kind' => $departure->departure_kind,
             'visible_to_customers' => (bool) $departure->visible_to_customers,
@@ -406,6 +415,7 @@ class FixedDepartureService
 
     public function shapeAdminDeparture(RouteDeparture $departure): array
     {
+        $identity = app(FixedDepartureVehicleService::class)->identity($departure);
         $this->availability->assertFixedDeparture($departure);
         $departure->loadMissing('route.stops', 'driver:id,name');
 
@@ -476,6 +486,7 @@ class FixedDepartureService
             'driver' => $departure->driver?->name,
             'driver_id' => $departure->driver_id,
             'city_vehicle_type_id' => $departure->city_vehicle_type_id,
+            ...$identity,
             'status' => $departure->status,
             'departure_kind' => $departure->departure_kind,
             'visible_to_customers' => (bool) $departure->visible_to_customers,
@@ -484,11 +495,16 @@ class FixedDepartureService
 
     private function departureAttributes(Route $route, array $data, ?RouteDeparture $existing = null): array
     {
+        $prepared = [];
+        if (!$existing && !empty($data['driver_id'])) {
+            $driver = Driver::where('user_id', $data['driver_id'])->firstOrFail();
+            $prepared = app(FixedDepartureVehicleService::class)->prepare($route, $driver);
+        }
         $serviceDate = $data['service_date'] ?? now()->toDateString();
         $announced = $data['announced_depart_at'] ?? null;
         $departAt = $data['depart_at'] ?? $announced;
-        $vehicleTypeId = $data['city_vehicle_type_id'] ?? $route->city_vehicle_type_id;
-        $capacity = $data['capacity'] ?? null;
+        $vehicleTypeId = $data['city_vehicle_type_id'] ?? $existing?->city_vehicle_type_id ?? $route->city_vehicle_type_id;
+        $capacity = $data['capacity'] ?? $existing?->capacity;
         $luggageCapacity = $data['luggage_capacity'] ?? null;
 
         if ($capacity === null && $vehicleTypeId) {
@@ -501,7 +517,7 @@ class FixedDepartureService
             $luggageCapacity = $existing?->luggage_capacity ?? $route->max_luggage_per_vehicle ?? 0;
         }
 
-        return [
+        return $prepared + [
             'route_id' => $route->id,
             'route_schedule_id' => null,
             'trip_id' => $existing?->trip_id,

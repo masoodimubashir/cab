@@ -74,6 +74,10 @@ class DriversController extends Controller
             'photo' => ['nullable', 'image', 'max:4096'],
         ]);
 
+        if ($existing) {
+            app(DriverServiceModeService::class)->assertVehicleChangeAllowed($existing, $data);
+        }
+
         $chosenCityIds = [];
         if (! empty($data['city_ids'])) {
             $chosenCityIds = array_values(array_unique(array_map('intval', $data['city_ids'])));

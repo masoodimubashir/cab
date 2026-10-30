@@ -106,6 +106,7 @@ export class ProfilePage implements OnInit, OnDestroy {
   // Personal Profile fields
   photoFile: File | null = null;
   photoPreview: string | null = null;
+  private photoDraftReady: Promise<void> = Promise.resolve();
   readonly defaultAvatar = 'assets/default-avatar.svg';
   name = '';
   email = '';
@@ -303,13 +304,14 @@ export class ProfilePage implements OnInit, OnDestroy {
           this.addressSkipNextQueryEmit = true;
         }
       }
-      const draftPhoto = this.draft.getPhotoFile();
-      if (draftPhoto) {
-        this.photoFile = draftPhoto;
-        const reader = new FileReader();
-        reader.onload = () => { this.photoPreview = reader.result as string; };
-        reader.readAsDataURL(draftPhoto);
-      }
+      this.photoDraftReady = this.draft.getPhotoFile(me?.id ?? 0).then(draftPhoto => {
+        if (draftPhoto && !this.photoFile) {
+          this.photoFile = draftPhoto;
+          const reader = new FileReader();
+          reader.onload = () => { this.photoPreview = reader.result as string; };
+          reader.readAsDataURL(draftPhoto);
+        }
+      }).catch(() => { this.error = 'Could not restore your saved photo. Please select it again.'; });
     }
 
     void this.initDeviceInfo();
@@ -795,17 +797,28 @@ export class ProfilePage implements OnInit, OnDestroy {
     if (i && i.src.indexOf('default-avatar') === -1) i.src = this.defaultAvatar;
   }
 
-  onPhotoChange(ev: Event): void {
+  async onPhotoChange(ev: Event): Promise<void> {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0] ?? null;
     if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > 4 * 1024 * 1024) {
+      this.error = 'Choose an image of 4 MB or smaller.';
+      input.value = '';
+      return;
+    }
+    this.error = null;
     this.photoFile = file;
     const reader = new FileReader();
     reader.onload = () => { this.photoPreview = reader.result as string; };
     reader.readAsDataURL(file);
+    if (this.onboarding) {
+      try { await this.draft.setPhotoFile(file, this.auth.getUser()?.id ?? 0); }
+      catch { this.error = 'Could not keep your photo for later. Please select it again before continuing.'; }
+    }
   }
 
-  submitProfile(): void {
+  async submitProfile(): Promise<void> {
+    await this.photoDraftReady;
     this.error = null;
     const name = this.name.trim();
     const email = this.email.trim();
@@ -818,7 +831,9 @@ export class ProfilePage implements OnInit, OnDestroy {
     }
 
     if (this.onboarding) {
-      this.draft.setProfile({
+      this.busy = true;
+      try {
+      await this.draft.setProfile({
         name,
         email,
         dob: this.dob,
@@ -826,7 +841,11 @@ export class ProfilePage implements OnInit, OnDestroy {
         app_version: this.deviceInfo.app_version?.slice(0, 32),
         os_version: this.deviceInfo.os_version?.slice(0, 32),
         device_type: this.deviceInfo.device_type?.slice(0, 64),
-      }, this.photoFile);
+      }, this.photoFile, this.auth.getUser()?.id ?? 0);
+      } catch {
+        this.error = 'Could not save your registration draft. Please try again.';
+        return;
+      } finally { this.busy = false; }
       // Advance to step 2 (vehicle & service) — this is where registration is
       // actually submitted. Previously this just saved a local draft and stopped,
       // leaving the driver stuck on the profile screen.
@@ -1042,7 +1061,8 @@ export class ProfilePage implements OnInit, OnDestroy {
   }
 
   /** Final step — submit the whole registration (profile + vehicle) to the server. */
-  submitRegistration(): void {
+  async submitRegistration(): Promise<void> {
+    await this.photoDraftReady;
     this.error = null;
     this.message = null;
 
@@ -1080,7 +1100,7 @@ export class ProfilePage implements OnInit, OnDestroy {
     fd.append('vehicle_reg_no', regNo);
     if (this.fleet_id) fd.append('fleet_id', String(this.fleet_id));
 
-    const photo = this.draft.getPhotoFile() || this.photoFile;
+    const photo = this.photoFile;
     if (photo) fd.append('photo', photo);
     if (this.deviceInfo.app_version) fd.append('app_version', this.deviceInfo.app_version.slice(0, 32));
     if (this.deviceInfo.os_version) fd.append('os_version', this.deviceInfo.os_version.slice(0, 32));
@@ -1088,10 +1108,12 @@ export class ProfilePage implements OnInit, OnDestroy {
 
     this.submitting = true;
     this.api.postForm<{ driver: unknown; user: AuthUser }>('/drivers/register', fd).subscribe({
-      next: (res) => {
-        this.submitting = false;
+      next: async (res) => {
         if (res.user) this.auth.updateUser(res.user);
-        this.draft.clear();
+        try { await this.draft.clear(this.auth.getUser()?.id ?? 0); }
+        catch { this.error = 'Registration saved, but the local draft could not be cleared.'; }
+        this.photoFile = null;
+        this.submitting = false;
         this.message = 'Last step! Upload your documents to get on the road.';
         this.onboardingStep = 'documents';
         this.refreshDocuments();

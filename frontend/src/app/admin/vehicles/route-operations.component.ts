@@ -7,6 +7,8 @@ import { MasterAction, MasterDriver, MasterGroup, MasterRoute, MasterVehicle, Ma
 import { RouteGroupSetupComponent, SetupVehicle, SetupVehicleSet } from './route-group-setup.component';
 import { AddVehiclesComponent } from './add-vehicles.component';
 import { RouteNetworkMapComponent } from './route-network-map.component';
+import { StandRenameComponent } from './stand-rename.component';
+import { RouteCopyComponent } from './route-copy.component';
 
 export type OperationsAction = MasterAction | { kind: 'add-vehicle' | 'vehicle-types' | 'vehicle-sets' | 'edit-vehicle' | 'toggle-vehicle' | 'vehicle-layouts' | 'vehicle-fare' | 'vehicle-assets' | 'vehicle-drivers' | 'copy-vehicles' | 'bulk-enable' | 'bulk-disable' | 'export-vehicles'; id?: number; vehicleId?: number | null; rideTypeId?: number; ids?: number[] };
 type View = 'routes' | 'vehicles' | 'drivers';
@@ -14,7 +16,7 @@ type RouteDetailTab = 'overview' | 'browse' | 'groups' | 'tools';
 interface DirectoryRow { key: string; depth: number; name: string; kind: string; id?: number; ids: number[]; route?: MasterRoute; }
 @Component({
   selector: 'app-route-operations', standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, DrawerComponent, IconComponent, RouteGroupSetupComponent, DriverRouteGroupsPanelComponent, AddVehiclesComponent, RouteNetworkMapComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, DrawerComponent, IconComponent, RouteGroupSetupComponent, DriverRouteGroupsPanelComponent, AddVehiclesComponent, RouteNetworkMapComponent, StandRenameComponent, RouteCopyComponent],
   templateUrl: './route-operations.component.html', styleUrls: ['./route-operations.component.scss'],
 })
 export class RouteOperationsComponent implements OnChanges {
@@ -43,7 +45,7 @@ export class RouteOperationsComponent implements OnChanges {
   readonly routeTabs = [
     { id: 'overview', label: 'Overview', icon: 'eye' },
     { id: 'browse', label: 'Browse routes', icon: 'road' },
-    { id: 'groups', label: 'Route groups', icon: 'share-alt' },
+    { id: 'groups', label: 'Stands', icon: 'share-alt' },
     { id: 'tools', label: 'Manage & import', icon: 'cog' },
   ] as const;
   search = '';
@@ -59,6 +61,19 @@ export class RouteOperationsComponent implements OnChanges {
   initialRouteId: number | null = null;
   routeForGroup: MasterRoute | null = null;
   editingGroup: MasterGroup | null = null;
+  renameGroup: MasterGroup | null = null;
+  copyRoute: MasterRoute | null = null;
+  copyReverse = false;
+  startRouteCopy(route: MasterRoute, reverse = false): void { this.copyRoute = route; this.copyReverse = reverse; }
+  routeCopied(result: { id: number; name: string }): void {
+    this.clearFilters(); this.search = result.name; this.grouping = 'routes';
+    this.selectedRouteId = null; this.routeDetailTab = 'browse'; this.refresh.emit();
+  }
+  standRenamed(result: { id: number; name: string }): void {
+    const group = this.groups.find(item => item.id === result.id);
+    if (group) group.name = result.name;
+    this.refresh.emit();
+  }
   groupSetupSection: 'routes' | 'vehicles' | 'drivers' = 'routes';
   routeForDrivers: MasterRoute | null = null;
   get driverTargetGroups(): MasterGroup[] { const linked = this.routeForDrivers ? this.groupsForRoute(this.routeForDrivers.id) : []; return linked.length ? linked : this.groups; }
@@ -101,6 +116,8 @@ export class RouteOperationsComponent implements OnChanges {
   }
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['cityId']) {
+      this.renameGroup = null;
+      this.copyRoute = null;
       this.closeRoutePicker(); this.closeGroupPicker();
       this.search = ''; this.status = 'all'; this.scope = 'all'; this.vehicleId = null;
       this.routeGroupId = null;
@@ -161,7 +178,7 @@ export class RouteOperationsComponent implements OnChanges {
   routeDrivers(routeId: number): MasterDriver[] { const ids = new Set(this.groupsForRoute(routeId).flatMap(group => group.driver_user_ids)); return this.drivers.filter(driver => ids.has(driver.user_id)); }
   vehicleForRoute(route: MasterRoute): MasterVehicle | undefined { return this.vehicles.find(vehicle => (vehicle.mode_row_ids ?? [vehicle.id]).includes(route.city_vehicle_type_id ?? -1)); }
   get moduleTitle(): string { return { routes: 'Routes', vehicles: 'Vehicles & sharing', drivers: 'Driver assignments' }[this.view]; }
-  get moduleDescription(): string { return { routes: 'Manage route maps, stops, fares and service areas.', vehicles: 'Configure vehicle options, capacity, pricing and shared sets.', drivers: 'Manage drivers, profiles and their assigned route groups.' }[this.view]; }
+  get moduleDescription(): string { return { routes: 'Manage route maps, stops, fares and service areas.', vehicles: 'Configure vehicle options, capacity, pricing and shared sets.', drivers: 'Manage drivers, profiles and their assigned stands.' }[this.view]; }
   changeView(view: View): void {
     if (this.view === view) return;
     this.view = view; this.search = ''; this.status = 'all'; this.scope = 'all';
@@ -216,10 +233,10 @@ export class RouteOperationsComponent implements OnChanges {
   groupPickerOpen = false;
   groupPickerSearch = '';
   groupPickerIndex = 0;
-  get selectedGroupLabel(): string { return this.groups.find(group => group.id === this.routeGroupId)?.name || 'All groups'; }
+  get selectedGroupLabel(): string { return this.groups.find(group => group.id === this.routeGroupId)?.name || 'All stands'; }
   get groupPickerResults(): { id: number | null; name: string }[] {
     const query = this.groupPickerSearch.toLowerCase().trim();
-    return [{ id: null, name: 'All groups' }, ...this.groups].filter(group => group.name.toLowerCase().includes(query));
+    return [{ id: null, name: 'All stands' }, ...this.groups].filter(group => group.name.toLowerCase().includes(query));
   }
   openGroupPicker(): void { this.closeRoutePicker(); this.groupPickerSearch = ''; this.groupPickerIndex = 0; this.groupPickerOpen = true; }
   searchGroupPicker(value: string): void { this.groupPickerSearch = value; this.groupPickerIndex = 0; this.groupPickerOpen = true; }
