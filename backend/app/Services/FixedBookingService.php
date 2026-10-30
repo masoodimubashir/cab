@@ -23,7 +23,7 @@ class FixedBookingService
             ->whereHas('route', fn ($q) => $q->where('mode', 'fixed'))
             ->with([
                 'route:id,name,scope,mode',
-                'routeDeparture:id,route_id,trip_id,driver_id,city_vehicle_type_id,service_date,depart_at,announced_depart_at,status,capacity,seats_taken,luggage_capacity,luggage_taken,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
+                'routeDeparture:id,route_id,trip_id,driver_id,city_vehicle_type_id,vehicle_snapshot,service_date,depart_at,announced_depart_at,status,capacity,seats_taken,luggage_capacity,luggage_taken,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
                 'routeDeparture.driver:id,name,phone',
                 'routeDeparture.cityVehicleType:id,display_name,vehicle_type_id',
                 'routeDeparture.cityVehicleType.vehicleType:id,name',
@@ -56,7 +56,7 @@ class FixedBookingService
         $reservation->loadMissing([
             'route:id,name,scope,mode',
             'route.stops' => fn ($q) => $q->orderBy('seq'),
-            'routeDeparture:id,route_id,trip_id,driver_id,city_vehicle_type_id,service_date,depart_at,announced_depart_at,status,capacity,seats_taken,luggage_capacity,luggage_taken,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
+            'routeDeparture:id,route_id,trip_id,driver_id,city_vehicle_type_id,vehicle_snapshot,service_date,depart_at,announced_depart_at,status,capacity,seats_taken,luggage_capacity,luggage_taken,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
             'routeDeparture.driver:id,name,phone',
             'routeDeparture.cityVehicleType:id,display_name,vehicle_type_id',
             'routeDeparture.cityVehicleType.vehicleType:id,name',
@@ -114,6 +114,7 @@ class FixedBookingService
             'route:id,city_id,origin_city_id',
         ]);
         $departure = $reservation->routeDeparture;
+        $identity = $departure ? app(FixedDepartureVehicleService::class)->identity($departure) : null;
         $driverProfile = $departure?->driver_id
             ? Driver::query()
                 ->where('user_id', $departure->driver_id)
@@ -126,7 +127,7 @@ class FixedBookingService
                 ?: ($reservation->route?->city_id
                     ?: ($driverProfile?->city_id ?: null)));
 
-        $familyName = $departure?->cityVehicleType?->display_name
+        $familyName = $identity['vehicle_name'] ?? $departure?->cityVehicleType?->display_name
             ?: ($driverProfile?->cityVehicleType?->display_name
                 ?: ($driverProfile?->vehicleType?->name
                     ?: ($driverProfile?->vehicle_type ?: '')));
@@ -167,20 +168,20 @@ class FixedBookingService
             'luggage_taken' => $departure?->luggage_taken !== null ? (int) $departure->luggage_taken : null,
             'driver_name' => $departure?->driver?->name,
             'driver_phone' => $departure?->driver?->phone,
-            'vehicle_name' => $familyName ?: ($departure?->cityVehicleType?->display_name ?? $driverProfile?->vehicle_type),
-            'vehicle_type_name' => $departure?->cityVehicleType?->vehicleType?->name ?? $driverProfile?->vehicle_type,
-            'vehicle_brand' => $driverProfile?->vehicle_brand,
-            'vehicle_model' => $driverProfile?->vehicle_model,
-            'vehicle_color' => $driverProfile?->vehicle_color,
-            'vehicle_reg_no' => $driverProfile?->vehicle_reg_no,
+            'vehicle_name' => $identity['vehicle_name'] ?? null,
+            'vehicle_type_name' => $identity['vehicle_type_name'] ?? null,
+            'vehicle_brand' => $identity['vehicle_brand'] ?? null,
+            'vehicle_model' => $identity['vehicle_model'] ?? null,
+            'vehicle_color' => $identity['vehicle_color'] ?? null,
+            'vehicle_reg_no' => $identity['vehicle_reg_no'] ?? null,
             'map_marker_url' => $imagePayload['map_marker_url'],
             'image_url' => $imagePayload['image_url'],
             'vehicle' => [
-                'type' => $driverProfile?->vehicle_type,
-                'brand' => $driverProfile?->vehicle_brand,
-                'model' => $driverProfile?->vehicle_model,
-                'color' => $driverProfile?->vehicle_color,
-                'reg_no' => $driverProfile?->vehicle_reg_no,
+                'type' => $identity['vehicle_type_name'] ?? null,
+                'brand' => $identity['vehicle_brand'] ?? null,
+                'model' => $identity['vehicle_model'] ?? null,
+                'color' => $identity['vehicle_color'] ?? null,
+                'reg_no' => $identity['vehicle_reg_no'] ?? null,
                 'image_url' => $imagePayload['image_url'],
                 'map_marker_url' => $imagePayload['map_marker_url'],
             ],

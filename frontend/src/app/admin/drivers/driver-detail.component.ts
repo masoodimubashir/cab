@@ -5,6 +5,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import $ from 'jquery';
 import moment from 'moment';
 import 'daterangepicker';
+import { forkJoin } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
 import { DriverRouteGroupsPanelComponent } from './driver-route-groups-panel.component';
@@ -936,7 +937,7 @@ const BLOCK_REASONS = [
           </div>
           <div class="form-group">
             <label class="form-label">Service Mode</label>
-            <select class="form-control" [(ngModel)]="editForm.service_mode">
+            <select class="form-control" [(ngModel)]="editForm.service_mode" (ngModelChange)="syncEditVehicle()">
               <option value="">Not Assigned</option>
               <option value="private">Private Rides</option>
               <option value="fixed">Fixed Routes</option>
@@ -946,6 +947,18 @@ const BLOCK_REASONS = [
         </div>
 
         <div class="drawer-section-heading mt-4">Vehicle Information</div>
+
+        <div class="form-group">
+          <label class="form-label" for="driver-vehicle">Vehicle</label>
+          <select id="driver-vehicle" class="form-control" [ngModel]="editVehicleKey"
+                  (ngModelChange)="chooseEditVehicle($event)" [disabled]="editVehiclesLoading || editSaving">
+            <option value="" disabled>Select vehicle</option>
+            <option *ngIf="editVehicleKey && !hasEditVehicleChoice" [value]="editVehicleKey" disabled>{{ profile?.city_vehicle_type_name || profile?.vehicle_type_name || 'Current vehicle' }}</option>
+            <option *ngFor="let vehicle of editVehicleChoices" [value]="vehicle.key">{{ vehicle.name }}</option>
+          </select>
+          <small class="form-text-muted">{{ editVehiclesLoading ? 'Loading vehicles…' : 'Choose the vehicle only. Service Mode above controls Fixed, Private or Shuttle.' }}</small>
+          <div *ngIf="editVehiclesError" role="alert">Could not load vehicles. <button type="button" (click)="loadCityVehiclesForEdit()">Retry</button></div>
+        </div>
 
         <div class="form-group">
           <label class="form-label">Registration Number</label>
@@ -966,10 +979,15 @@ const BLOCK_REASONS = [
       </div>
 
       <ng-container slot="footer">
+        <div class="edit-profile-footer">
+        <p *ngIf="editSaveError" role="alert" class="edit-save-error">{{ editSaveError }}</p>
+        <div class="edit-profile-footer__actions">
         <tm-button variant="ghost" (clicked)="editOpen = false">Cancel</tm-button>
         <tm-button variant="green" icon="check" [loading]="editSaving" (clicked)="submitEditProfile()">
           Save Changes
         </tm-button>
+        </div>
+        </div>
       </ng-container>
     </tm-drawer>
 
@@ -1092,6 +1110,9 @@ const BLOCK_REASONS = [
 
   `,
   styles: [`
+    .edit-profile-footer { width: 100%; }
+    .edit-profile-footer__actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .edit-save-error { margin: 0 0 8px; padding: 10px 12px; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: 13px; }
     :host {
       display: block;
       width: 100%;
@@ -1847,7 +1868,36 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   // Options for Edit Form
   allCities: { id: number; name: string }[] = [];
   globalVehicleTypes: { id: number; name: string }[] = [];
-  cityVehicleOptions: { id: number; display_name: string; vehicle_type_id?: number }[] = [];
+  cityVehicleOptions: { id: number; display_name: string; vehicle_type_id?: number; city_name?: string; ride_type_name?: string; ride_type_mode?: string; ride_type_id?: number }[] = [];
+  editVehicleKey = '';
+  editSaveError: string | null = null;
+  private vehicleKey(name: string): string { return name.trim().toLowerCase(); }
+  get editVehicleChoices() {
+    const choices = new Map<string, string>();
+    for (const vehicle of this.cityVehicleOptions) choices.set(this.vehicleKey(vehicle.display_name), vehicle.display_name.trim());
+    return [...choices].map(([key, name]) => ({ key, name }));
+  }
+  get hasEditVehicleChoice(): boolean { return this.editVehicleChoices.some(vehicle => vehicle.key === this.editVehicleKey); }
+  chooseEditVehicle(key: string): void {
+    this.editVehicleKey = key;
+    this.syncEditVehicle();
+  }
+  syncEditVehicle(): void {
+    if (!this.editForm || !this.editVehicleKey) return;
+    const matches = this.cityVehicleOptions.filter(vehicle => this.vehicleKey(vehicle.display_name) === this.editVehicleKey);
+    const matchingMode = matches.filter(vehicle => vehicle.ride_type_mode === this.editForm!.service_mode);
+    const available = matchingMode.length ? matchingMode : matches.filter(vehicle => vehicle.ride_type_id == null);
+    const match = available.find(vehicle => vehicle.id === this.editForm!.city_vehicle_type_id) || available[0];
+    this.editForm.city_vehicle_type_id = match?.id ?? null;
+    if (match?.vehicle_type_id != null) this.editForm.vehicle_type_id = match.vehicle_type_id;
+  }
+  editVehiclesLoading = false;
+  editVehiclesError = false;
+  private editVehicleRequest = 0;
+
+  get selectedEditVehicle() {
+    return this.cityVehicleOptions.find(vehicle => vehicle.id === this.editForm?.city_vehicle_type_id);
+  }
 
   // Edit profile drawer
   editOpen = false;
@@ -2141,6 +2191,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   openEditProfile(): void {
     if (!this.profile) return;
+    this.editSaveError = null;
     this.ensureOptionsLoaded();
 
     let cityIds: number[] = [];
@@ -2183,20 +2234,9 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       vehicle_model: this.profile.vehicle_model ?? '',
       vehicle_color: this.profile.vehicle_color ?? '',
     };
+    this.editVehicleKey = '';
     this.loadCityVehiclesForEdit();
     this.editOpen = true;
-  }
-
-  onCityVehicleChange(cityVehicleId: number | null): void {
-    if (!this.editForm) return;
-    if (cityVehicleId == null) {
-      this.editForm.city_vehicle_type_id = null;
-      return;
-    }
-    const cv = this.cityVehicleOptions.find((o) => Number(o.id) === Number(cityVehicleId));
-    if (cv && cv.vehicle_type_id != null) {
-      this.editForm.vehicle_type_id = Number(cv.vehicle_type_id);
-    }
   }
 
   toggleEditCity(cityId: number): void {
@@ -2286,19 +2326,32 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   loadCityVehiclesForEdit(): void {
+    const request = ++this.editVehicleRequest;
+    this.editVehiclesError = false;
     if (!this.editForm || !this.editForm.city_ids.length) {
       this.cityVehicleOptions = [];
+      this.editVehiclesLoading = false;
       return;
     }
-    const primaryCityId = this.editForm.city_ids[0];
-    this.api.get<{ data?: any[]; vehicle_types?: any[] }>(`/admin/cities/${primaryCityId}/vehicle-types`).subscribe({
-      next: (res) => {
-        const list = (res.data ?? res.vehicle_types ?? []).map((cv: any) => ({
+    const cityIds = [...this.editForm.city_ids];
+    this.editVehiclesLoading = true;
+    forkJoin(cityIds.map(cityId => this.api.get<{ data?: any[]; vehicle_types?: any[] }>(`/admin/cities/${cityId}/vehicle-types`))).subscribe({
+      next: (responses) => {
+        if (request !== this.editVehicleRequest) return;
+        this.editVehiclesLoading = false;
+        const list = responses.flatMap((res, index) => (res.data ?? res.vehicle_types ?? []).filter((cv: any) => cv.is_active !== false && cv.is_active !== 0).map((cv: any) => ({
           id: Number(cv.id),
           display_name: cv.display_name,
+          ride_type_name: cv.ride_type_name,
+          ride_type_mode: cv.ride_type_mode || (cv.ride_type_name ? (/shuttle/i.test(cv.ride_type_name) ? 'shuttle' : /fixed/i.test(cv.ride_type_name) ? 'fixed' : 'private') : undefined),
+          ride_type_id: cv.ride_type_id != null ? Number(cv.ride_type_id) : undefined,
           vehicle_type_id: cv.vehicle_type_id != null ? Number(cv.vehicle_type_id) : undefined,
-        }));
+          city_name: this.allCities.find(city => Number(city.id) === cityIds[index])?.name || `City #${cityIds[index]}`,
+        })));
         this.cityVehicleOptions = list;
+        const current = this.selectedEditVehicle;
+        if (!this.editVehicleKey && current) this.editVehicleKey = this.vehicleKey(current.display_name);
+        if (this.editVehicleKey && (!current || this.editForm?.service_mode !== this.profile?.service_mode)) this.syncEditVehicle();
         if (this.editForm?.city_vehicle_type_id) {
           const match = list.find((o) => Number(o.id) === Number(this.editForm!.city_vehicle_type_id));
           if (match && match.vehicle_type_id != null) {
@@ -2307,6 +2360,9 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       },
       error: () => {
+        if (request !== this.editVehicleRequest) return;
+        this.editVehiclesLoading = false;
+        this.editVehiclesError = true;
         this.cityVehicleOptions = [];
       },
     });
@@ -2314,6 +2370,17 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   submitEditProfile(): void {
     if (!this.driverId || !this.editForm || this.editSaving) return;
+    this.editSaveError = null;
+    if (this.editVehiclesLoading) { this.toast.error('Please wait for vehicles to load.'); return; }
+    if (this.editVehicleKey && !this.selectedEditVehicle) {
+      this.toast.error('This vehicle is not available for the selected service mode in the driver’s operating cities.'); return;
+    }
+    const changedVehicle = this.editForm.city_vehicle_type_id !== (this.profile?.city_vehicle_type_id ?? null);
+    const originalCities = this.profile?.city_ids?.length ? this.profile.city_ids : this.profile?.cities?.map(city => city.id) || (this.profile?.city_id ? [this.profile.city_id] : []);
+    const changedCities = [...originalCities].map(Number).sort().join(',') !== [...this.editForm.city_ids].map(Number).sort().join(',');
+    if ((changedVehicle || changedCities) && this.editForm.city_vehicle_type_id && (!this.selectedEditVehicle || this.editVehiclesError)) {
+      this.toast.error('Please select an available vehicle from the driver’s operating cities.'); return;
+    }
     if (!this.editForm.city_ids.length) {
       this.toast.error('Please select at least one city.');
       return;
@@ -2334,6 +2401,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       vehicle_reg_no: f.vehicle_reg_no.trim() || null,
       vehicle_model: f.vehicle_model.trim() || null,
       vehicle_color: f.vehicle_color.trim() || null,
+      ...((changedVehicle || f.service_mode !== this.profile?.service_mode) && this.selectedEditVehicle?.ride_type_id != null ? { ride_type_id: this.selectedEditVehicle.ride_type_id } : {}),
     };
     this.api.patch<{ driver: any; message?: string }>(`/admin/drivers/${this.driverId}`, payload).subscribe({
       next: () => {
@@ -2344,7 +2412,8 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       },
       error: (err) => {
         this.editSaving = false;
-        this.toast.error(err?.error?.message || 'Could not update profile', { title: 'Update failed' });
+        this.editSaveError = err?.error?.message || 'Could not update profile';
+        this.toast.error(this.editSaveError!, { title: 'Update failed' });
       },
     });
   }

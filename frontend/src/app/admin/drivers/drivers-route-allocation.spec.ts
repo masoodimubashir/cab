@@ -9,6 +9,18 @@ describe('All Drivers route allocation integration', () => {
     api = { get: jasmine.createSpy() };
     page = new DriversListComponent(api as any, { error: jasmine.createSpy() } as any, {} as any, {} as any, {} as any, {} as any);
   });
+  it('separates approval views server-side and resets pagination without clearing other filters', () => {
+    api.get.and.returnValue(of({ allocation_filters_supported: true, data: { data: [], total: 0 } }));
+    page.page = 4; page.search = 'Ali';
+    page.selectApproval('not_approved');
+    expect(page.page).toBe(1);
+    expect(api.get.calls.mostRecent().args[0]).toContain('approval_status=not_approved');
+    expect(api.get.calls.mostRecent().args[0]).toContain('q=Ali');
+    page.selectApproval('approved');
+    expect(api.get.calls.mostRecent().args[0]).toContain('approval_status=approved');
+    page.selectApproval('all');
+    expect(api.get.calls.mostRecent().args[0]).not.toContain('approval_status=');
+  });
   it('loads hosted membership data without inventing a zero route count', () => {
     api.get.and.callFake((url: string) => url.includes('/route-groups')
       ? of({ assigned_group_ids: [2], groups: [{ id: 1, name: 'Other' }, { id: 2, name: 'Airport' }] })

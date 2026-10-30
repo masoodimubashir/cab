@@ -9,6 +9,24 @@ use Tests\TestCase;
 class AdminDriversRouteAllocationTest extends TestCase
 {
     use RefreshDatabase;
+    public function test_approval_views_filter_before_pagination_and_export(): void
+    {
+        $admin = User::factory()->create(['manager_all_cities' => true]); $admin->addRole('admin');
+        $role = DB::table('manager_roles')->insertGetId(['slug' => 'super_admin', 'name' => 'Super Admin', 'is_system' => true, 'created_at' => now(), 'updated_at' => now()]);
+        $admin->forceFill(['manager_role_id' => $role])->save(); Sanctum::actingAs($admin, ['act-as:admin']);
+        foreach (['approved', 'pending', 'rejected'] as $status) {
+            Driver::create(['user_id' => User::factory()->create(['name' => 'View '.$status])->id, 'approval_status' => $status]);
+        }
+        $this->getJson('/api/admin/drivers?approval_status=approved')->assertOk()
+            ->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.approval_status', 'approved');
+        $response = $this->getJson('/api/admin/drivers?approval_status=not_approved&per_page=1')->assertOk()
+            ->assertJsonPath('data.total', 2)->assertJsonCount(1, 'data.data');
+        $this->assertContains($response->json('data.data.0.approval_status'), ['pending', 'rejected']);
+        $csv = $this->get('/api/admin/drivers/export?approval_status=not_approved')->assertOk()->streamedContent();
+        $this->assertStringContainsString('View pending', $csv);
+        $this->assertStringContainsString('View rejected', $csv);
+        $this->assertStringNotContainsString('View approved', $csv);
+    }
     public function test_city_vehicle_filter_and_distinct_route_allocation_summary(): void
     {
         $admin = User::factory()->create(['manager_all_cities' => true]); $admin->addRole('admin');

@@ -97,7 +97,7 @@ export class MasterExplorerComponent implements OnChanges {
         area.children.push({ key: `group:${scope}:${group.id}`, name: group.name, kind: 'group', scope, id: group.id, ids: routes.map(route => route.id), children: routes.map(route => this.routeNode(route)) });
       }
       const loose = this.scopedRoutes.filter(route => route.scope === scope && !this.groups.some(group => group.route_ids.includes(route.id)) && this.matches(`${route.name} ${route.origin_name} ${route.dest_name}`));
-      if (loose.length) area.children.push({ key: `loose:${scope}`, name: 'Ungrouped routes', kind: 'group', scope, ids: loose.map(route => route.id), children: loose.map(route => this.routeNode(route)) });
+      if (loose.length) area.children.push({ key: `loose:${scope}`, name: 'Routes without a stand', kind: 'group', scope, ids: loose.map(route => route.id), children: loose.map(route => this.routeNode(route)) });
       area.ids = [...new Set(area.children.flatMap(node => node.ids))];
       if (area.children.length) root.children.push({ key: scope, name: scope === 'local' ? 'Local' : 'Outstation', kind: 'scope', scope, ids: area.ids, children: [area] });
     }
@@ -117,7 +117,7 @@ export class MasterExplorerComponent implements OnChanges {
         if (members.length || (!group.route_ids.length && this.matches(group.name) && this.status === 'all')) root.children.push(branch(`group:${group.id}`, group.name, 'group', members, group.id));
       }
       const loose = routes.filter(route => !this.groups.some(group => group.route_ids.includes(route.id)));
-      if (loose.length) root.children.push(branch('loose', 'Ungrouped routes', 'group', loose));
+      if (loose.length) root.children.push(branch('loose', 'Routes without a stand', 'group', loose));
     } else if (this.grouping === 'city-area') {
       if (routes.length) root.children.push(branch('area', `${this.cityName || 'Selected city'} area`, 'area', routes));
     } else if (this.grouping === 'scope') {

@@ -34,7 +34,7 @@ type DriversView = 'table' | 'graph';
 
 type StateFilter = 'all' | 'active' | 'deactivated';
 type OnlineFilter = 'all' | 'online' | 'offline';
-type ApprovalFilter = 'all' | 'approved' | 'pending' | 'rejected';
+type ApprovalFilter = 'all' | 'approved' | 'not_approved' | 'pending' | 'rejected';
 
 interface DriverRow {
   id: number;
@@ -132,6 +132,14 @@ interface DriverRow {
           </tm-button>
         </div>
       </header>
+
+      <div class="approval-views" role="group" aria-label="Driver approval views">
+        <button *ngFor="let option of approvalViews" type="button"
+                [class.is-active]="approval === option.value || (option.value === 'not_approved' && (approval === 'pending' || approval === 'rejected'))"
+                [attr.aria-pressed]="approval === option.value || (option.value === 'not_approved' && (approval === 'pending' || approval === 'rejected'))"
+                (click)="selectApproval(option.value)">{{ option.label }}</button>
+      </div>
+      <p class="approval-hint" *ngIf="approval === 'not_approved'">Pending and rejected drivers. Open a driver to review their approval.</p>
 
       <!-- =================== Graph view =================== -->
       <section class="graphs" *ngIf="view === 'graph'">
@@ -555,8 +563,8 @@ interface DriverRow {
           </ng-template>
         </tm-column>
 
-                <tm-column key="route_groups" label="Route groups" width="230">
-          <ng-template let-row><div class="allocation-groups"><button type="button" *ngFor="let group of row.route_groups" (click)="allocationDriver = row" [title]="group.city_name || ''">{{ group.name }}<span *ngIf="!group.is_active"> · Disabled</span></button><span class="muted" *ngIf="row.route_groups && !row.route_groups.length">Unassigned</span><button type="button" *ngIf="!row.route_groups" (click)="allocationDriver = row">View groups</button></div></ng-template>
+                <tm-column key="route_groups" label="Stands" width="230">
+          <ng-template let-row><div class="allocation-groups"><button type="button" *ngFor="let group of row.route_groups" (click)="allocationDriver = row" [title]="group.city_name || ''">{{ group.name }}<span *ngIf="!group.is_active"> · Disabled</span></button><span class="muted" *ngIf="row.route_groups && !row.route_groups.length">Unassigned</span><button type="button" *ngIf="!row.route_groups" (click)="allocationDriver = row">View stands</button></div></ng-template>
         </tm-column>
         <tm-column key="allocated_routes" label="Route access" width="140">
           <ng-template let-row><button type="button" class="allocation-manage" (click)="allocationDriver = row">{{ row.allocated_route_count === undefined ? 'Manage routes' : row.allocated_route_count + ' routes' }} <tm-icon name="edit" [size]="13" /></button></ng-template>
@@ -911,6 +919,10 @@ interface DriverRow {
     </div>
   `,
   styles: [`
+    .approval-views { display: flex; flex-wrap: wrap; gap: 8px; }
+    .approval-views button { border: 1px solid var(--tm-line); border-radius: 8px; padding: 10px 18px; background: var(--tm-surface); color: var(--tm-text-muted); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .approval-views button.is-active { background: var(--tm-success-bg, #ecfdf5); border-color: var(--tm-success, #16a34a); color: var(--tm-text); }
+    .approval-hint { margin: 0; color: var(--tm-text-muted); font-size: 12px; }
     .allocation-filter { padding: 8px 10px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-sm); background: var(--tm-surface); color: var(--tm-text); font: inherit; font-size: 12px; max-width: 170px; }
     .allocation-groups { display: flex; flex-wrap: wrap; gap: 5px; }.allocation-groups button { border: 0; border-radius: var(--tm-radius-pill); padding: 4px 8px; background: var(--tm-green-tint); color: var(--tm-green-deep); font: inherit; font-size: 11px; cursor: pointer; }
     .allocation-manage { display: inline-flex; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--tm-green-deep); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
@@ -1914,9 +1926,15 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
 
   approval: ApprovalFilter = 'all';
   approvalOpen = false;
+  readonly approvalViews: { value: ApprovalFilter; label: string }[] = [
+    { value: 'all', label: 'All drivers' },
+    { value: 'approved', label: 'Approved' },
+    { value: 'not_approved', label: 'Not approved' },
+  ];
   readonly approvalOptions: { value: ApprovalFilter; label: string }[] = [
     { value: 'all', label: 'Any approval' },
     { value: 'approved', label: 'Approved' },
+    { value: 'not_approved', label: 'Not approved' },
     { value: 'pending', label: 'Pending' },
     { value: 'rejected', label: 'Disapproved' },
   ];

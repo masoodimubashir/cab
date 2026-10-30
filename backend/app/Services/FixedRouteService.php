@@ -141,6 +141,44 @@ class FixedRouteService
         return Route::query()->create($attrs);
     }
 
+    public function copyAdminRoute(City $city, Route $route, string $name, bool $reverse): Route
+    {
+        $this->availability->assertCityOwnsRoute($city, $route);
+
+        return DB::transaction(function () use ($city, $route, $name, $reverse) {
+            $source = Route::query()->whereKey($route->id)->lockForUpdate()->firstOrFail();
+            $this->availability->assertCityOwnsRoute($city, $source);
+            $copy = $source->replicate()->unsetRelations();
+            $copy->name = $name;
+            $copy->is_active = false;
+            if ($reverse) {
+                foreach ([['origin_name', 'dest_name'], ['origin_lat', 'dest_lat'], ['origin_lng', 'dest_lng'], ['origin_city_id', 'dest_city_id']] as [$origin, $destination]) {
+                    $copy->$origin = $source->$destination;
+                    $copy->$destination = $source->$origin;
+                }
+                $copy->path_polyline = is_array($source->path_polyline) ? array_reverse($source->path_polyline) : null;
+            }
+            $copy->save();
+            // Removed stops are history for the original route, not part of its current plan.
+            $stops = $source->stops()->orderBy('id')->get()->reject(
+                fn (RouteStop $stop) => stripos((string) $stop->unavailable_reason, 'removed from active route') !== false
+            )->values();
+            if ($reverse) $stops = $stops->reverse()->values();
+            foreach ($stops as $index => $stop) {
+                $newStop = $stop->replicate()->unsetRelations();
+                $newStop->route_id = $copy->id;
+                $newStop->seq = $index + 1;
+                if ($reverse) {
+                    $newStop->is_pickup = $stop->is_drop;
+                    $newStop->is_drop = $stop->is_pickup;
+                }
+                $newStop->save();
+            }
+            // Stands, schedules, departures and bookings remain on the original route.
+            return $copy->fresh(['stops']);
+        });
+    }
+
     public function updateAdminRoute(City $city, Route $route, array $data): Route
     {
         $this->availability->assertCityOwnsRoute($city, $route);

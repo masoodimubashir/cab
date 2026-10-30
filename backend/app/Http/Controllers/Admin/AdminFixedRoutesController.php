@@ -146,6 +146,19 @@ class AdminFixedRoutesController
         ], 201);
     }
 
+    public function copy(Request $request, City $city, Route $route)
+    {
+        $this->availability->assertCityOwnsRoute($city, $route);
+        $request->merge(['name' => is_string($request->input('name')) ? trim($request->input('name')) : $request->input('name')]);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120', Rule::unique('routes', 'name')->where(fn ($query) => $query->where('city_id', $city->id)->where('mode', 'fixed'))],
+            'reverse' => ['required', 'boolean'],
+        ]);
+        $copy = $this->routes->copyAdminRoute($city, $route, $data['name'], (bool) $data['reverse']);
+        broadcast(new FixedRouteCatalogUpdated($city->id, $copy->id, 'route_created'))->toOthers();
+        return response()->json(['route' => $this->routes->shapeAdminRoute($copy), 'message' => 'Route copied. Review and activate it when ready.'], 201);
+    }
+
     public function update(Request $request, City $city, Route $route)
     {
         $this->availability->assertCityOwnsRoute($city, $route);

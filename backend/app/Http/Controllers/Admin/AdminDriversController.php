@@ -1066,6 +1066,9 @@ class AdminDriversController
             'address' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 
+        // Reject before any city, driver or user data is written.
+        app(\App\Services\DriverServiceModeService::class)->assertVehicleChangeAllowed($driver, $data);
+
         if (array_key_exists('city_ids', $data) && is_array($data['city_ids'])) {
             $cityIds = array_values(array_unique(array_map('intval', $data['city_ids'])));
             $driver->cities()->sync($cityIds);
@@ -1439,10 +1442,12 @@ class AdminDriversController
             }
         }
 
-        // ?approval_status=approved|pending|rejected
+        // Shared by the paginated list and CSV export.
         if ($approval = $request->query('approval_status')) {
             $approval = strtolower((string) $approval);
-            if (in_array($approval, ['approved', 'pending', 'rejected'], true)) {
+            if ($approval === 'not_approved') {
+                $query->whereIn('drivers.approval_status', ['pending', 'rejected']);
+            } elseif (in_array($approval, ['approved', 'pending', 'rejected'], true)) {
                 $query->where('drivers.approval_status', $approval);
             }
         }
