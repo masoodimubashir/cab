@@ -1374,7 +1374,7 @@ class AdminDriversController
         $state = strtolower((string) $request->query('state', 'all'));
 
         $query = Driver::query()
-            ->with(['user', 'documents']);
+            ->with(['user', 'documents', 'vehicleTypeRef:id,name']);
 
         if ($state === 'deactivated') {
             $query->whereNotNull('deactivated_at');
@@ -1521,7 +1521,9 @@ class AdminDriversController
         return [
             'id' => $driver->id,
             'approval_status' => $driver->approval_status,
-            'vehicle_type' => $driver->vehicle_type,
+            // The linked catalog category is authoritative. The legacy text
+            // field can drift (for example SUV MAXI vs SUMO MAXI).
+            'vehicle_type' => $driver->vehicleTypeRef?->name ?? $driver->vehicle_type,
             'vehicle_reg_no' => $driver->vehicle_reg_no,
             'is_online' => $driver->isOnlineFresh(),
             'registered_on' => optional($driver->created_at)->toIso8601String(),
