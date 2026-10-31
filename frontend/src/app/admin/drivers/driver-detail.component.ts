@@ -2234,7 +2234,12 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       vehicle_model: this.profile.vehicle_model ?? '',
       vehicle_color: this.profile.vehicle_color ?? '',
     };
-    this.editVehicleKey = '';
+    // Establish the registered vehicle before asynchronous city vehicle options
+    // arrive. Otherwise the saved city vehicle ID can temporarily resolve to a
+    // different category (for example SUMO) and win the selector's first value.
+    this.editVehicleKey = this.vehicleKey(
+      this.profile.city_vehicle_type_name || this.profile.vehicle_type_name || this.profile.vehicle_type || '',
+    );
     this.loadCityVehiclesForEdit();
     this.editOpen = true;
   }
@@ -2350,8 +2355,16 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         })));
         this.cityVehicleOptions = list;
         const current = this.selectedEditVehicle;
-        if (!this.editVehicleKey && current) this.editVehicleKey = this.vehicleKey(current.display_name);
-        if (this.editVehicleKey && (!current || this.editForm?.service_mode !== this.profile?.service_mode)) this.syncEditVehicle();
+        if (!this.editVehicleKey) {
+          const savedVehicleNames = [
+            this.profile?.city_vehicle_type_name,
+            this.profile?.vehicle_type_name,
+            this.profile?.vehicle_type,
+          ].map(name => this.vehicleKey(name || '')).filter(Boolean);
+          const savedChoice = this.editVehicleChoices.find(vehicle => savedVehicleNames.includes(vehicle.key));
+          this.editVehicleKey = savedChoice?.key || (current ? this.vehicleKey(current.display_name) : '');
+        }
+        if (this.editVehicleKey) this.syncEditVehicle();
         if (this.editForm?.city_vehicle_type_id) {
           const match = list.find((o) => Number(o.id) === Number(this.editForm!.city_vehicle_type_id));
           if (match && match.vehicle_type_id != null) {

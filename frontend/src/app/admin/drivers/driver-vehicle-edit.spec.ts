@@ -34,6 +34,35 @@ describe('Driver vehicle editing', () => {
     page.submitEditProfile();
     expect(api.patch.calls.mostRecent().args[1]).toEqual(jasmine.objectContaining({ city_vehicle_type_id: 20, vehicle_type_id: 5, vehicle_reg_no: 'JK01' }));
   });
+  it('uses the saved city vehicle name when its ID points to another option', () => {
+    page.profile = { city_ids: [1], city_vehicle_type_id: 10, city_vehicle_type_name: 'SWIFT', service_mode: 'private' } as any;
+    page.editForm = { ...page.editForm!, city_ids: [1], service_mode: 'private', city_vehicle_type_id: 10 };
+    api.get.and.returnValue(of({ data: [
+      { id: 10, display_name: 'SUMO', vehicle_type_id: 3 },
+      { id: 22, display_name: 'SWIFT', vehicle_type_id: 4 },
+    ] }));
+
+    page.loadCityVehiclesForEdit();
+
+    expect(page.editVehicleChoices.map(vehicle => vehicle.name)).toEqual(['SUMO', 'SWIFT']);
+    expect(page.editVehicleKey).toBe('swift');
+    expect(page.selectedEditVehicle?.id).toBe(22);
+    expect(page.editForm!.city_vehicle_type_id).toBe(22);
+  });
+  it('falls back to the registered vehicle category when the city vehicle label is absent', () => {
+    page.profile = { city_ids: [1], city_vehicle_type_id: 10, vehicle_type_name: 'SWIFT', service_mode: 'private' } as any;
+    page.editForm = { ...page.editForm!, city_ids: [1], service_mode: 'private', city_vehicle_type_id: 10 };
+    api.get.and.returnValue(of({ data: [
+      { id: 10, display_name: 'SUMO', vehicle_type_id: 3 },
+      { id: 22, display_name: 'SWIFT', vehicle_type_id: 4 },
+    ] }));
+
+    page.loadCityVehiclesForEdit();
+
+    expect(page.editVehicleKey).toBe('swift');
+    expect(page.selectedEditVehicle?.id).toBe(22);
+    expect(page.editForm!.city_vehicle_type_id).toBe(22);
+  });
   it('shows a vehicle once and resolves fixed, private and shuttle configurations from service mode', () => {
     page.cityVehicleOptions = [
       { id: 10, display_name: 'SUMO', vehicle_type_id: 3, ride_type_id: 1, ride_type_mode: 'fixed' },
