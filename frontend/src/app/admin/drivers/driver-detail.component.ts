@@ -950,11 +950,11 @@ const BLOCK_REASONS = [
 
         <div class="form-group">
           <label class="form-label" for="driver-vehicle">Vehicle</label>
-          <select id="driver-vehicle" class="form-control" [ngModel]="editVehicleKey"
-                  (ngModelChange)="chooseEditVehicle($event)" [disabled]="editVehiclesLoading || editSaving">
-            <option value="" disabled>Select vehicle</option>
-            <option *ngIf="editVehicleKey && !hasEditVehicleChoice" [value]="editVehicleKey" disabled>{{ profile?.city_vehicle_type_name || profile?.vehicle_type_name || 'Current vehicle' }}</option>
-            <option *ngFor="let vehicle of editVehicleChoices" [value]="vehicle.key">{{ vehicle.name }}</option>
+          <select id="driver-vehicle" class="form-control"
+                  (change)="onEditVehicleChange($event)" [disabled]="editVehiclesLoading || editSaving">
+            <option value="" [selected]="!editVehicleKey" disabled>Select vehicle</option>
+            <option *ngIf="editVehicleKey && !hasEditVehicleChoice" [value]="editVehicleKey" [selected]="true" disabled>{{ profile?.city_vehicle_type_name || profile?.vehicle_type_name || 'Current vehicle' }}</option>
+            <option *ngFor="let vehicle of editVehicleChoices" [value]="vehicle.key" [selected]="vehicle.key === editVehicleKey">{{ vehicle.name }}</option>
           </select>
           <small class="form-text-muted">{{ editVehiclesLoading ? 'Loading vehicles…' : 'Choose the vehicle only. Service Mode above controls Fixed, Private or Shuttle.' }}</small>
           <div *ngIf="editVehiclesError" role="alert">Could not load vehicles. <button type="button" (click)="loadCityVehiclesForEdit()">Retry</button></div>
@@ -1870,6 +1870,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   globalVehicleTypes: { id: number; name: string }[] = [];
   cityVehicleOptions: { id: number; display_name: string; vehicle_type_id?: number; city_name?: string; ride_type_name?: string; ride_type_mode?: string; ride_type_id?: number }[] = [];
   editVehicleKey = '';
+  private editVehicleManuallyChosen = false;
   editSaveError: string | null = null;
   private vehicleKey(name: string): string { return name.trim().toLowerCase(); }
   get editVehicleChoices() {
@@ -1879,8 +1880,12 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
   get hasEditVehicleChoice(): boolean { return this.editVehicleChoices.some(vehicle => vehicle.key === this.editVehicleKey); }
   chooseEditVehicle(key: string): void {
+    this.editVehicleManuallyChosen = true;
     this.editVehicleKey = key;
     this.syncEditVehicle();
+  }
+  onEditVehicleChange(event: Event): void {
+    this.chooseEditVehicle((event.target as HTMLSelectElement).value);
   }
   syncEditVehicle(): void {
     if (!this.editForm || !this.editVehicleKey) return;
@@ -2240,6 +2245,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.editVehicleKey = this.vehicleKey(
       this.profile.city_vehicle_type_name || this.profile.vehicle_type_name || this.profile.vehicle_type || '',
     );
+    this.editVehicleManuallyChosen = false;
     this.loadCityVehiclesForEdit();
     this.editOpen = true;
   }
@@ -2355,14 +2361,14 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         })));
         this.cityVehicleOptions = list;
         const current = this.selectedEditVehicle;
-        if (!this.editVehicleKey) {
+        if (!this.editVehicleManuallyChosen) {
           const savedVehicleNames = [
             this.profile?.city_vehicle_type_name,
             this.profile?.vehicle_type_name,
             this.profile?.vehicle_type,
           ].map(name => this.vehicleKey(name || '')).filter(Boolean);
           const savedChoice = this.editVehicleChoices.find(vehicle => savedVehicleNames.includes(vehicle.key));
-          this.editVehicleKey = savedChoice?.key || (current ? this.vehicleKey(current.display_name) : '');
+          this.editVehicleKey = savedChoice?.key || this.editVehicleKey || (current ? this.vehicleKey(current.display_name) : '');
         }
         if (this.editVehicleKey) this.syncEditVehicle();
         if (this.editForm?.city_vehicle_type_id) {
