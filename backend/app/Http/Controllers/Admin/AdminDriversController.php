@@ -390,6 +390,7 @@ class AdminDriversController
                 'city_names' => $driver->cities->pluck('name')->join(', '),
                 'service_scope' => $driver->service_scope,
                 'service_mode' => $driver->service_mode,
+                'service_modes' => $driver->allowedServiceModes(),
                 'approval_status' => $driver->approval_status,
                 // Payout account ("driver KYC") — informational on the approval
                 // panel. Verification is skippable, so it never blocks approval.
@@ -468,6 +469,7 @@ class AdminDriversController
                 'city_names' => $driver->cities->pluck('name')->join(', '),
                 'service_scope' => $driver->service_scope,
                 'service_mode' => $driver->service_mode,
+                'service_modes' => $driver->allowedServiceModes(),
                 'approval_status' => $driver->approval_status,
                 'is_online' => $driver->isOnlineFresh(),
                 'is_suspended' => (bool) $user?->is_suspended,
@@ -1094,6 +1096,13 @@ class AdminDriversController
      */
     public function updateDriver(Request $request, Driver $driver)
     {
+        return DB::transaction(fn () =>
+            $this->saveDriverUpdate($request, Driver::query()->lockForUpdate()->findOrFail($driver->id))
+        );
+    }
+
+    private function saveDriverUpdate(Request $request, Driver $driver)
+    {
         if ($request->has('service_scope')) {
             $rawScope = $request->input('service_scope');
             if (is_array($rawScope)) {
@@ -1117,6 +1126,8 @@ class AdminDriversController
             'city_ids.*' => ['integer', 'exists:cities,id'],
             'service_scope' => ['nullable', 'string', 'in:local,outstation,both'],
             'service_mode' => ['nullable', 'string', 'in:private,fixed,shuttle'],
+            'service_modes' => ['sometimes', 'array', 'max:3'],
+            'service_modes.*' => ['required', 'string', 'distinct', Rule::in(Driver::SERVICE_MODES)],
             // Linked User profile fields — driver identity lives on User
             'name' => ['sometimes', 'nullable', 'string', 'max:120'],
             'phone' => ['sometimes', 'nullable', 'string', 'max:20', Rule::unique('users', 'phone')->ignore($driver->user_id)],
@@ -1124,6 +1135,18 @@ class AdminDriversController
             'dob' => ['sometimes', 'nullable', 'date', 'before:today'],
             'address' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
+
+        if (array_key_exists('service_modes', $data)) {
+            $approvedModes = array_values($data['service_modes']);
+            $preferred = $data['service_mode'] ?? $driver->service_mode;
+            $data['service_modes'] = $approvedModes;
+            $data['service_mode'] = in_array($preferred, $approvedModes, true)
+                ? $preferred
+                : ($approvedModes[0] ?? null);
+        } elseif (array_key_exists('service_mode', $data) && $data['service_mode'] !== $driver->service_mode) {
+            // Older admin clients replace the registered mode with a single choice.
+            $data['service_modes'] = null;
+        }
 
         // Reject before any city, driver or user data is written.
         app(\App\Services\DriverServiceModeService::class)->assertVehicleChangeAllowed($driver, $data);
@@ -1148,9 +1171,7 @@ class AdminDriversController
                 || ! $cityVehicle->is_active
                 || (! empty($driverCityIds) && ! in_array((int) $cityVehicle->city_id, $driverCityIds, true))
                 || ($targetVehicleTypeId !== null && (int) $cityVehicle->vehicle_type_id !== (int) $targetVehicleTypeId)) {
-                return response()->json([
-                    'message' => 'Selected city vehicle does not match this driver\'s assigned cities and vehicle type.',
-                ], 422);
+                abort(422, 'Selected city vehicle does not match this driver\'s assigned cities and vehicle type.');
             }
         }
 
@@ -1163,8 +1184,13 @@ class AdminDriversController
             if (array_key_exists('service_scope', $driverData) && $driverData['service_scope']) {
                 $driverData['active_service_scope'] = $driverData['service_scope'];
             }
-            if (array_key_exists('service_mode', $driverData) && $driverData['service_mode']) {
-                $driverData['active_service_mode'] = $driverData['service_mode'];
+            if (array_key_exists('service_modes', $driverData)
+                && $driver->active_service_mode
+                && !in_array($driver->active_service_mode, $driverData['service_modes'] ?? array_filter([$driverData['service_mode']]), true)) {
+                $driverData['is_online'] = false;
+                $driverData['active_service_mode'] = null;
+                $driverData['active_service_scope'] = null;
+                $driverData['last_offline_at'] = now();
             }
             $driver->fill($driverData);
             $driver->save();

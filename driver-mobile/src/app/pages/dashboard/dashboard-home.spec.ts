@@ -138,6 +138,75 @@ describe('Driver reference Home safeguards', () => {
     expect(router.navigateByUrl).not.toHaveBeenCalled();
   });
 
+  it('requires an inline service selection before going online and shows configured names', () => {
+    const f = setup({ is_online: false, service_modes: ['private', 'fixed', 'shuttle'] });
+    const page = f.componentInstance;
+    page.serviceCatalog = { private: { label: 'Private Ride', imageUrl: '' }, fixed: { label: 'Book A Car', imageUrl: '' } };
+    f.detectChanges();
+    expect(f.nativeElement.querySelector('.sheet__go').disabled).toBeTrue();
+    const tiles = f.nativeElement.querySelectorAll('.home-service-tiles button');
+    expect(tiles.length).toBe(3);
+    expect(tiles[1].textContent).toContain('Book A Car');
+    tiles[1].click();
+    f.detectChanges();
+    expect(page.selectedServiceMode).toBe('fixed');
+    expect(f.nativeElement.querySelector('.sheet__go').disabled).toBeFalse();
+    expect(f.nativeElement.querySelector('ion-alert')).toBeNull();
+  });
+
+  it('keeps the active mode until the driver explicitly applies a different approved service', async () => {
+    const f = setup({ is_online: true, service_modes: ['private', 'fixed', 'shuttle'] });
+    const page = f.componentInstance;
+    page.driveMode = 'private';
+    const switchMode = spyOn<any>(page, 'setDriveMode').and.resolveTo(false);
+    f.detectChanges();
+    f.nativeElement.querySelectorAll('.home-service-tiles button')[1].click();
+    f.detectChanges();
+    expect(page.driveMode).toBe('private');
+    expect(switchMode).not.toHaveBeenCalled();
+    await page.changeApprovedServiceMode();
+    expect(switchMode).toHaveBeenCalledWith('fixed');
+    expect(page.selectedServiceMode).toBe('fixed');
+    switchMode.and.resolveTo(true);
+    await page.changeApprovedServiceMode();
+    expect(page.selectedServiceMode).toBeNull();
+  });
+
+  it('sends exactly the chosen approved mode when going online for each service', async () => {
+    const f = setup({ is_online: false, service_modes: ['private', 'fixed', 'shuttle'] });
+    const page = f.componentInstance;
+    (TestBed.inject(LocationConsentService) as any).ensure = () => Promise.resolve(true);
+    (TestBed.inject(GeolocationService) as any).requestPermissions = () => Promise.resolve();
+    (TestBed.inject(DriverPresenceService) as any).start = () => Promise.resolve();
+    spyOn<any>(page, 'stopVisualWatch').and.resolveTo();
+    spyOn<any>(page, 'waitForMap').and.resolveTo(false);
+    api.post = jasmine.createSpy().and.callFake((_url: string, body: any) => of({
+      driver: { ...page.driver, is_online: true, active_service_mode: body.mode, active_service_scope: 'both' },
+    }));
+    await page.goOnline();
+    expect(api.post).not.toHaveBeenCalled();
+    for (const mode of ['private', 'fixed', 'shuttle'] as const) {
+      page.selectedServiceMode = mode;
+      await page.goOnline();
+      expect(api.post.calls.mostRecent().args).toEqual(['/drivers/go-online', { mode }]);
+      expect(page.driveMode).toBe(mode);
+      expect(page.selectedServiceMode).toBeNull();
+    }
+    localStorage.removeItem('dc_driver_intended_online');
+  });
+
+  it('shows ride requests for Shuttle without repeated route and readiness text', () => {
+    const f = setup({ is_online: true, service_mode: 'shuttle' });
+    f.componentInstance.driveMode = 'shuttle';
+    f.detectChanges();
+    const home = f.nativeElement.querySelector('.home-workspace');
+    expect(home.textContent).not.toContain('Choose your route');
+    expect(home.textContent).not.toContain('Ready to receive rides');
+    expect(home.querySelector('.home-readiness')).toBeNull();
+    home.querySelector('.home-plan-action').click();
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/tabs/rides');
+  });
+
   it('keeps GPS fixes without a Home map and does not wait for a missing map', async () => {
     const f = setup({ is_online: false });
     const page: any = f.componentInstance;

@@ -6,6 +6,7 @@ use App\Models\Driver;
 use App\Models\City;
 use App\Models\CityVehicleType;
 use App\Models\ManagerRole;
+use App\Models\OperatorSetting;
 use App\Models\Permission;
 use App\Models\RouteGroup;
 use App\Models\User;
@@ -17,6 +18,53 @@ use Tests\TestCase;
 class DriverLockedServiceRegistrationTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_admin_approves_multiple_modes_but_driver_can_only_work_one_at_a_time(): void
+    {
+        $role = ManagerRole::query()->firstOrCreate(
+            ['slug' => 'super_admin'],
+            ['name' => 'Super Admin', 'is_system' => true],
+        );
+        $admin = User::factory()->create(['manager_role_id' => $role->id, 'manager_all_cities' => true]);
+        $admin->addRole('admin');
+        $user = User::factory()->create();
+        $user->addRole('driver');
+        $driver = Driver::query()->create([
+            'user_id' => $user->id,
+            'approval_status' => 'approved',
+            'service_scope' => 'both',
+            'service_mode' => 'private',
+        ]);
+        OperatorSetting::instance()->forceFill(['wallet_cash_min_capping' => 0])->save();
+
+        Sanctum::actingAs($admin, ['act-as:admin']);
+        $this->patchJson("/api/admin/drivers/{$driver->id}", ['service_modes' => ['private', 'fixed']])
+            ->assertOk()->assertJsonPath('driver.service_modes', ['private', 'fixed']);
+
+        Sanctum::actingAs($user, ['act-as:driver']);
+        $this->patchJson("/api/admin/drivers/{$driver->id}", ['service_modes' => ['shuttle']])->assertForbidden();
+        $this->postJson('/api/drivers/register', ['service_modes' => ['shuttle']])->assertOk();
+        $this->assertSame(['private', 'fixed'], $driver->fresh()->allowedServiceModes());
+        $this->postJson('/api/drivers/go-online', ['mode' => 'shuttle'])->assertUnprocessable();
+        $this->postJson('/api/drivers/go-online', ['mode' => 'private'])
+            ->assertOk()->assertJsonPath('driver.active_service_mode', 'private');
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'shuttle'])->assertUnprocessable();
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'fixed'])
+            ->assertOk()->assertJsonPath('driver.active_service_mode', 'fixed')
+            ->assertJsonPath('driver.service_modes', ['private', 'fixed']);
+
+        Sanctum::actingAs($admin, ['act-as:admin']);
+        $this->patchJson("/api/admin/drivers/{$driver->id}", ['service_modes' => ['private', 'fixed', 'shuttle']])
+            ->assertOk()->assertJsonPath('driver.active_service_mode', 'fixed');
+
+        Sanctum::actingAs($user, ['act-as:driver']);
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'shuttle'])
+            ->assertOk()->assertJsonPath('driver.active_service_mode', 'shuttle');
+
+        Sanctum::actingAs($admin, ['act-as:admin']);
+        $this->patchJson("/api/admin/drivers/{$driver->id}", ['service_modes' => ['private', 'fixed']])
+            ->assertOk()->assertJsonPath('driver.is_online', false)->assertJsonPath('driver.active_service_mode', null);
+    }
 
     public function test_driver_registration_requires_and_locks_service_choice(): void
     {

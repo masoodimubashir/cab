@@ -25,13 +25,35 @@ class DriverServiceModeService
                 : fn ($value) => $value === null || $value === '' ? null : (string) $value;
             if ($normalize($before) !== $normalize($after)) { $changed = true; break; }
         }
+        $approvedModes = $data['service_modes'] ?? null;
+        if ($approvedModes !== null && $approvedModes !== $driver->allowedServiceModes()) {
+            $changed = true;
+        }
         if (!$changed) return;
 
-        if ($this->hasActiveFixedVehicle($driver) || $this->hasActivePrivateTrip($driver)
-            || ShuttleJourney::query()->where('driver_id', $driver->user_id)
-                ->whereNotIn('status', ['COMPLETED', 'CANCELLED'])->exists()) {
+        if ($this->hasActiveWork($driver)) {
             abort(422, 'Complete or close the current ride/departure before changing this driver’s vehicle.');
         }
+    }
+
+    public function assertServiceModeChangeAllowed(Driver $driver, ?string $mode): void
+    {
+        if ($mode === $driver->active_service_mode) return;
+
+        if ($this->hasActiveWork($driver)) {
+            abort(422, 'Finish your current ride or departure before changing service mode.');
+        }
+    }
+
+    public function hasActiveWork(Driver $driver, ?int $exceptTripId = null): bool
+    {
+        return Trip::query()->where('driver_id', $driver->user_id)
+            ->when($exceptTripId, fn ($query) => $query->where('id', '!=', $exceptTripId))
+            ->whereIn('status', $this->privateBlockingStatuses())->exists()
+            || RouteDeparture::query()->where('driver_id', $driver->user_id)
+                ->whereNotIn('status', ['COMPLETED', 'CANCELLED'])->exists()
+            || ShuttleJourney::query()->where('driver_id', $driver->user_id)
+                ->whereNotIn('status', ['COMPLETED', 'CANCELLED'])->exists();
     }
 
     public function setMode(Driver $driver, ?string $mode, ?string $scope = null): Driver
@@ -54,7 +76,7 @@ class DriverServiceModeService
             ]);
         }
 
-        if ($mode !== null && (!$driver->service_scope || !$driver->service_mode)) {
+        if ($mode !== null && (!$driver->service_scope || !$driver->allowedServiceModes())) {
             throw ValidationException::withMessages([
                 'mode' => 'Choose your permanent driver service before going online.',
             ]);
@@ -65,24 +87,13 @@ class DriverServiceModeService
             ? in_array($requestedScope, [Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_OUTSTATION, Driver::SERVICE_SCOPE_BOTH], true)
             : ($requestedScope === $driver->service_scope);
 
-        if ($mode !== null && ($mode !== $driver->service_mode || !$scopeAllowed)) {
+        if ($mode !== null && (!in_array($mode, $driver->allowedServiceModes(), true) || !$scopeAllowed)) {
             throw ValidationException::withMessages([
-                'mode' => 'Your driver service is locked from registration. Contact the operator to change it.',
+                'mode' => 'This service mode or scope is not approved for your account.',
             ]);
         }
 
-        if ($mode === Driver::SERVICE_MODE_PRIVATE || $mode === Driver::SERVICE_MODE_SHUTTLE) {
-            $this->assertNoActiveFixedVehicle($driver);
-        }
-
-        if ($mode === Driver::SERVICE_MODE_FIXED) {
-            $this->assertNoActivePrivateTrip($driver);
-        }
-
-        if ($mode === null) {
-            $this->assertNoActivePrivateTrip($driver);
-            $this->assertNoActiveFixedVehicle($driver);
-        }
+        $this->assertServiceModeChangeAllowed($driver, $mode);
 
         $driver->active_service_scope = $mode === null ? null : ($scope ?? $driver->service_scope);
         $driver->active_service_mode = $mode;
@@ -133,13 +144,6 @@ class DriverServiceModeService
     {
         if ($this->hasActivePrivateTrip($driver)) {
             abort(422, 'Complete your private ride before opening a fixed vehicle.');
-        }
-    }
-
-    private function assertNoActiveFixedVehicle(Driver $driver): void
-    {
-        if ($this->hasActiveFixedVehicle($driver)) {
-            abort(422, 'Complete or close your fixed vehicle before changing ride mode.');
         }
     }
 

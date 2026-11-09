@@ -31,6 +31,8 @@ import { environment } from '../../../environments/environment';
 
 declare const google: any;
 
+type ServiceMode = 'private' | 'fixed' | 'shuttle';
+
 
 /** Operator-configured subscription prompt (Operator Settings → Subscription). */
 interface SubscriptionPrompt {
@@ -670,8 +672,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   get homeNotice(): { title: string; text: string; icon: string; path?: string; action?: string } {
     if (!this.isApproved) return { title: 'Account under review', text: 'Check your application before starting your next shift.', icon: 'time-outline', path: '/driver-pending-review', action: 'View application' };
     if (this.isWalletBelowLimit) return { title: 'Your wallet needs attention', text: `Add ₹${this.walletShortfall} to reach the minimum balance for going online.`, icon: 'wallet-outline', path: '/tabs/wallet', action: 'View wallet' };
-    if (this.documentRequirements.length) return { title: 'Documents need attention', text: 'Review the documents requested for your driver account.', icon: 'document-text-outline', path: '/profile?tab=documents', action: 'Review documents' };
-    return { title: this.isOnline ? 'Ready for your next ride' : 'Before you go online', text: 'Keep your phone charged and your vehicle ready for the next ride.', icon: 'shield-checkmark-outline' };
+    return { title: 'Documents need attention', text: 'Review the documents requested for your driver account.', icon: 'document-text-outline', path: '/profile?tab=documents', action: 'Review documents' };
+  }
+  get showDocumentNotice(): boolean {
+    return this.isApproved && !this.isWalletBelowLimit && this.documentRequirements.length > 0;
   }
   get avatarUrl(): string | null {
     return this.auth.resolveAvatarUrl(this.user);
@@ -685,13 +689,61 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     return [this.vehicleRegistration, name].filter(Boolean).join(' · ');
   }
   get registeredServiceMode(): string {
-    return String(this.driver?.['service_mode'] || this.driveMode || '');
+    return String(this.driveMode || this.driver?.['service_mode'] || '');
   }
-  get registeredServiceLabel(): string {
-    if (!this.registeredServiceMode) return '';
-    return `${this.scopeLabel(String(this.driver?.['service_scope'] || this.driveScope || ''))} · ${this.serviceLabel(this.registeredServiceMode)}`;
+  get approvedServiceModes(): ServiceMode[] {
+    const modes = this.driver?.['service_modes'];
+    return (Array.isArray(modes) ? modes : [this.driver?.['service_mode']])
+      .filter((mode): mode is ServiceMode => mode === 'private' || mode === 'fixed' || mode === 'shuttle');
   }
 
+  selectedServiceMode: ServiceMode | null = null;
+  readonly serviceIcons: Record<ServiceMode, string> = {
+    private: 'car-sport-outline', fixed: 'bus-outline', shuttle: 'git-network-outline',
+  };
+  serviceCatalog: Partial<Record<ServiceMode, { label: string; imageUrl: string }>> = {};
+  private serviceCatalogCity: number | null = null;
+
+  private loadServiceCatalog(): void {
+    const cityId = Number(this.driver?.['city_id']);
+    if (!cityId || this.approvedServiceModes.length < 2 || this.serviceCatalogCity === cityId) return;
+    this.serviceCatalogCity = cityId;
+    this.serviceCatalog = {};
+    this.api.get<{
+      scopes: { modes: { mode: ServiceMode; name: string; display_name?: string | null; image_url?: string | null }[] }[];
+    }>(`/catalog/cities/${cityId}/driver-ride-products`).subscribe({
+      next: ({ scopes }) => {
+        if (this.serviceCatalogCity !== cityId) return;
+        for (const scope of scopes ?? []) {
+          for (const item of scope.modes) {
+            this.serviceCatalog[item.mode] = {
+              label: item.display_name || item.name,
+              imageUrl: this.resolveBannerImageUrl(item.image_url),
+            };
+          }
+        }
+      },
+      error: () => {
+        if (this.serviceCatalogCity === cityId) this.serviceCatalogCity = null;
+      },
+    });
+  }
+
+  servicePickerLabel(mode: ServiceMode): string {
+    return this.serviceCatalog[mode]?.label || this.serviceLabel(mode);
+  }
+
+  get needsServiceSelection(): boolean {
+    const approved = this.approvedServiceModes;
+    return approved.length > 1 && (!this.selectedServiceMode || !approved.includes(this.selectedServiceMode));
+  }
+
+  async changeApprovedServiceMode(): Promise<void> {
+    const mode = this.selectedServiceMode;
+    if (!mode || mode === this.driveMode || !this.approvedServiceModes.includes(mode)
+        || !this.isOnline || this.toggling || this.activeFixedVehicleOpen) return;
+    if (await this.setDriveMode(mode)) this.selectedServiceMode = null;
+  }
   private refreshHomeEarnings(): void {
     if (this.earningsLoading) return;
     this.earningsLoading = true;
@@ -762,10 +814,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   scopeLabel(scope: 'local' | 'outstation' | 'both' | string | null | undefined = this.driveScope): string {
     if (scope === 'both') return 'Local & Outstation';
     return scope === 'outstation' ? 'Outstation' : 'Local';
-  }
-
-  activeServiceLabel(): string {
-    return `${this.scopeLabel()} - ${this.serviceLabel().replace(' rides', '').replace(' vehicle', '')}`;
   }
 
   chooseFixedRouteForBoarding(): void {
@@ -1212,6 +1260,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     }>('/drivers/me').subscribe({
       next: (res) => {
         this.driver = res.driver;
+        this.loadServiceCatalog();
         const driverMarkerUrl = (res.driver as any)?.vehicle?.map_marker_url
           || (res.driver as any)?.map_marker_url
           || null;
@@ -1580,6 +1629,15 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       if (!silent) await this.showDocumentRequirements(true);
       return;
     }
+    const approvedModes = this.approvedServiceModes;
+    if (silent && approvedModes.length > 1) {
+      // A new online session needs an explicit choice from the driver.
+      try { localStorage.removeItem('dc_driver_intended_online'); } catch { /* ignore */ }
+      return;
+    }
+    const mode = approvedModes.length > 1 ? this.selectedServiceMode : approvedModes[0];
+    if (approvedModes.length > 1 && (!mode || !approvedModes.includes(mode))) return;
+    if (this.toggling) return;
     this.toggling = true;
     this.isGoingOnline = true;
     this.error = null;
@@ -1589,7 +1647,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       await this.geo.requestPermissions();
 
       await new Promise<void>((resolve, reject) => {
-        this.api.post<{ driver: Record<string, unknown> }>('/drivers/go-online', {}).subscribe({
+        this.api.post<{ driver: Record<string, unknown> }>('/drivers/go-online', mode ? { mode } : {}).subscribe({
           next: (res) => {
             this.driver = res.driver;
         const driverMarkerUrl = (res.driver as any)?.vehicle?.map_marker_url
@@ -1600,6 +1658,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         }
             this.driveMode = (res.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
             this.driveScope = (res.driver?.['active_service_scope'] as 'local' | 'outstation' | 'both' | null) ?? null;
+            this.selectedServiceMode = null;
             resolve();
           },
           error: (err) => reject(err),
@@ -1655,16 +1714,17 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.error = null;
 
     try {
-      try { localStorage.removeItem('dc_driver_intended_online'); } catch { /* ignore */ }
       await new Promise<void>((resolve, reject) => {
         this.api.post<{ driver: Record<string, unknown> }>('/drivers/go-offline', {}).subscribe({
           next: (res) => { this.driver = res.driver; resolve(); },
           error: (err) => reject(new Error(err?.error?.message || 'Could not go offline')),
         });
       });
+      try { localStorage.removeItem('dc_driver_intended_online'); } catch { /* ignore */ }
       await this.presence.stop();
       this.driveMode = null;
       this.driveScope = null;
+      this.selectedServiceMode = null;
       this.clearActiveFixedRide();
       this.stopOnlineTimer();
       // Keep showing the driver where they are — take the watch back ourselves.

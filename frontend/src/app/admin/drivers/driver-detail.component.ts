@@ -66,6 +66,7 @@ interface DriverProfile {
   city_names?: string | null;
   service_scope?: 'local' | 'outstation' | 'both' | string | null;
   service_mode?: 'private' | 'fixed' | 'shuttle' | string | null;
+  service_modes?: DriverServiceMode[];
   approval_status: 'approved' | 'rejected' | 'pending' | string;
   is_online: boolean;
   is_suspended: boolean;
@@ -593,7 +594,7 @@ const BLOCK_REASONS = [
                     <span *ngIf="!profile.service_scope">—</span>
                   </strong>
                 </div>
-                <div class="sp-row"><span>Service Mode</span><strong>{{ profile.service_mode ? (profile.service_mode | titlecase) : '—' }}</strong></div>
+                <div class="sp-row"><span>Approved Service Modes</span><strong>{{ approvedServiceModeLabels }}</strong></div>
                 <div class="sp-row"><span>Registration No</span><strong class="mono">{{ profile.vehicle_reg_no || '—' }}</strong></div>
                 <div class="sp-row"><span>Vehicle Model</span><strong>{{ profile.vehicle_model || '—' }}</strong></div>
                 <div class="sp-row"><span>Vehicle Colour</span><strong>{{ profile.vehicle_color || '—' }}</strong></div>
@@ -938,11 +939,13 @@ const BLOCK_REASONS = [
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label" for="driver-service-mode">Service Mode</label>
-            <select id="driver-service-mode" class="form-control" [(ngModel)]="editForm.service_mode" (ngModelChange)="syncEditVehicle()">
-              <option value="">Not Assigned</option>
-              <option *ngFor="let option of serviceModeOptions" [value]="option.value">{{ option.label }}</option>
-            </select>
+            <label id="driver-service-modes-label" class="form-label" for="driver-service-modes">Approved Service Modes</label>
+            <p-multiSelect inputId="driver-service-modes" ariaLabelledBy="driver-service-modes-label"
+              [options]="serviceModeOptions" optionLabel="label" optionValue="value"
+              [ngModel]="editForm.service_modes" (ngModelChange)="updateEditServiceModes($event)"
+              [style]="{ width: '100%' }" [filter]="false" [showToggleAll]="false"
+              [maxSelectedLabels]="1" selectedItemsLabel="{0} services selected" placeholder="Not Assigned" />
+            <small class="form-text-muted">The driver works in one approved mode at a time.</small>
           </div>
         </div>
 
@@ -1884,7 +1887,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   // Edit profile drawer
   editOpen = false;
   editSaving = false;
-  serviceModeOptions: ReadonlyArray<{ value: DriverServiceMode; label: string }> = DRIVER_SERVICE_MODE_OPTIONS;
+  serviceModeOptions: { value: DriverServiceMode; label: string }[] = [...DRIVER_SERVICE_MODE_OPTIONS];
   editForm: {
     name: string;
     phone: string;
@@ -1894,6 +1897,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     city_ids: number[];
     service_scope: 'local' | 'outstation' | 'both' | '';
     service_mode: DriverServiceMode | '';
+    service_modes?: DriverServiceMode[];
     vehicle_type_id: number | null;
     city_vehicle_type_id: number | null;
     vehicle_reg_no: string;
@@ -2210,7 +2214,8 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       address: this.profile.address ?? '',
       city_ids: cityIds,
       service_scope: (this.profile.service_scope as any) || 'local',
-      service_mode: (this.profile.service_mode as any) || 'fixed',
+      service_mode: (this.profile.service_mode as DriverServiceMode) || '',
+      service_modes: this.profile.service_modes ?? (this.profile.service_mode ? [this.profile.service_mode as DriverServiceMode] : []),
       vehicle_type_id: vehicleTypeId,
       city_vehicle_type_id: this.profile.city_vehicle_type_id != null ? Number(this.profile.city_vehicle_type_id) : null,
       vehicle_reg_no: this.profile.vehicle_reg_no ?? '',
@@ -2243,9 +2248,24 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         });
       },
       error: () => {
-        this.serviceModeOptions = DRIVER_SERVICE_MODE_OPTIONS;
+        this.serviceModeOptions = [...DRIVER_SERVICE_MODE_OPTIONS];
       },
     });
+  }
+
+  get approvedServiceModeLabels(): string {
+    const modes = this.profile?.service_modes ?? (this.profile?.service_mode ? [this.profile.service_mode] : []);
+    return modes.map(mode => this.serviceModeOptions.find(option => option.value === mode)?.label ?? mode).join(', ') || '—';
+  }
+
+  updateEditServiceModes(modes: DriverServiceMode[]): void {
+    if (!this.editForm) return;
+    this.editForm.service_modes = modes;
+    const primary = this.editForm.service_mode;
+    if (!primary || !modes.includes(primary)) {
+      this.editForm.service_mode = modes[0] ?? '';
+      if (this.editForm.service_mode) this.syncEditVehicle();
+    }
   }
 
   updateEditCities(cityIds: number[]): void {
@@ -2364,6 +2384,8 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     this.editSaving = true;
     const f = this.editForm;
+    const originalModes = this.profile?.service_modes ?? (this.profile?.service_mode ? [this.profile.service_mode] : []);
+    const changedModes = f.service_modes && [...f.service_modes].sort().join(',') !== [...originalModes].sort().join(',');
     const payload = {
       name: f.name.trim() || null,
       phone: f.phone.trim() || null,
@@ -2373,6 +2395,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       city_ids: f.city_ids,
       service_scope: f.service_scope || null,
       service_mode: f.service_mode || null,
+      ...(changedModes ? { service_modes: f.service_modes } : {}),
       vehicle_type_id: f.vehicle_type_id || null,
       city_vehicle_type_id: f.city_vehicle_type_id || null,
       vehicle_reg_no: f.vehicle_reg_no.trim() || null,

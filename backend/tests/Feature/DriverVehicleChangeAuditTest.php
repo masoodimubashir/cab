@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\{City, CityVehicleType, DepartureSeat, Driver, Route, RouteDeparture, RouteGroup, SeatReservation, ShuttleJourney, Trip, User, VehicleType};
+use App\Models\RideType;
 use App\Services\{DriverRouteAccessService, FixedBookingService, FixedDepartureService};
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -250,5 +251,66 @@ class DriverVehicleChangeAuditTest extends TestCase
         $this->patchJson('/api/admin/drivers/'.$this->driver->id, ['vehicle_reg_no' => 'NEW456'])->assertStatus(422);
         $journey->update(['status' => 'COMPLETED']);
         $this->changeVehicle();
+    }
+
+    public function test_driver_cannot_switch_approved_modes_during_a_shuttle_journey(): void
+    {
+        $this->driver->update([
+            'service_modes' => ['fixed', 'shuttle', 'private'],
+            'active_service_mode' => 'shuttle',
+        ]);
+        $journey = ShuttleJourney::create([
+            'city_id' => $this->route->city_id,
+            'city_vehicle_type_id' => $this->oldVehicle->id,
+            'driver_id' => $this->driverUser->id,
+            'status' => 'IN_PROGRESS',
+            'capacity' => 6,
+            'seats_taken' => 1,
+        ]);
+
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'private'])->assertUnprocessable();
+        $this->assertSame('shuttle', $this->driver->fresh()->active_service_mode);
+
+        $journey->update(['status' => 'COMPLETED']);
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'private'])
+            ->assertOk()->assertJsonPath('driver.active_service_mode', 'private');
+    }
+
+    public function test_multi_mode_driver_cannot_bypass_fixed_departure_lock_by_going_offline_or_online(): void
+    {
+        $this->driver->update(['service_modes' => ['fixed', 'private', 'shuttle']]);
+        $departure = $this->openDeparture($this->oldLayout);
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'private'])->assertUnprocessable();
+        $this->postJson('/api/drivers/go-offline')->assertUnprocessable();
+        $this->postJson('/api/drivers/go-online', ['mode' => 'private'])->assertUnprocessable();
+        $this->assertSame('fixed', $this->driver->fresh()->active_service_mode);
+        $this->assertTrue($this->driver->fresh()->is_online);
+        $departure->update(['status' => 'CANCELLED']);
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'private'])
+            ->assertOk()->assertJsonPath('driver.active_service_mode', 'private');
+    }
+
+    public function test_multi_mode_driver_cannot_switch_during_any_committed_private_trip_state(): void
+    {
+        $this->driver->update(['service_modes' => ['private', 'fixed', 'shuttle'], 'active_service_mode' => 'private']);
+        $rideType = RideType::create(['name' => 'Multi-mode private test', 'mode' => 'private', 'is_active_local' => true]);
+        $trip = Trip::create([
+            'customer_id' => User::factory()->create()->id, 'driver_id' => $this->driverUser->id,
+            'city_id' => $this->route->city_id, 'scope' => 'local', 'city_vehicle_type_id' => $this->oldVehicle->id,
+            'ride_type_id' => $rideType->id,
+            'status' => 'ASSIGNED', 'pickup_address' => 'A', 'drop_address' => 'B',
+            'pickup_lat' => 34, 'pickup_lng' => 74, 'drop_lat' => 34.1, 'drop_lng' => 74.1,
+            'estimated_fare' => 100, 'currency' => 'INR',
+        ]);
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        foreach (array_merge(['NEGOTIATION'], Trip::DRIVER_BUSY_STATUSES) as $status) {
+            $trip->update(['status' => $status]);
+            $this->postJson('/api/drivers/service-mode', ['mode' => 'fixed'])->assertUnprocessable();
+            $this->assertSame('private', $this->driver->fresh()->active_service_mode);
+        }
+        $trip->update(['status' => 'COMPLETED']);
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'fixed'])
+            ->assertOk()->assertJsonPath('driver.active_service_mode', 'fixed');
     }
 }

@@ -220,6 +220,11 @@ class FixedDriverController extends Controller
 
         $prepared = app(FixedDepartureVehicleService::class)->prepare($route, $driver, $data['vehicle_seat_layout_id'] ?? null);
         $departure = DB::transaction(function () use ($route, $request, $driver, $prepared) {
+            $driver = Driver::query()->lockForUpdate()->findOrFail($driver->id);
+            $this->serviceModes->assertFixedMode($driver, $route->scope ?: Driver::SERVICE_SCOPE_LOCAL);
+            if ($this->serviceModes->hasActiveWork($driver)) {
+                abort(422, 'Complete or close your current ride before opening a fixed vehicle.');
+            }
             $departure = RouteDeparture::query()->create($prepared + [
                 'route_id' => $route->id,
                 'route_schedule_id' => null,

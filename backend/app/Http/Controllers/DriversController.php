@@ -1072,8 +1072,9 @@ class DriversController extends Controller
         return null;
     }
 
-    public function goOnline(Request $request, WalletService $walletService)
+    public function goOnline(Request $request, WalletService $walletService, DriverServiceModeService $modes)
     {
+        $data = $request->validate(['mode' => ['sometimes', 'required', 'string', Rule::in(Driver::SERVICE_MODES)]]);
         $user = $request->user();
         $driver = Driver::query()->where('user_id', $user->id)->first();
         if (!$driver) {
@@ -1101,6 +1102,14 @@ class DriversController extends Controller
         $floor = (float) ($settings->wallet_cash_min_capping ?? 0);
         $balance = $walletService->balance($user);
 
+        if ($settings->check_driver_debt && $balance < 0) {
+            return response()->json([
+                'message' => 'Clear your outstanding wallet balance before going online.',
+                'error_code' => 'driver_debt',
+                'balance' => $balance,
+            ], 422);
+        }
+
         if ($floor != 0.0 && $balance < $floor) {
             $shortfall = round($floor - $balance, 2);
             return response()->json([
@@ -1112,22 +1121,27 @@ class DriversController extends Controller
             ], 422);
         }
 
-        if (!$driver->service_scope || !$driver->service_mode) {
-            return response()->json([
-                'message' => 'Choose your permanent driver service before going online.',
-            ], 422);
-        }
+        return DB::transaction(function () use ($driver, $data, $modes) {
+            $driver = Driver::query()->lockForUpdate()->findOrFail($driver->id);
+            abort_unless($driver->approval_status === 'approved', 422, 'Driver is not approved.');
+            $mode = $data['mode'] ?? $driver->active_service_mode ?? $driver->service_mode;
+            abort_unless($driver->service_scope && in_array($mode, $driver->allowedServiceModes(), true),
+                422, 'Choose an approved service mode before going online.');
+            if ($driver->active_service_mode !== null || count($driver->allowedServiceModes()) > 1) {
+                $modes->assertServiceModeChangeAllowed($driver, $mode);
+            }
 
-        $driver->is_online = true;
-        $driver->active_service_scope = $driver->service_scope;
-        $driver->active_service_mode = $driver->service_mode;
-        $driver->last_online_at = now();
-        $driver->save();
+            $driver->is_online = true;
+            $driver->active_service_scope = $driver->service_scope;
+            $driver->active_service_mode = $mode;
+            $driver->last_online_at = now();
+            $driver->save();
 
-        return response()->json(['driver' => $driver->fresh()]);
+            return response()->json(['driver' => $driver->fresh()]);
+        });
     }
 
-    public function goOffline(Request $request)
+    public function goOffline(Request $request, DriverServiceModeService $modes)
     {
         $user = $request->user();
         $driver = Driver::query()->where('user_id', $user->id)->first();
@@ -1135,13 +1149,19 @@ class DriversController extends Controller
             return response()->json(['message' => 'Driver profile not found.'], 404);
         }
 
-        $driver->is_online = false;
-        $driver->active_service_scope = null;
-        $driver->active_service_mode = null;
-        $driver->last_offline_at = now();
-        $driver->save();
+        return DB::transaction(function () use ($driver, $modes) {
+            $driver = Driver::query()->lockForUpdate()->findOrFail($driver->id);
+            if (count($driver->allowedServiceModes()) > 1) {
+                $modes->assertServiceModeChangeAllowed($driver, null);
+            }
+            $driver->is_online = false;
+            $driver->active_service_scope = null;
+            $driver->active_service_mode = null;
+            $driver->last_offline_at = now();
+            $driver->save();
 
-        return response()->json(['driver' => $driver->fresh()]);
+            return response()->json(['driver' => $driver->fresh()]);
+        });
     }
 
     public function setServiceMode(Request $request, DriverServiceModeService $modes)
@@ -1151,14 +1171,14 @@ class DriversController extends Controller
             'scope' => ['nullable', 'string', 'in:local,outstation,both'],
         ]);
 
-        $driver = Driver::query()->where('user_id', $request->user()->id)->first();
-        if (!$driver) {
-            return response()->json(['message' => 'Driver profile not found.'], 404);
-        }
+        return DB::transaction(function () use ($request, $modes, $data) {
+            $driver = Driver::query()->where('user_id', $request->user()->id)->lockForUpdate()->first();
+            abort_unless($driver, 404, 'Driver profile not found.');
 
-        return response()->json([
-            'driver' => $modes->setMode($driver, $data['mode'] ?? null, $data['scope'] ?? null),
-        ]);
+            return response()->json([
+                'driver' => $modes->setMode($driver, $data['mode'] ?? null, $data['scope'] ?? null),
+            ]);
+        });
     }
 
     /**

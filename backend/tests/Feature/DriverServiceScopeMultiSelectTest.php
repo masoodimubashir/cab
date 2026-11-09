@@ -223,6 +223,16 @@ class DriverServiceScopeMultiSelectTest extends TestCase
         $response3->assertOk()
             ->assertJsonPath('driver.service_scope', 'outstation')
             ->assertJsonPath('driver.active_service_scope', 'outstation');
+
+        $secondCity = City::create(['name' => 'Second MultiScope City', 'country_code' => 'IN']);
+        $this->patchJson("/api/admin/drivers/{$driver->id}", [
+            'city_ids' => [$this->city->id, $secondCity->id],
+        ])->assertOk();
+        $this->assertEqualsCanonicalizing(
+            [$this->city->id, $secondCity->id], $driver->fresh()->city_ids,
+        );
+        $this->patchJson("/api/admin/drivers/{$driver->id}", ['city_ids' => []])->assertUnprocessable();
+        $this->assertCount(2, $driver->fresh()->city_ids);
     }
 
     /**
@@ -358,6 +368,11 @@ class DriverServiceScopeMultiSelectTest extends TestCase
      */
     public function test_fixed_routes_and_departure_opening_for_both_driver(): void
     {
+        $fixedRideType = RideType::create([
+            'name' => 'MultiScope Fixed', 'mode' => RideType::MODE_FIXED,
+            'is_active_local' => true, 'is_active_outstation' => true,
+        ]);
+        $this->cityVehicle->update(['ride_type_id' => $fixedRideType->id]);
         $driverUser = User::factory()->create();
         $driverUser->addRole('driver');
 
@@ -366,7 +381,7 @@ class DriverServiceScopeMultiSelectTest extends TestCase
             'city_id' => $this->city->id,
             'vehicle_type_id' => $this->vehicleType->id,
             'city_vehicle_type_id' => $this->cityVehicle->id,
-            'ride_type_id' => $this->privateRideType->id,
+            'ride_type_id' => $fixedRideType->id,
             'vehicle_reg_no' => 'FIX-' . rand(1000, 9999),
             'service_scope' => 'both',
             'service_mode' => 'fixed',
