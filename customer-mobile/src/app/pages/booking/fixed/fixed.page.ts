@@ -102,7 +102,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   cities: City[] = [];
   selectedCity: City | null = null;
   search = '';
-  searchMode: 'destination' | 'origin' | 'stop' = 'destination';
+  searchMode: 'destination' | 'origin' | 'stop' = 'origin';
   get searchPlaceholder(): string {
     return `Search by ${this.searchMode}`;
   }
@@ -114,6 +114,15 @@ export class FixedBookPage implements OnInit, OnDestroy {
   locating = false;
   locationMessage = '';
   radiusFilterActive = true;
+  get routeRadiusKm(): 1 | 3 | 5 {
+    return this.booking.routeRadiusKm ?? 1;
+  }
+
+  setRouteRadius(km: 1 | 3 | 5): void {
+    this.booking.routeRadiusKm = km;
+    this.radiusFilterActive = true;
+    this.cdr.markForCheck();
+  }
   routeScope: 'all' | 'local' | 'outstation' = 'all';
 
   get scopedRoutes(): FixedRoute[] {
@@ -127,9 +136,14 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   get nearbyRoutesCount(): number {
     if (!this.userCoords) return this.scopedRoutes.length;
-    return this.scopedRoutes.filter(
-      (r) => r.distance_to_start != null && r.distance_to_start <= 1000,
-    ).length;
+    return this.routesStartingNearby.length;
+  }
+
+  private get routesStartingNearby(): FixedRoute[] {
+    return this.scopedRoutes.filter(route =>
+      route.distance_to_start != null && route.distance_to_start <= this.routeRadiusKm * 1000
+      && (!route.starting_stop || (route.starting_stop.is_pickup && route.starting_stop.is_active
+        && !route.starting_stop.is_temporarily_unavailable)));
   }
 
   get selectedCityName(): string {
@@ -204,6 +218,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
   private requestedHomeRouteId: number | null = null;
 
   ionViewWillEnter(): void {
+    const scope = this.activatedRoute.snapshot.queryParamMap.get('scope');
+    if (scope === 'local' || scope === 'outstation') this.routeScope = scope;
     const id = Number(this.activatedRoute.snapshot.queryParamMap.get('routeId'));
     this.requestedHomeRouteId = Number.isSafeInteger(id) && id > 0 ? id : null;
     if (!this.loading && this.routes.length) this.openRequestedHomeRoute();
@@ -222,6 +238,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   async ngOnInit(): Promise<void> {
     this.cityId = this.booking.trip.cityId;
+    this.routeScope = this.booking.trip.scope ?? 'all';
     this.locationSub = this.fixedLocation.fix$.subscribe(fix => {
       if (!fix || !Number.isFinite(fix.lat) || !Number.isFinite(fix.lng)) return;
       const firstFix = !this.userCoords;
@@ -389,7 +406,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
       params.set('q', this.search.trim());
       params.set('search_by', this.searchMode);
     }
-    if (this.routeScope !== 'all') params.set('scope', this.routeScope);
+    params.set('limit', '100');
     if (this.cityId != null && this.cityId > 0) {
       params.set('city_id', String(this.cityId));
     }
@@ -528,11 +545,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
     const q = this.search.trim().toLowerCase();
     if (q) return this.scopedRoutes;
 
-    // Nearby routes must start within 1 km of the customer.
+    // Nearby filtering measures the route's starting point.
     if (this.radiusFilterActive && this.userCoords) {
-      return this.scopedRoutes.filter(
-        (r) => r.distance_to_start != null && r.distance_to_start <= 1000,
-      );
+      return this.routesStartingNearby;
     }
 
     return this.scopedRoutes;

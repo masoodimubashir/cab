@@ -171,8 +171,18 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   city: City | null = null;
   located = false;
   homeExpanded = false;
-  private homeSheetPointer: { id: number; x: number; y: number } | null = null;
-  private homeSheetDragged = false;
+  previewRoute: HomeRoute | null = null;
+
+  get routeRadiusKm(): 1 | 3 | 5 {
+    return this.booking.routeRadiusKm ?? 1;
+  }
+
+  setRouteRadius(km: 1 | 3 | 5): void {
+    this.booking.routeRadiusKm = km;
+    this.clearSelectedPickupRoute();
+    this.updateNearbyRoutes();
+    this.syncHomeMap();
+  }
   offersTab: 'offers' | 'coupons' = 'offers';
   savedPlaces: Array<{ label: string }> = [];
   homeOffers: HomeOffer[] = [];
@@ -827,6 +837,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   pickMode(tile: ServiceTile): void {
+    this.setBookingSheetExpanded(true);
     const changed = this.mode !== tile.mode;
     this.mode = tile.mode;
     this.booking.setMode(tile.mode, tile.rideTypeId);
@@ -849,28 +860,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     if (this.bookingScroll) this.bookingScroll.nativeElement.scrollTop = 0;
   }
 
-  startHomeSheetSwipe(event: PointerEvent): void {
-    if (event.button !== 0 || this.homeSheetPointer) return;
-    this.homeSheetDragged = false;
-    this.homeSheetPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
-    (event.currentTarget as HTMLButtonElement).setPointerCapture(event.pointerId);
-  }
-
-  finishHomeSheetSwipe(event: PointerEvent): void {
-    const start = this.homeSheetPointer;
-    if (!start || start.id !== event.pointerId) return;
-    this.homeSheetPointer = null;
-    if (event.type !== 'pointerup') return;
-
-    const dx = Math.abs(event.clientX - start.x);
-    const dy = event.clientY - start.y;
-    this.homeSheetDragged = Math.max(dx, Math.abs(dy)) >= 32;
-    if (this.homeSheetDragged && Math.abs(dy) > dx) this.setBookingSheetExpanded(dy < 0);
-  }
-
-  toggleBookingSheet(event: MouseEvent): void {
-    if (!this.homeSheetDragged || event.detail === 0) this.setBookingSheetExpanded(!this.homeExpanded);
-    this.homeSheetDragged = false;
+  closeBookingSheet(): void {
+    this.setBookingSheetExpanded(false);
   }
 
   private setBookingSheetExpanded(expanded: boolean): void {
@@ -886,7 +877,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
     switch (mode) {
       case 'private': void this.router.navigate(['/customer-tabs/go/private']); break;
-      case 'fixed':   void this.router.navigate(['/customer-tabs/go/fixed']);   break;
+      case 'fixed':   void this.router.navigate(['/customer-tabs/go/fixed'], { queryParams: { scope: this.scope } }); break;
       case 'shuttle': void this.router.navigate(['/customer-tabs/go/shuttle']); break;
       default:        void this.router.navigate(['/customer-tabs/go/private']);
     }
@@ -945,7 +936,6 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
       scope: this.scope,
       lat: String(this.currentCoords.lat),
       lng: String(this.currentCoords.lng),
-      sort_by: 'nearest_pickup',
       limit: '100',
     });
     this.routesLoading = true;
@@ -969,14 +959,17 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     const position = this.currentCoords;
     if (!position) return;
     this.homeRoutes = this.homeRouteCatalog.map(route => {
-      const nearbyPickups = (route.stops ?? [])
+      const origin = route.stops?.reduce<HomeRouteStop | undefined>(
+        (first, stop) => !first || stop.seq < first.seq ? stop : first, undefined,
+      );
+      const nearbyPickups = (origin ? [origin] : [])
         .filter(stop => stop.is_pickup && stop.is_active && !stop.is_temporarily_unavailable
           && this.validCoords(stop) && stop.lat !== 0 && stop.lng !== 0)
         .map(stop => ({
           ...stop,
           distanceMeters: distanceKm(position.lat, position.lng, stop.lat, stop.lng) * 1000,
         }))
-        .filter(stop => stop.distanceMeters <= 1000)
+        .filter(stop => stop.distanceMeters <= this.routeRadiusKm * 1000)
         .sort((a, b) => a.distanceMeters - b.distanceMeters);
       return { ...route, nearbyPickups };
     }).filter(route => route.nearbyPickups.length)
@@ -1044,6 +1037,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   private previewPickup(key: string, route: HomeRoute, stop: HomeRouteStop): void {
     this.clearPickupPreview();
+    this.previewRoute = route;
     this.previewPickupKey = key;
     this.gpsFollow = false;
     this.activeNavigation.stopFollowing();
@@ -1161,6 +1155,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   private clearPickupPreview(): void {
+    this.previewRoute = null;
     this.pickupInfo?.close();
     this.pickupInfo = null;
     if (this.pickupDestinationMarker) this.pickupDestinationMarker.map = null;
@@ -1185,7 +1180,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     if (!fixed) return;
     this.pickMode(fixed);
     this.booking.setScope(this.scope);
-    void this.router.navigate(['/customer-tabs/go/fixed'], { queryParams: { routeId: route.id } });
+    void this.router.navigate(['/customer-tabs/go/fixed'], { queryParams: { routeId: route.id, scope: this.scope } });
   }
 
   browseFixedRoutes(): void {

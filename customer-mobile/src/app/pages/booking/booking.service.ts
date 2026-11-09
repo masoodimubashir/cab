@@ -12,6 +12,7 @@ import { City, EMPTY_TRIP, MODE_COPY, Place, RideMode, ServiceTile, TripDraft, T
  */
 @Injectable({ providedIn: 'root' })
 export class BookingService {
+  routeRadiusKm: 1 | 3 | 5 = 1;
   // rev5 — draft trip + catalogue, wired to existing endpoints.
   private draft: TripDraft = { ...EMPTY_TRIP };
   private readonly supportCityKey = 'dc.support.city-id';

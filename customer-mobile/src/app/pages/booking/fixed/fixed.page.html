@@ -38,7 +38,7 @@
               [class.fb-dist-tab--active]="radiusFilterActive"
               (click)="setRadiusFilter(true)">
         <ion-icon name="navigate-outline"></ion-icon>
-        <span>Within 1 km</span>
+        <span>Within {{ routeRadiusKm }} km</span>
         <span class="fb-tab-count">{{ nearbyRoutesCount }}</span>
       </button>
       <button type="button" class="fb-dist-tab dc-press"
@@ -48,6 +48,11 @@
         <span>All routes</span>
         <span class="fb-tab-count">{{ scopedRoutes.length }}</span>
       </button>
+    </div>
+
+    <div class="fb-radius-options" role="group" aria-label="Route starting distance">
+      <button *ngFor="let km of [1, 3, 5]" type="button" [attr.aria-pressed]="radiusFilterActive && routeRadiusKm === km"
+        (click)="setRouteRadius($any(km))">{{ km }} km</button>
     </div>
 
     <div class="fb-location-control">
@@ -132,7 +137,7 @@
       <!-- Case 2: No route starts within 1 km (while routes exist in city). -->
       <ng-container *ngIf="!search.trim() && radiusFilterActive && userCoords && scopedRoutes.length">
         <p class="fb-empty-title">
-          No routes start within 1 km
+          No routes start within {{ routeRadiusKm }} km
         </p>
         <p class="fb-empty-sub">
           There are {{ scopedRoutes.length }} {{ routeScope === 'all' ? '' : routeScope }} routes in {{ selectedCityName }}. Select All routes to see their starting stops.

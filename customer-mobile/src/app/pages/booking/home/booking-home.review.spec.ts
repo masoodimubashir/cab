@@ -53,12 +53,12 @@ describe('Booking Home location regressions', () => {
 
     services[0].click();
     view.detectChanges();
-    expect(root.querySelector('.bh-booking-sheet')?.classList.contains('is-expanded')).toBeFalse();
+    expect(root.querySelector('.bh-booking-sheet')?.classList.contains('is-expanded')).toBeTrue();
 
     services[1].click();
     view.detectChanges();
     expect(services[1].getAttribute('aria-pressed')).toBe('true');
-    expect(root.querySelector('.bh-booking-sheet')?.classList.contains('is-expanded')).toBeFalse();
+    expect(root.querySelector('.bh-booking-sheet')?.classList.contains('is-expanded')).toBeTrue();
     expect(root.querySelector('.bh-search')).toBeNull();
     expect(root.querySelector('.bh-saved-places')).toBeNull();
     expect(root.querySelector('.bh-route-section')).not.toBeNull();
@@ -86,7 +86,7 @@ describe('Booking Home location regressions', () => {
     page.homeRoutes = [{ id: 42, name: 'Selected route', scope: 'local' }];
     view.detectChanges();
     (view.nativeElement.querySelector('.bh-route-card') as HTMLButtonElement).click();
-    expect(router.navigate).toHaveBeenCalledWith(['/customer-tabs/go/fixed'], { queryParams: { routeId: 42 } });
+    expect(router.navigate).toHaveBeenCalledWith(['/customer-tabs/go/fixed'], { queryParams: { routeId: 42, scope: page.scope } });
     expect(booking.setMode).toHaveBeenCalledWith('fixed', 2);
     expect(booking.setScope).toHaveBeenCalledWith(page.scope);
   });
@@ -117,54 +117,55 @@ describe('Booking Home location regressions', () => {
     expect(follow).toHaveBeenCalledWith(internals.map, center, null, internals.userMarker, true);
   });
 
-  it('swipes the booking sheet open and closed without changing the selected service', () => {
+  it('opens from a service tile and returns to the map with the close action', () => {
     const view = fixture();
     const page = view.componentInstance;
     page.located = true;
     page.mode = 'fixed';
+    page.tiles = [{ mode: 'fixed', title: 'Book A Seat', rideTypeId: 2 }] as any;
+    TestBed.inject(BookingService).setMode = jasmine.createSpy();
     view.detectChanges();
-
     const root = view.nativeElement as HTMLElement;
-    const handle = root.querySelector<HTMLButtonElement>('.bh-booking-sheet-handle')!;
-    spyOn(handle, 'setPointerCapture');
-    const swipe = (from: number, to: number) => {
-      handle.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientY: from }));
-      handle.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, clientY: to }));
-      handle.dispatchEvent(new MouseEvent('click', { detail: 1 }));
-      view.detectChanges();
-    };
-
-    swipe(420, 340);
-    expect(handle.getAttribute('aria-expanded')).toBe('true');
-    swipe(120, 200);
-    expect(handle.getAttribute('aria-expanded')).toBe('false');
-    expect(page.mode).toBe('fixed');
-
-    handle.click();
+    expect(root.querySelector('.bh-booking-sheet-handle')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.bh-services button')!.click();
     view.detectChanges();
-    expect(handle.getAttribute('aria-expanded')).toBe('true');
+    expect(page.homeExpanded).toBeTrue();
+    root.querySelector<HTMLButtonElement>('.bh-booking-close')!.click();
+    expect(page.homeExpanded).toBeFalse();
+    expect(page.mode).toBe('fixed');
   });
 
-  it('lists only routes with an eligible pickup within 1 km of the latest GPS fix', async () => {
+  it('filters by the first stop only, ignores nearer intermediate stops, and supports wider radii', async () => {
     const view = fixture();
     const page = view.componentInstance;
-    const near = { id: 1, name: 'Nearby pickup', lat: 34.304, lng: 74.47, is_pickup: true, is_active: true };
-    const far = { ...near, id: 2, name: 'Far pickup', lat: 34.313 };
+    const near = { id: 1, seq: 1, name: 'Near origin', lat: 34.304, lng: 74.47, is_pickup: true, is_active: true };
+    const far = { ...near, id: 2, name: 'Far origin', lat: 34.313 };
     (page as any).homeRouteCatalog = [
-      { id: 10, stops: [{ ...near, is_pickup: false }, far] },
-      { id: 11, stops: [far, near, { ...near, id: 3, is_temporarily_unavailable: true }] },
+      { id: 10, stops: [{ ...far, seq: 1 }, { ...near, seq: 2 }] },
+      { id: 11, stops: [{ ...far, seq: 2 }, near] },
       { id: 12, stops: [{ ...near, is_active: false }] },
+      { id: 13, stops: [{ ...near, is_pickup: false }, { ...near, seq: 2 }] },
     ];
-
     await (page as any).updateMapPosition(34.3, 74.47, 10, false);
     expect(page.homeRoutes.map(route => route.id)).toEqual([11]);
     expect(page.homeRoutes[0].nearbyPickups?.map(stop => stop.id)).toEqual([1]);
-
-    await (page as any).updateMapPosition(34.315, 74.47, 10, false);
-    expect(page.homeRoutes.map(route => route.id)).toEqual([10, 11]);
+    page.setRouteRadius(3);
+    expect(page.homeRoutes.map(route => route.id)).toEqual([11, 10]);
     expect(page.homeRoutes[1].nearbyPickups?.map(stop => stop.id)).toEqual([2]);
+    page.setRouteRadius(5);
+    expect(page.routeRadiusKm).toBe(5);
   });
 
+  it('books the map preview through the existing selected-route entry point', () => {
+    const view = fixture();
+    const page = view.componentInstance;
+    page.located = true;
+    page.previewRoute = { id: 42, name: 'Map route', scope: 'local' };
+    const open = spyOn(page, 'openHomeRoute');
+    view.detectChanges();
+    view.nativeElement.querySelector('.bh-map-booking button').click();
+    expect(open).toHaveBeenCalledOnceWith(page.previewRoute);
+  });
   it('clears the selected destination and restores the Home GPS camera', () => {
     const view = fixture();
     const page = view.componentInstance;

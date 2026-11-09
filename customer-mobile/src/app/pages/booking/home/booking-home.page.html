@@ -110,6 +110,11 @@
     </div>
   </div>
 
+  <aside class="bh-map-booking" *ngIf="previewRoute as route" aria-label="Selected route">
+    <div><strong>{{ route.name }}</strong><p>{{ route.origin_name }} → {{ route.dest_name }}</p></div>
+    <button type="button" (click)="openHomeRoute(route)">Book a seat<ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon></button>
+  </aside>
+
   <!-- ── 1. Active Fixed Ride Bottom Sheet (Replaces "Where are you going" when booking exists) ── -->
   <section class="bh-home-sheet bh-active-sheet" *ngIf="activeFixedRide as ride" [class.is-expanded]="homeExpanded" aria-label="Your active ride">
     <button class="bh-sheet-toggle" type="button" (click)="homeExpanded = !homeExpanded"
@@ -161,12 +166,8 @@
   </section>
 
   <section class="bh-home-sheet bh-booking-sheet" *ngIf="!activeFixedRide" [class.is-expanded]="homeExpanded" aria-label="Book a ride">
-    <button class="bh-sheet-toggle bh-booking-sheet-handle" type="button"
-      (pointerdown)="startHomeSheetSwipe($event)" (pointerup)="finishHomeSheetSwipe($event)"
-      (pointercancel)="finishHomeSheetSwipe($event)" (lostpointercapture)="finishHomeSheetSwipe($event)"
-      (click)="toggleBookingSheet($event)"
-      [attr.aria-expanded]="homeExpanded" [attr.aria-label]="homeExpanded ? 'Close booking' : 'Open booking'">
-      <span class="bh-booking-arrow" aria-hidden="true"><ion-icon name="chevron-up-outline"></ion-icon></span>
+    <button *ngIf="homeExpanded" class="bh-booking-close" type="button" (click)="closeBookingSheet()" aria-label="Back to map">
+      <ion-icon name="close-outline" aria-hidden="true"></ion-icon>Back to map
     </button>
     <div class="bh-service-controls" *ngIf="tiles.length">
       <div class="bh-services" role="group" aria-label="Ride services">
@@ -272,12 +273,16 @@
       <section class="bh-route-section" aria-labelledby="home-routes-title">
         <div class="bh-section-heading"><h2 id="home-routes-title">Explore fixed routes</h2>
           <button type="button" (click)="browseFixedRoutes()">See all<ion-icon name="chevron-forward-outline" aria-hidden="true"></ion-icon></button></div>
-        <p class="bh-section-subtitle">Pickup stops within 1 km of your location.</p>
+        <p class="bh-section-subtitle">Routes starting within {{ routeRadiusKm }} km of your location.</p>
+        <div class="bh-radius-options" role="group" aria-label="Route starting distance">
+          <button *ngFor="let km of [1, 3, 5]" type="button" [attr.aria-pressed]="routeRadiusKm === km"
+            (click)="setRouteRadius($any(km))">{{ km }} km</button>
+        </div>
         <p class="bh-route-state" *ngIf="routesLoading">Loading routes…</p>
-        <p class="bh-route-state" *ngIf="!routesLoading && !homeRoutes.length">{{ routesError ? 'Routes could not load. Open all routes to try again.' : 'No pickup stops within 1 km. Tap See all to browse farther.' }}</p>
-        <button type="button" class="bh-route-card" *ngFor="let route of homeRoutes; trackBy: trackByHomeRoute" (click)="openHomeRoute(route)" [attr.aria-label]="'View departures for ' + route.name">
+        <p class="bh-route-state" *ngIf="!routesLoading && !homeRoutes.length">{{ routesError ? 'Routes could not load. Open all routes to try again.' : 'No routes start within ' + routeRadiusKm + ' km. Choose a wider range or tap See all.' }}</p>
+        <button type="button" class="bh-route-card" *ngFor="let route of homeRoutes; trackBy: trackByHomeRoute" (click)="openHomeRoute(route)" [attr.aria-label]="'View departures from ' + route.origin_name + ' to ' + route.dest_name">
           <span class="bh-route-icon"><ion-icon name="bus-outline" aria-hidden="true"></ion-icon></span>
-          <div><h3>{{ route.name }}</h3><p *ngIf="route.origin_name || route.dest_name">{{ route.origin_name }}<span *ngIf="route.dest_name"> → {{ route.dest_name }}</span></p>
+          <div><h3>{{ route.origin_name }}<span *ngIf="route.dest_name"> → {{ route.dest_name }}</span></h3>
             <span class="bh-route-scope" *ngIf="route.nearbyPickups?.[0] as pickup">{{ pickup.name }} · {{ pickup.distanceMeters | number:'1.0-0' }} m away</span></div>
           <strong class="bh-route-fare" *ngIf="route.flat_fare != null">₹{{ route.flat_fare | number:'1.0-0' }}<small>/ seat</small></strong>
         </button>
