@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\DB;
     'fleet_id',
     'service_scope',
     'service_mode',
+    'service_modes',
     'approval_status',
     'approved_at',
     'rejected_at',
@@ -84,6 +85,11 @@ class Driver extends Model
 
     public const ACTIVE_STATUS_DUTY = 'on_duty';
 
+    public function allowedServiceModes(): array
+    {
+        return $this->service_modes ?? ($this->service_mode ? [$this->service_mode] : []);
+    }
+
     // Drivers go "Online" by tapping a button in the app, but the only signal
     // that they are still *reachable* is the periodic ping. After this many
     // seconds without a fresh ping (browser tab closed, app killed by OS,
@@ -91,6 +97,7 @@ class Driver extends Model
     public const STALE_AFTER_SECONDS = 300;
 
     protected $casts = [
+        'service_modes' => 'array',
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
         'deactivated_at' => 'datetime',

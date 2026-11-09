@@ -367,6 +367,21 @@ class FareNegotiationController extends Controller
 
         $user = $request->user();
 
+        if (in_array($data['action'], ['ACCEPT', 'COUNTER'], true)) {
+            $driver = Driver::query()->where('user_id', $user->id)->first();
+            if ($driver && $driver->service_modes !== null) {
+                $trip->loadMissing('cityVehicleType.rideType');
+                $mode = $trip->cityVehicleType?->rideType?->isShuttle()
+                    ? Driver::SERVICE_MODE_SHUTTLE : Driver::SERVICE_MODE_PRIVATE;
+                if (!$driver->is_online || $driver->approval_status !== 'approved'
+                    || $driver->active_service_mode !== $mode
+                    || !in_array($mode, $driver->allowedServiceModes(), true)
+                    || !in_array($driver->active_service_scope, [$trip->scope ?: Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_BOTH], true)) {
+                    return response()->json(['message' => 'This request does not match your active service.'], 422);
+                }
+            }
+        }
+
         // Eligibility check — deliberately NON-exclusive.
         //
         // A broadcast request (trip.driver_id === null) stays OPEN to every

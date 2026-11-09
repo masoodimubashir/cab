@@ -92,4 +92,37 @@ describe('Driver vehicle editing', () => {
     expect(api.patch).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalled();
   });
+
+  it('saves multiple operating cities and rejects removing the last city', () => {
+    api.get.and.returnValue(of({ data: [] }));
+    page.updateEditCities([2]);
+    expect(page.editForm!.city_ids).toEqual([2]);
+    page.updateEditCities([]);
+    expect(page.editForm!.city_ids).toEqual([2]);
+    expect(toast.error).toHaveBeenCalledWith('Driver must have at least one operating city.');
+  });
+
+  it('uses catalog display names and keeps stable service mode values', () => {
+    api.get.and.returnValue(of({ scopes: [{ modes: [
+      { mode: 'private', name: 'Private', display_name: 'Private Ride' },
+      { mode: 'fixed', name: 'Fixed', display_name: 'Book A Car' },
+      { mode: 'shuttle', name: 'Shared Shuttle', display_name: null },
+    ] }] }));
+    (page as any).loadServiceModeLabels(1);
+    expect(page.serviceModeOptions).toEqual([
+      { value: 'private', label: 'Private Ride' },
+      { value: 'fixed', label: 'Book A Car' },
+      { value: 'shuttle', label: 'Shared Shuttle' },
+    ]);
+  });
+
+  it('saves multiple approved modes while retaining the existing primary vehicle configuration', () => {
+    page.profile = { ...page.profile!, service_mode: 'fixed' } as any;
+    page.updateEditServiceModes(['fixed', 'private', 'shuttle']);
+    expect(page.editForm!.service_mode).toBe('fixed');
+    page.submitEditProfile();
+    expect(api.patch.calls.mostRecent().args[1]).toEqual(jasmine.objectContaining({
+      service_mode: 'fixed', service_modes: ['fixed', 'private', 'shuttle'],
+    }));
+  });
 });

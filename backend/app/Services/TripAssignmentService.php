@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Events\FareNegotiationLocked;
+use App\Models\Driver;
 use App\Models\FareNegotiationOffer;
 use App\Models\Trip;
 use App\Models\User;
@@ -56,6 +57,18 @@ class TripAssignmentService
                 return null;
             }
 
+            $driver = Driver::query()->where('user_id', $offer->from_user_id)->lockForUpdate()->first();
+            if ($driver && $driver->service_modes !== null) {
+                $trip->loadMissing('cityVehicleType.rideType');
+                $mode = $trip->cityVehicleType?->rideType?->isShuttle()
+                    ? Driver::SERVICE_MODE_SHUTTLE : Driver::SERVICE_MODE_PRIVATE;
+                if (!$driver->is_online || $driver->approval_status !== 'approved' || $driver->active_service_mode !== $mode
+                    || !in_array($driver->active_service_scope, [$trip->scope ?: Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_BOTH], true)
+                    || app(DriverServiceModeService::class)->hasActiveWork($driver, $trip->id)) {
+                    return null;
+                }
+            }
+
             // Concurrency protection: Lock the driver user record so simultaneous
             // confirmations on different trips cannot both claim the same driver.
             $driverUser = User::query()->where('id', $offer->from_user_id)->lockForUpdate()->first();
@@ -101,7 +114,7 @@ class TripAssignmentService
             app(BookingConfirmationService::class)->confirmIfReady($trip);
 
             return $trip->fresh();
-        });
+        }, 3);
 
         if ($result) {
             DB::afterCommit(function () use ($result, $finalFare) {

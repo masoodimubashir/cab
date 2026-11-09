@@ -8,7 +8,7 @@ describe('Fixed driver route loading recovery', () => {
       { id: 1, name: 'Near', scope: 'local', origin_lat: 34, origin_lng: 74 },
       { id: 2, name: 'Far', scope: 'local', origin_lat: 35, origin_lng: 74 },
       { id: 3, name: 'No coordinates', scope: 'local' },
-      { id: 4, name: 'First stop', scope: 'outstation', stops: [{ lat: 34, lng: 74 }] },
+      { id: 4, name: 'First stop', dest_name: 'First destination', scope: 'outstation', stops: [{ lat: 34, lng: 74 }] },
     ];
     page.driverPosition = { lat: 34, lng: 74 };
     page.routeProximityFilter = 'nearby';
@@ -37,7 +37,7 @@ describe('Fixed driver route loading recovery', () => {
 
   it('reviews only a visible selected route without opening bookings', () => {
     const page: any = Object.create(FixedDriverPage.prototype);
-    page.routes = [{ id: 7, name: 'Sopore', scope: 'local', stops: [{ name: 'ATM' }] }];
+    page.routes = [{ id: 7, name: 'Sopore', dest_name: 'ATM', scope: 'local', stops: [{ name: 'ATM' }] }];
     page.selectedCityFilter = 'all'; page.selectedScopeFilter = 'all';
     page.routeSearchQuery = ''; page.routeChoiceId = 7;
     page.selectRoute = jasmine.createSpy();

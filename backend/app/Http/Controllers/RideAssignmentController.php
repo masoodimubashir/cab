@@ -31,12 +31,13 @@ class RideAssignmentController extends Controller
             return response()->json(['message' => 'Driver must be approved and online.'], 422);
         }
 
+        $serviceMode = null;
+        $tripScope = $trip->scope ?: Driver::SERVICE_SCOPE_LOCAL;
         if ($trip->route_departure_id === null) {
             $trip->loadMissing("cityVehicleType.rideType:id,name");
             $serviceMode = ($trip->cityVehicleType?->rideType?->isShuttle() ?? false)
                 ? Driver::SERVICE_MODE_SHUTTLE
                 : Driver::SERVICE_MODE_PRIVATE;
-            $tripScope = $trip->scope ?: Driver::SERVICE_SCOPE_LOCAL;
             $driverScopeMatches = in_array($driverProfile->active_service_scope, [$tripScope, Driver::SERVICE_SCOPE_BOTH], true);
             if (!$driverScopeMatches || $driverProfile->active_service_mode !== $serviceMode) {
                 $label = $serviceMode === Driver::SERVICE_MODE_SHUTTLE ? "Shuttle" : "private";
@@ -76,8 +77,13 @@ class RideAssignmentController extends Controller
         // and reject if they already hold another committed trip (e.g. a
         // pre-assigned shared trip). This is the backstop that makes a
         // double-booking impossible regardless of which feed surfaced it.
-        $conflict = DB::transaction(function () use ($user, $trip) {
-            Driver::query()->where('user_id', $user->id)->lockForUpdate()->first();
+        $conflict = DB::transaction(function () use ($user, $trip, $serviceMode, $tripScope, $tripStateMachineService) {
+            $driver = Driver::query()->where('user_id', $user->id)->lockForUpdate()->first();
+            if (!$driver || !$driver->is_online || $driver->approval_status !== 'approved'
+                || ($serviceMode !== null && ($driver->active_service_mode !== $serviceMode
+                    || !in_array($driver->active_service_scope, [$tripScope, Driver::SERVICE_SCOPE_BOTH], true)))) {
+                abort(422, 'This ride does not match your current service.');
+            }
             $other = Trip::query()
                 ->where('driver_id', $user->id)
                 ->where('id', '!=', $trip->id)
@@ -91,23 +97,19 @@ class RideAssignmentController extends Controller
                 ['trip_id' => $trip->id, 'driver_id' => $user->id],
                 ['status' => 'ACCEPTED', 'assigned_at' => now(), 'decided_at' => now()]
             );
+            $negotiation = FareNegotiation::query()->where('trip_id', $trip->id)->first();
+            if ($negotiation) {
+                $negotiation->driver_id = $user->id;
+                $negotiation->save();
+            }
             $trip->driver_id = $user->id;
-            $trip->save();
+            $tripStateMachineService->transition($trip, 'ASSIGNED');
             return false;
         });
 
         if ($conflict) {
             return response()->json(['message' => 'You already have an active trip.'], 409);
         }
-
-        // Link negotiation thread to the assigned driver.
-        $negotiation = FareNegotiation::query()->where('trip_id', $trip->id)->first();
-        if ($negotiation) {
-            $negotiation->driver_id = $user->id;
-            $negotiation->save();
-        }
-
-        $tripStateMachineService->transition($trip, 'ASSIGNED');
 
         return response()->json(['trip' => $trip->fresh()->appendDriverRiderContact()]);
     }

@@ -1301,7 +1301,13 @@ class TripsController extends Controller
 
         // Atomic pre-claim. Reject if trip already has a driver assigned by
         // someone else, or it's no longer in a claimable state.
-        $claimed = DB::transaction(function () use ($trip, $driverUserId) {
+        $claimed = DB::transaction(function () use ($trip, $driverUserId, $serviceMode, $tripScope) {
+            $driver = Driver::query()->where('user_id', $driverUserId)->lockForUpdate()->first();
+            if (!$driver || !$driver->is_online || $driver->approval_status !== 'approved'
+                || $driver->active_service_mode !== $serviceMode
+                || !in_array($driver->active_service_scope, [$tripScope, Driver::SERVICE_SCOPE_BOTH], true)) {
+                abort(409, 'Driver is no longer available for this service.');
+            }
             $locked = Trip::query()->where('id', $trip->id)->lockForUpdate()->first();
             if (!$locked) {
                 return null;

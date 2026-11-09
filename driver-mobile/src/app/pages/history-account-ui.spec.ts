@@ -4,7 +4,7 @@ import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertController, Platform } from '@ionic/angular';
-import { Subject } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { TripHistoryPage } from './trip-history/trip-history.page';
 import { ProfilePage } from './profile/profile.page';
 import { ApiService } from '../core/api.service';
@@ -19,7 +19,7 @@ describe('Driver History and Account reference UI', () => {
   beforeEach(async () => {
     spyOn(ProfilePage.prototype, 'ngOnInit').and.stub();
     spyOn(ProfilePage.prototype, 'ngOnDestroy').and.stub();
-    api = { get: jasmine.createSpy(), post: jasmine.createSpy() };
+    api = { get: jasmine.createSpy().and.returnValue(of({ cities: [], stands: [], routes: [] })), post: jasmine.createSpy() };
     router = { navigateByUrl: jasmine.createSpy().and.resolveTo(true) };
     await TestBed.configureTestingModule({ declarations: [TripHistoryPage, ProfilePage], imports: [CommonModule, FormsModule], schemas: [NO_ERRORS_SCHEMA], providers: [
       { provide: ApiService, useValue: api }, { provide: Router, useValue: router },

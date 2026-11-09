@@ -151,6 +151,7 @@ export class ProfilePage implements OnInit, OnDestroy {
   selectedScopes: Set<'local' | 'outstation'> = new Set(['local']);
   service_scope: ServiceScope | null = null;
   service_mode: ServiceMode | null = null;
+  approvedServiceModes: ServiceMode[] | null = null;
   vehicle_type_id: number | null = null;
   city_vehicle_type_id: number | null = null;
   vehicle_model_year = '';
@@ -496,6 +497,7 @@ export class ProfilePage implements OnInit, OnDestroy {
         vehicle_reg_no?: string | null;
         service_scope?: ServiceScope | null;
         service_mode?: ServiceMode | null;
+        service_modes?: ServiceMode[] | null;
         approval_status?: string;
         dob?: string | null;
         address?: string | null;
@@ -542,6 +544,7 @@ export class ProfilePage implements OnInit, OnDestroy {
             this.selectedScopes = new Set(['local']);
           }
           this.service_mode = res.driver.service_mode ?? this.service_mode;
+          this.approvedServiceModes = res.driver.service_modes ?? null;
           this.driverApproved = res.driver.approval_status === 'approved';
 
           if (this.onboarding && this.city_id) this.loadRegistrationRideModes(this.city_id);
@@ -580,10 +583,9 @@ export class ProfilePage implements OnInit, OnDestroy {
 
   get serviceModeDisplay(): string {
     if (!this.profileLoaded) return 'Profile unavailable';
-    if (!this.service_mode) return 'Not registered';
-    if (this.service_mode === 'fixed') return 'Fixed Route';
-    if (this.service_mode === 'shuttle') return 'Shared Shuttle';
-    return 'Private Taxi';
+    const modes = this.approvedServiceModes ?? (this.service_mode ? [this.service_mode] : []);
+    const labels: Record<ServiceMode, string> = { fixed: 'Fixed Route', shuttle: 'Shared Shuttle', private: 'Private Taxi' };
+    return modes.map(mode => labels[mode]).join(', ') || 'Not registered';
   }
 
   get serviceModeIcon(): string {

@@ -13,6 +13,7 @@ use App\Models\DriverLocation;
 use App\Models\FareNegotiation;
 use App\Models\FareNegotiationOffer;
 use App\Models\FixedSeatHold;
+use App\Models\ManagerRole;
 use App\Models\OperatorSetting;
 use App\Models\PricingRule;
 use App\Models\RideType;
@@ -232,6 +233,69 @@ class Module1AcceptRejectAndTimeoutTest extends TestCase
         ]);
 
         return $trip;
+    }
+
+    public function test_admin_approved_multi_mode_driver_is_visible_and_bookable_only_in_the_active_service(): void
+    {
+        $this->driverProfile->update([
+            'city_id' => $this->cityId, 'city_vehicle_type_id' => $this->cityVehicleTypeId,
+            'ride_type_id' => $this->rideTypeId, 'service_mode' => 'private', 'service_scope' => 'local',
+        ]);
+        $this->driverProfile->cities()->sync([$this->cityId]);
+        $role = ManagerRole::firstOrCreate(['slug' => 'super_admin'], ['name' => 'Super Admin', 'is_system' => true]);
+        $admin = User::factory()->create(['manager_role_id' => $role->id, 'manager_all_cities' => true]);
+        $admin->addRole('admin');
+        Sanctum::actingAs($admin, ['act-as:admin']);
+        $this->patchJson("/api/admin/drivers/{$this->driverProfile->id}", [
+            'service_scope' => 'both', 'service_modes' => ['private', 'fixed', 'shuttle'],
+        ])->assertOk();
+
+        $trip = $this->createNegotiationTrip();
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson('/api/drivers/go-offline')->assertOk();
+        $this->postJson('/api/drivers/go-online', ['mode' => 'fixed'])
+            ->assertOk()->assertJsonPath('driver.active_service_mode', 'fixed');
+        $this->postJson("/api/trips/{$trip->id}/negotiation/driver-action", ['action' => 'ACCEPT'])
+            ->assertUnprocessable();
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $this->getJson("/api/trips/{$trip->id}/nearby-drivers")->assertOk()->assertJsonCount(0, 'data');
+        $this->postJson("/api/trips/{$trip->id}/select-driver", [
+            'driver_id' => $this->driverUser->id, 'amount' => 150,
+        ])->assertStatus(409);
+
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'private'])->assertOk();
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $nearby = $this->getJson("/api/trips/{$trip->id}/nearby-drivers")->assertOk();
+        $this->assertContains($this->driverUser->id, collect($nearby->json('data'))->pluck('driver_id')->all());
+
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson("/api/trips/{$trip->id}/negotiation/driver-action", ['action' => 'ACCEPT'])->assertOk();
+        $offer = FareNegotiationOffer::where('from_user_id', $this->driverUser->id)->firstOrFail();
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'shuttle'])->assertOk();
+
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $confirm = ['final_fare' => 150, 'accepted_offer_id' => $offer->id];
+        $this->postJson("/api/trips/{$trip->id}/negotiation/customer-confirm", $confirm)->assertStatus(409);
+        $this->assertNull($trip->fresh()->driver_id);
+
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'private'])->assertOk();
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $this->postJson("/api/trips/{$trip->id}/negotiation/customer-confirm", $confirm)->assertOk();
+        $this->assertSame('PAYMENT_PENDING', $trip->fresh()->status);
+
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'fixed'])->assertUnprocessable();
+        Sanctum::actingAs($admin, ['act-as:admin']);
+        $this->patchJson("/api/admin/drivers/{$this->driverProfile->id}", ['service_modes' => ['fixed']])->assertUnprocessable();
+
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $this->postJson("/api/trips/{$trip->id}/pay/razorpay", ['payment_method' => 'razorpay'])->assertOk();
+        $payment = \App\Models\Payment::where('trip_id', $trip->id)->firstOrFail();
+        app(\App\Services\PaymentReconciliationService::class)->applyPayment('pay_multi_mode', $payment->razorpay_order_id, true);
+        $this->assertSame('CONFIRMED', $trip->fresh()->status);
+        $this->assertSame($this->driverUser->id, $trip->fresh()->driver_id);
     }
 
     /**
@@ -1426,6 +1490,10 @@ class Module1AcceptRejectAndTimeoutTest extends TestCase
 
     public function test_shuttle_dispatches_before_payment_and_blocks_payment_until_driver_accepts(): void
     {
+        $this->driverProfile->update([
+            'service_mode' => 'private', 'service_scope' => 'both',
+            'service_modes' => ['private', 'fixed', 'shuttle'],
+        ]);
         $booking = $this->pendingShuttle();
         \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\DispatchHopJob::class);
         $this->postJson("/api/shuttle/bookings/{$booking->id}/razorpay-order")->assertStatus(422);
@@ -1441,6 +1509,8 @@ class Module1AcceptRejectAndTimeoutTest extends TestCase
         ])->assertOk();
         $this->assertSame('CONFIRMED', $trip->fresh()->status);
         $this->assertSame('CONFIRMED', $booking->fresh()->status);
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson('/api/drivers/service-mode', ['mode' => 'private'])->assertUnprocessable();
     }
 
     public function test_shuttle_cash_zero_deposit_confirms_after_acceptance_without_capture(): void

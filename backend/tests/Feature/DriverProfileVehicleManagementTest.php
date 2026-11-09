@@ -102,7 +102,7 @@ class DriverProfileVehicleManagementTest extends TestCase
     public function test_driver_can_initiate_phone_change_with_sms_otp(): void
     {
         $msg91Mock = Mockery::mock(Msg91Service::class);
-        $msg91Mock->shouldReceive('isLive')->andReturn(false);
+        $msg91Mock->shouldReceive('isLive')->andReturn(true);
         $msg91Mock->shouldReceive('sendOtp')->once()->andReturn(true);
         $this->app->instance(Msg91Service::class, $msg91Mock);
 
@@ -268,7 +268,7 @@ class DriverProfileVehicleManagementTest extends TestCase
     public function test_admin_can_initiate_and_verify_driver_phone_change(): void
     {
         $msg91Mock = Mockery::mock(Msg91Service::class);
-        $msg91Mock->shouldReceive('isLive')->andReturn(false);
+        $msg91Mock->shouldReceive('isLive')->andReturn(true);
         $msg91Mock->shouldReceive('sendOtp')->once()->andReturn(true);
         $this->app->instance(Msg91Service::class, $msg91Mock);
 

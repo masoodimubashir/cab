@@ -66,7 +66,7 @@ describe('Active route reference layout', () => {
     const first = page.buildStopMarker(page.stops[0]);
     expect(first.classList.contains('is-next-stop')).toBeTrue();
     expect(first.style.getPropertyValue('--stop-color')).toBe('#e74848');
-    expect(first.textContent).toContain('Next stop');
+    expect(first.querySelector('.next-stop-marker-label')).toBeNull();
     expect(page.buildStopMarker(page.stops[1]).classList.contains('is-next-stop')).toBeFalse();
     page.activeVehicle.fixed_last_reached_stop_seq = 1;
     expect(page.nextStopGuide.id).toBe(2);
