@@ -1423,3 +1423,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid #087f50; outline-
 .fb-payment-status .fb-timer-wrap { grid-column: 2; grid-row: 1; text-align: right; }
 .fb-payment-status .fb-accepted-banner { grid-column: 1; grid-row: 1; justify-content: flex-start; min-width: 0; padding: 4px 0; text-align: left; background: transparent; }
 .fb-payment-status .fb-accepted-banner > div { min-width: 0; }
+.fb-radius-options {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+  button { min-height: 40px; flex: 1; padding: 8px 12px; border: 1px solid #dce4ed; border-radius: 12px; background: white; color: #52657d; font: inherit; font-size: 13px; }
+  button[aria-pressed='true'] { border-color: #087f50; color: #087f50; background: #eaf6ef; font-weight: 700; }
+}

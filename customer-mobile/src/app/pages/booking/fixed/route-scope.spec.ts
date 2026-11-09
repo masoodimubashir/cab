@@ -7,6 +7,7 @@ describe('Customer route category filters', () => {
     page = Object.create(FixedBookPage.prototype);
     Object.assign(page, {
       routeScope: 'all', search: '', radiusFilterActive: true,
+      booking: { routeRadiusKm: 1 },
       userCoords: { lat: 34, lng: 74 },
       cdr: { markForCheck: jasmine.createSpy() },
       routes: [
@@ -27,6 +28,28 @@ describe('Customer route category filters', () => {
     expect(pick).toHaveBeenCalledOnceWith(page.routes[1]);
     target.openRequestedHomeRoute();
     expect(pick).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries the Home category into the route list on each visit', () => {
+    const target = page as any;
+    target.activatedRoute = { snapshot: { queryParamMap: { get: (key: string) => key === 'scope' ? 'local' : null } } };
+    page.ionViewWillEnter();
+    expect(page.routeScope).toBe('local');
+    expect(page.visibleRoutes.map(route => route.id)).toEqual([1]);
+    target.activatedRoute.snapshot.queryParamMap.get = (key: string) => key === 'scope' ? 'outstation' : null;
+    page.ionViewWillEnter();
+    expect(page.routeScope).toBe('outstation');
+    expect(page.visibleRoutes.map(route => route.id)).toEqual([2]);
+  });
+
+  it('excludes a closed origin even if a later pickup is nearby', () => {
+    const origin = { id: 1, seq: 1, name: 'Closed origin', lat: 34.0001, lng: 74, is_pickup: true, is_active: false, is_temporarily_unavailable: false };
+    page.routes = [{ id: 1, scope: 'local', stops: [origin] }] as any;
+    (page as any).annotateRoutesWithProximity();
+    expect(page.visibleRoutes).toEqual([]);
+    expect(page.nearbyRoutesCount).toBe(0);
+    page.setRadiusFilter(false);
+    expect(page.visibleRoutes.length).toBe(1);
   });
 
   it('waits for route data and handles a removed Home route without selecting another', () => {
@@ -70,6 +93,18 @@ describe('Customer route category filters', () => {
     expect(page.visibleRoutes.map(route => route.id)).toEqual([2, 3]);
     page.setRouteScope('local');
     expect(page.visibleRoutes.map(route => route.id)).toEqual([1, 4]);
+  });
+
+  it('uses the selected radius for counts and route origins, retaining the category', () => {
+    page.setRouteScope('outstation');
+    expect(page.visibleRoutes.map(route => route.id)).toEqual([2]);
+    page.setRouteRadius(3);
+    expect(page.visibleRoutes.map(route => route.id)).toEqual([2, 3]);
+    expect(page.nearbyRoutesCount).toBe(2);
+    page.setRouteRadius(5);
+    expect(page.routeRadiusKm).toBe(5);
+    page.setRouteRadius(1);
+    expect(page.visibleRoutes.map(route => route.id)).toEqual([2]);
   });
 
   it('works without location permission and returns no unrelated routes for an empty category', () => {
