@@ -25,6 +25,7 @@ export class CustomerTabsPage {
       ev?.tab === 'my-trips' || ev?.tab === 'shuttle-rides' ||
       this.router.url.includes('/customer-tabs/my-trips') ||
       this.router.url.includes('/customer-tabs/shuttle-rides') ||
+      this.router.url.includes('/customer-tabs/notifications') ||
       ev?.tab === 'go' || ev?.tab === 'book' || ev?.tab === 'trips' || ev?.tab === 'support' || ev?.tab === 'profile' || this.router.url.includes('/customer-tabs/profile') || this.router.url.includes('/customer-tabs/support') || this.router.url.includes('/customer-tabs/fixed-rides');
   }
 
@@ -39,6 +40,7 @@ export class CustomerTabsPage {
       url.includes('/customer-tabs/profile') ||
       url.includes('/customer-tabs/my-trips') ||
       url.includes('/customer-tabs/shuttle-rides') ||
+      url.includes('/customer-tabs/notifications') ||
       url.includes('/customer-tabs/fixed-rides');
   }
 }

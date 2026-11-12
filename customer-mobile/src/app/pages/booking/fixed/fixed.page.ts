@@ -27,7 +27,7 @@ interface FixedStop {
   walk_minutes?: number | null;
   is_nearest_pickup?: boolean;
 }
-interface FixedRoute {
+export interface FixedRoute {
   image_url?: string | null;
   id: number; name: string; scope: 'local' | 'outstation';
   origin_name: string; dest_name: string;
@@ -46,7 +46,7 @@ interface FixedRoute {
   } | null;
   distance_to_nearest_pickup?: number | null;
 }
-interface FixedDeparture {
+export interface FixedDeparture {
   image_url?: string | null;
   id: number; depart_at: string | null; announced_depart_at: string | null;
   seats_remaining: number; luggage_remaining: number; status: string;
@@ -155,6 +155,12 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   departures: FixedDeparture[] = [];
   departure: FixedDeparture | null = null;
+  departureError = '';
+  alertEnabled = false;
+  alertBusy = false;
+  alertError = '';
+  private departuresSub?: Subscription;
+  private alertSub?: Subscription;
 
   boardStopId: number | null = null;
   dropStopId: number | null = null;
@@ -216,6 +222,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   ) {}
 
   private requestedHomeRouteId: number | null = null;
+  private requestedRouteSub?: Subscription;
 
   ionViewWillEnter(): void {
     const scope = this.activatedRoute.snapshot.queryParamMap.get('scope');
@@ -232,8 +239,22 @@ export class FixedBookPage implements OnInit, OnDestroy {
     // An existing seat hold keeps priority over starting another booking.
     if (this.hold) return;
     const route = this.routes.find(item => item.id === id);
-    if (route) this.pickRoute(route);
-    else this.error = 'This route is no longer available here. Please choose another route.';
+    if (route) {
+      this.pickRoute(route);
+    } else {
+      // An alert may refer to a route outside the currently selected city/catalogue.
+      this.requestedRouteSub?.unsubscribe();
+      this.loading = true;
+      const coords = this.userCoords ? `?lat=${this.userCoords.lat}&lng=${this.userCoords.lng}` : '';
+      this.requestedRouteSub = this.api.get<{ data: FixedRoute }>(`/fixed/routes/${id}${coords}`).subscribe({
+        next: res => { this.loading = false; if (!this.hold) this.pickRoute(res.data); this.cdr.markForCheck(); },
+        error: () => {
+          this.loading = false;
+          this.error = 'This route is no longer available here. Please choose another route.';
+          this.cdr.markForCheck();
+        },
+      });
+    }
   }
 
   async ngOnInit(): Promise<void> {
@@ -322,6 +343,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.requestedRouteSub?.unsubscribe();
+    this.departuresSub?.unsubscribe();
+    this.alertSub?.unsubscribe();
     this.stopApprovalWaiting();
     clearTimeout(this.searchTimer);
     this.routesSub?.unsubscribe();
@@ -585,6 +609,11 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   pickRoute(route: FixedRoute): void {
+    this.alertSub?.unsubscribe();
+    this.alertBusy = false;
+    this.alertError = '';
+    this.alertEnabled = false;
+    this.departure = null;
     this.route = route;
     this.boardStopId = null;
     this.dropStopId = null;
@@ -598,10 +627,65 @@ export class FixedBookPage implements OnInit, OnDestroy {
   // ---- step 2: departure -----------------------------------------------
 
   private loadDepartures(route: FixedRoute): void {
+    this.departuresSub?.unsubscribe();
     this.loading = true;
-    this.api.get<{ data: FixedDeparture[] }>(`/fixed/routes/${route.id}/departures`).subscribe({
-      next: (res) => { this.departures = res?.data ?? []; this.loading = false; this.cdr.markForCheck(); },
-      error: () => { this.departures = []; this.loading = false; this.cdr.markForCheck(); },
+    this.departures = [];
+    this.departureError = '';
+    this.departuresSub = this.api.get<{ data: FixedDeparture[]; alert_active?: boolean }>(`/fixed/routes/${route.id}/departures`).subscribe({
+      next: (res) => {
+        this.departures = res?.data ?? [];
+        this.alertEnabled = res?.alert_active === true;
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.departures = [];
+        this.departureError = 'We couldn’t check availability. Please check your connection and try again.';
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  refreshDepartures(): void {
+    if (this.route && !this.loading) this.loadDepartures(this.route);
+  }
+
+  toggleAvailabilityAlert(): void {
+    if (!this.route || this.alertBusy) return;
+    const route = this.route;
+    this.alertBusy = true;
+    this.alertError = '';
+    const path = `/fixed/routes/${route.id}/availability-alert`;
+    const cancelling = this.alertEnabled;
+    const request = cancelling
+      ? this.api.delete<{ available?: boolean; alert_active?: boolean }>(path)
+      : this.api.post<{ available?: boolean; alert_active?: boolean }>(path, {});
+    this.alertSub = request.subscribe({
+      next: (res) => {
+        this.alertBusy = false;
+        this.alertEnabled = !cancelling && res?.alert_active === true;
+        if (res?.available) {
+          void this.toast('A departure is available now. Choose a departure to continue.', 'success');
+          this.loadDepartures(route);
+        }
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.alertBusy = false;
+        this.alertError = cancelling ? 'Couldn’t turn off your alert. Please try again.' : 'Couldn’t save your alert. Please try again.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  viewNearbyDepartures(): void {
+    if (!this.route) return;
+    const start = this.route.starting_stop ?? this.route.stops[0];
+    const coords = this.userCoords ?? (start?.lat != null && start?.lng != null ? { lat: start.lat, lng: start.lng } : null);
+    void this.router.navigate(['/customer-tabs/go/fixed/nearby'], {
+      queryParams: { routeId: this.route.id },
+      state: { nearbyOrigin: coords ? { ...coords, source: this.userCoords ? 'location' : 'route' } : null },
     });
   }
 

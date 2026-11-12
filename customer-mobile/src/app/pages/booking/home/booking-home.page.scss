@@ -920,6 +920,27 @@
   border-radius: 16px;
 }
 .bh-profile-button, .bh-icon-button { flex: 0 0 44px; width: 44px; border-radius: 50%; overflow: hidden; font-size: 21px; text-decoration: none; }
+.bh-notification-button { position: relative; overflow: visible; }
+.bh-notification-button--unread > ion-icon {
+  color: #d92d3a; transform-origin: 50% 12%; animation: bh-bell-ring 3s ease-in-out infinite;
+}
+@keyframes bh-bell-ring {
+  0%, 40%, 100% { transform: rotate(0); }
+  5%, 15% { transform: rotate(18deg); }
+  10%, 20% { transform: rotate(-18deg); }
+  25% { transform: rotate(10deg); }
+  30% { transform: rotate(-10deg); }
+  35% { transform: rotate(5deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bh-notification-button--unread > ion-icon { animation: none; }
+}
+.bh-notification-badge {
+  position: absolute; top: -4px; right: -4px; display: flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 4px; border: 2px solid #fff; border-radius: 999px;
+  background: #d92d3a; color: #fff; font-size: 11px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 4px #0002; pointer-events: none;
+}
 .bh-profile-button ion-menu-button { width: 44px; height: 44px; --color: var(--home-ink); }
 .bh-profile-button ion-menu-button::part(native) { border-radius: 50%; padding: 0; }
 .bh-profile-image { display: block; width: 40px; height: 40px; max-width: 100%; max-height: 100%; border-radius: 50%; object-fit: cover; }

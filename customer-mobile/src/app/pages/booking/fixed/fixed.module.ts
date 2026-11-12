@@ -5,13 +5,17 @@ import { IonicModule } from '@ionic/angular';
 import { RouterModule, Routes } from '@angular/router';
 
 import { FixedBookPage } from './fixed.page';
+import { NearbyDeparturesPage } from './nearby-departures.page';
 import { StepShellComponent } from '../step-shell.component';
 import { SeatGridComponent } from './seat-grid.component';
 import { HoldTimerComponent } from '../../fixed-book/hold-timer.component';
 import { PaymentMethodModalComponent } from '../../../shared/payment-method-modal.component';
 import { CityFilterModalComponent } from '../../../shared/city-filter-modal.component';
 
-const routes: Routes = [{ path: '', component: FixedBookPage }];
+const routes: Routes = [
+  { path: 'nearby', component: NearbyDeparturesPage },
+  { path: '', component: FixedBookPage },
+];
 
 @NgModule({
   imports: [
@@ -25,6 +29,6 @@ const routes: Routes = [{ path: '', component: FixedBookPage }];
     PaymentMethodModalComponent,
     CityFilterModalComponent,
   ],
-  declarations: [FixedBookPage],
+  declarations: [FixedBookPage, NearbyDeparturesPage],
 })
 export class FixedBookPageModule {}

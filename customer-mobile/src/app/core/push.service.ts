@@ -132,6 +132,11 @@ export class PushService {
 
     FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
       const data = (event.notification?.data || {}) as Record<string, unknown>;
+      const routeId = Number(data['route_id']);
+      if (data['type'] === 'fixed_route_available' && Number.isSafeInteger(routeId) && routeId > 0) {
+        this.nav.navigateForward(`/customer-tabs/go/fixed?routeId=${routeId}`);
+        return;
+      }
       const tripId = data['trip_id'];
       if (tripId != null) {
         this.nav.navigateForward(`/customer-tabs/trip/${tripId}`);

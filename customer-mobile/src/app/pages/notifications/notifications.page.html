@@ -1,56 +1,43 @@
 <ion-content class="notif-page" [fullscreen]="true">
-
-  <!-- ============ Hero header ============ -->
-  <div class="page-header dc-anim-up">
-    <button class="header-back" (click)="back()" aria-label="Back">
-      <ion-icon name="arrow-back-outline"></ion-icon>
-    </button>
-    <button class="header-refresh" (click)="refresh()" [disabled]="loading" aria-label="Refresh">
-      <ion-icon name="refresh-outline"></ion-icon>
-    </button>
-
-    <h1 class="header-title">Notifications</h1>
-    <p class="header-sub">{{ unreadCount ? unreadCount + ' unread' : 'You\'re all caught up.' }}</p>
-  </div>
-
-  <!-- ============ Body ============ -->
-  <div class="page-body">
-
-    <div class="notif-toolbar dc-anim-in" *ngIf="!loading && notifications.length">
-      <button class="mark-all dc-press" (click)="markAllRead()" [disabled]="!unreadCount">Mark all read</button>
-    </div>
-
-    <p class="page-error dc-anim-in" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
-
-    <!-- Loading skeleton -->
-    <div class="notif-list" *ngIf="loading" aria-hidden="true">
-      <div class="skel-card" *ngFor="let s of [1,2,3,4]">
-        <span class="dc-skeleton skel-circle"></span>
-        <span class="skel-stack">
-          <span class="dc-skeleton skel-line skel-line--lg"></span>
-          <span class="dc-skeleton skel-line skel-line--full"></span>
-        </span>
+  <div class="inbox-shell">
+    <header class="inbox-header">
+      <div class="inbox-titlebar">
+        <button type="button" class="inbox-icon-button" (click)="back()" aria-label="Back to Home"><ion-icon name="arrow-back-outline" aria-hidden="true"></ion-icon></button>
+        <h1>Inbox</h1>
+        <button type="button" class="inbox-icon-button" (click)="refresh()" [disabled]="loading || loadingMore" aria-label="Refresh notifications"><ion-icon name="refresh-outline" aria-hidden="true"></ion-icon></button>
       </div>
-    </div>
-
-    <!-- Notifications -->
-    <div class="notif-list dc-stagger" *ngIf="!loading && notifications.length">
-      <button class="notif-card dc-press" [class.unread]="!n.read_at" *ngFor="let n of notifications" (click)="open(n)">
-        <span class="notif-icon"><ion-icon [name]="iconFor(n)"></ion-icon></span>
-        <span class="notif-text">
-          <span class="notif-title">{{ n.title }}</span>
-          <span class="notif-body" *ngIf="n.body">{{ n.body }}</span>
-          <span class="notif-time">{{ n.created_at | date:'d MMM, h:mm a' }}</span>
-        </span>
-        <span class="notif-dot" *ngIf="!n.read_at" aria-hidden="true"></span>
-      </button>
-    </div>
-
-    <!-- Empty -->
-    <div class="state-box dc-anim-in" *ngIf="!loading && !notifications.length && !error">
-      <div class="state-icon"><ion-icon name="notifications-off-outline"></ion-icon></div>
-      <p class="state-title">No notifications</p>
-      <p class="state-sub">Updates about your rides will appear here.</p>
-    </div>
+      <div class="inbox-filters" role="group" aria-label="Notification filters">
+        <button type="button" [class.is-active]="filter === 'all'" [attr.aria-pressed]="filter === 'all'" (click)="setFilter('all')">Notifications</button>
+        <button type="button" [class.is-active]="filter === 'unread'" [attr.aria-pressed]="filter === 'unread'" (click)="setFilter('unread')">Unread <span class="inbox-count" *ngIf="unreadCount">{{ unreadCount > 99 ? '99+' : unreadCount }}</span></button>
+      </div>
+    </header>
+    <main>
+      <div class="inbox-section-heading"><h2>Activity</h2><button type="button" class="inbox-text-button" (click)="markAllRead()" [disabled]="!unreadCount || markingAll || loading">{{ markingAll ? 'Marking as read…' : 'Mark all as read' }}</button></div>
+      <div class="inbox-error" *ngIf="error" role="alert"><p>{{ error }}</p><button type="button" class="inbox-text-button" (click)="refresh()" [disabled]="loading">Try again</button></div>
+      <p class="inbox-action-error" *ngIf="actionError" role="alert">{{ actionError }}</p>
+      <div class="inbox-loading" *ngIf="loading" role="status" aria-label="Loading notifications">
+        <div class="inbox-skeleton" *ngFor="let s of [1,2,3,4]" aria-hidden="true"><span class="dc-skeleton inbox-skeleton-avatar"></span><div><span class="dc-skeleton inbox-skeleton-title"></span><span class="dc-skeleton inbox-skeleton-body"></span><span class="dc-skeleton inbox-skeleton-time"></span></div></div>
+      </div>
+      <ul class="inbox-list" *ngIf="!loading && notifications.length" aria-label="Notifications">
+        <li *ngFor="let n of notifications; trackBy: trackByNotification">
+          <button type="button" class="inbox-notification" [class.is-unread]="!n.read_at" (click)="open(n)">
+            <span class="inbox-avatar" aria-hidden="true"><ion-icon [icon]="iconFor(n)"></ion-icon></span>
+            <span class="inbox-message">
+              <span class="inbox-message-heading"><strong>{{ n.title }}</strong><span class="inbox-unread-dot" *ngIf="!n.read_at" aria-hidden="true"></span></span>
+              <span class="sr-only" *ngIf="!n.read_at">Unread.</span>
+              <span class="inbox-message-body" *ngIf="n.body">{{ n.body }}</span>
+              <time class="inbox-message-time" *ngIf="n.created_at" [attr.datetime]="n.created_at">{{ n.created_at | date:'EEE, d MMM · h:mm a' }}</time>
+            </span>
+          </button>
+        </li>
+      </ul>
+      <div class="inbox-empty" *ngIf="!loading && !notifications.length && !error">
+        <span class="inbox-empty-icon"><ion-icon [name]="filter === 'unread' ? 'checkmark-done-outline' : 'notifications-outline'" aria-hidden="true"></ion-icon></span>
+        <h3>{{ filter === 'unread' ? 'You’re all caught up' : 'Your inbox is clear' }}</h3>
+        <p>{{ filter === 'unread' ? 'You have no unread notifications.' : 'Ride updates and important notices will appear here.' }}</p>
+        <button type="button" class="inbox-text-button" *ngIf="filter === 'unread'" (click)="setFilter('all')">View all notifications</button>
+      </div>
+      <button type="button" class="inbox-load-more" *ngIf="!loading && nextPage" (click)="loadMore()" [disabled]="loadingMore">{{ loadingMore ? 'Loading…' : 'Load more notifications' }}</button>
+    </main>
   </div>
 </ion-content>

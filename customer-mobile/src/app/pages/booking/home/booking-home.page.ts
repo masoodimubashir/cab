@@ -15,7 +15,7 @@ import {
 import { Router } from '@angular/router';
 import { AlertController, ViewDidEnter, ViewDidLeave, ViewWillEnter } from '@ionic/angular';
 import { carSport } from 'ionicons/icons';
-import { Subscription, catchError, exhaustMap, interval, of, timer } from 'rxjs';
+import { Subject, Subscription, catchError, debounceTime, exhaustMap, interval, merge, of, switchMap, timer } from 'rxjs';
 
 import { ApiService } from '../../../core/api.service';
 import { AuthService } from '../../../core/auth.service';
@@ -248,6 +248,49 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   private bannerRealtimeUnsub: (() => void) | null = null;
   private bannerPollSub?: Subscription;
+  unreadNotificationCount = 0;
+  private notificationBadgeUserId: number | null = null;
+  private notificationBadgeSub?: Subscription;
+  private notificationBadgeUnsub: (() => void) | null = null;
+  private readonly notificationRefresh$ = new Subject<void>();
+
+  get notificationBadgeLabel(): string {
+    return this.unreadNotificationCount > 99 ? '99+' : String(this.unreadNotificationCount);
+  }
+
+  private startNotificationBadge(): void {
+    this.stopNotificationBadge();
+    const userId = this.auth.getUser()?.id ?? null;
+    if (userId !== this.notificationBadgeUserId) this.unreadNotificationCount = 0;
+    this.notificationBadgeUserId = userId;
+    if (!userId) return;
+    // Always use the server count: duplicate broadcasts and reading on another
+    // device cannot inflate the badge. Polling also covers reconnects/missed events.
+    this.notificationBadgeSub = merge(timer(0, 15000), this.notificationRefresh$.pipe(debounceTime(750))).pipe(
+      switchMap(() => this.api.get<{ count: number }>('/me/notifications/unread-count').pipe(catchError(() => of(null)))),
+    ).subscribe(res => {
+      if (this.auth.getUser()?.id !== userId || !res) return;
+      const count = Number(res.count);
+      if (!Number.isFinite(count)) return;
+      this.zone.run(() => {
+        this.unreadNotificationCount = Math.max(0, Math.floor(count));
+        this.cdr.markForCheck();
+      });
+    });
+    this.notificationBadgeUnsub = this.realtime.subscribeAppNotifications(userId, () => this.notificationRefresh$.next());
+  }
+
+  private stopNotificationBadge(): void {
+    this.notificationBadgeSub?.unsubscribe();
+    this.notificationBadgeSub = undefined;
+    this.notificationBadgeUnsub?.();
+    this.notificationBadgeUnsub = null;
+  }
+
+  ionViewWillLeave(): void {
+    // Release before the inbox binds to the same private notification channel.
+    this.stopNotificationBadge();
+  }
 
   async ngOnInit(): Promise<void> {
     this.setupBannerSubscription();
@@ -257,6 +300,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   ionViewWillEnter(): void {
     this.pageActive = true;
+    this.startNotificationBadge();
     this.loadSavedPlaces();
     this.loadHomeOffers();
     if (!this.located || !this.city) {
@@ -303,6 +347,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   ngOnDestroy(): void {
+    this.stopNotificationBadge();
+    this.notificationRefresh$.complete();
     this.pageActive = false;
     ++this.locationRevision;
     ++this.watchRevision;
