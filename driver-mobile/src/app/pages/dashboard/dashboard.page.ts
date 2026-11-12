@@ -1,3 +1,4 @@
+import { watchMapCamera, releaseMapCamera, resumeMapCamera, updateMapCamera } from '../../core/map-camera';
 import { DriverMapCamera, DRIVER_MAP_STYLE, fitDriverMap } from '../../core/driver-map';
 import { HomeSessionService } from '../../core/home-session.service';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -618,6 +619,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    releaseMapCamera(this.map);
     this.serviceAccessRequest?.unsubscribe();
     void this.resumeListener?.then(handle => handle.remove());
     this.stopSyncTimer();
@@ -1395,6 +1397,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
   private initMap(): void {
     if (!this.mapDiv?.nativeElement || this.map) return;
+    releaseMapCamera(this.map);
     this.map = new google.maps.Map(this.mapDiv.nativeElement, {
       ...DRIVER_MAP_STYLE,
       center: this.defaultCentre,
@@ -1408,19 +1411,16 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       fullscreenControl: false,
       clickableIcons: false,
     });
+    watchMapCamera(this.map);
 
-    // The moment the driver drags the map, stop auto-following so we don't yank
-    // the camera back on the next GPS tick.
-    this.map.addListener('dragstart', () => {
-      this.followMe = false;
-    });
+    // Shared gesture handling pauses the viewport while GPS keeps updating.
 
     // Ionic view transitions can render the container 0×0 on the first tick;
     // nudge a resize once the page is laid out or tiles stay blank.
     setTimeout(() => {
       if (this.map) {
         google.maps.event.trigger(this.map, 'resize');
-        this.map.setCenter(this.lastPos || this.defaultCentre);
+        updateMapCamera(this.map, () => this.map?.setCenter(this.lastPos || this.defaultCentre));
         if (this.activeFixedVehicleOpen) {
           this.renderFixedRouteOnDashboard();
         }
@@ -1514,6 +1514,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
   /** Recenter FAB — re-arm follow mode and snap back to the driver. */
   async recenter(): Promise<void> {
+    resumeMapCamera(this.map);
     this.followMe = true;
     if (this.activeFixedVehicleOpen) {
       this.fitFixedRideOverview();

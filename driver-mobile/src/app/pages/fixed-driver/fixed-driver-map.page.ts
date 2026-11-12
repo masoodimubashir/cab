@@ -1,4 +1,5 @@
-import { DriverMapCamera, DRIVER_MAP_STYLE, offsetPassengerMarker } from '../../core/driver-map';
+import { watchMapCamera, releaseMapCamera } from '../../core/map-camera';
+import { DriverMapCamera, DRIVER_MAP_STYLE, offsetPassengerMarker, moveDriverMap } from '../../core/driver-map';
 import { Component, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { interval, Subscription } from 'rxjs';
@@ -348,6 +349,7 @@ export class FixedDriverMapPage implements OnDestroy {
       const div = document.getElementById('fixed-driver-full-map');
       if (!div) return;
       const firstStop = this.stops.find((stop) => this.hasStopCoords(stop));
+      releaseMapCamera(this.map);
       this.map = new google.maps.Map(div, {
         ...DRIVER_MAP_STYLE,
         center: this.driverPosition ?? (firstStop ? this.stopPosition(firstStop) : { lat: 28.6139, lng: 77.209 }),
@@ -355,6 +357,7 @@ export class FixedDriverMapPage implements OnDestroy {
         zoomControl: true,
         mapId: 'DEMO_MAP_ID',
       });
+      watchMapCamera(this.map);
       this.followDriver(this.driverBearing);
       this.refreshMap();
       void this.startDriverWatch();
@@ -405,7 +408,7 @@ export class FixedDriverMapPage implements OnDestroy {
     });
     if (!this.driverPosition) {
       const stop = routeStops.find((entry) => Number(entry.seq || 0) > this.completedStopSeq) ?? routeStops[0];
-      this.map.moveCamera({ center: this.stopPosition(stop), zoom: DRIVER_MAP_STYLE.zoom, tilt: DRIVER_MAP_STYLE.tilt });
+      moveDriverMap(this.map, { center: this.stopPosition(stop), zoom: DRIVER_MAP_STYLE.zoom, tilt: DRIVER_MAP_STYLE.tilt });
     }
   }
 
@@ -548,6 +551,7 @@ export class FixedDriverMapPage implements OnDestroy {
       this.selfMarker.map = null;
       this.selfMarker = null;
     }
+    releaseMapCamera(this.map);
     this.map = null;
   }
 

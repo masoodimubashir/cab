@@ -1,3 +1,4 @@
+import { watchMapCamera, releaseMapCamera } from '../../core/map-camera';
 import { DriverMapCamera, DRIVER_MAP_STYLE, fitDriverMap, offsetPassengerMarker } from '../../core/driver-map';
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { AlertController, ModalController, ToastController } from '@ionic/angular';
@@ -378,6 +379,7 @@ export class RidesPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    releaseMapCamera(this.map);
     this.stopRequestCountdown();
     this.ringtone.stopRinging();
     if (this.unsubscribeStatus) {
@@ -983,6 +985,7 @@ export class RidesPage implements OnInit, OnDestroy {
         if (marker) marker.map = null;
       }
       this.pickupMarker = this.dropMarker = this.customerMarker = this.selfMarker = null;
+      releaseMapCamera(this.map);
       this.map = new google.maps.Map(div, {
         ...DRIVER_MAP_STYLE,
         center: this.selfPosition ?? this.pickupCoords ?? this.dropCoords ?? { lat: 28.6139, lng: 77.209 },
@@ -992,6 +995,7 @@ export class RidesPage implements OnInit, OnDestroy {
         // production for styling/POI customisation.
         mapId: 'DEMO_MAP_ID',
       });
+      watchMapCamera(this.map);
       this.mapReady = true;
       if (this.latestSelfFix) this.onSelfPosition(this.latestSelfFix);
       this.refreshTripMarkers();

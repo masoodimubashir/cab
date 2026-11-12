@@ -1,4 +1,5 @@
 import { updateCarMarkerBearing } from './car-marker.helper';
+import { isMapCameraManual, updateMapCamera } from './map-camera';
 
 declare const google: any;
 
@@ -7,7 +8,14 @@ export const DRIVER_MAP_STYLE = {
   colorScheme: 'LIGHT',
   tilt: 35,
   zoom: 17.5,
+  headingInteractionEnabled: true,
+  tiltInteractionEnabled: true,
+  gestureHandling: 'greedy',
 };
+
+export function moveDriverMap(map: any, camera: any): void {
+  updateMapCamera(map, () => map.moveCamera(camera));
+}
 
 /** Separate a nearby passenger badge without moving its geographic anchor. */
 export function offsetPassengerMarker(marker: any, driver: { lat: number; lng: number }): void {
@@ -53,8 +61,7 @@ export class DriverMapCamera {
     }
     const heading = routeHeading ?? this.heading;
     if (!marker) {
-      map.moveCamera({ heading, tilt: DRIVER_MAP_STYLE.tilt, zoom: DRIVER_MAP_STYLE.zoom });
-      map.panTo(position);
+      moveDriverMap(map, { center: position, heading, tilt: DRIVER_MAP_STYLE.tilt, zoom: DRIVER_MAP_STYLE.zoom });
       return;
     }
 
@@ -74,7 +81,7 @@ export class DriverMapCamera {
         lat: markerStart.lat + (position.lat - markerStart.lat) * ease,
         lng: markerStart.lng + (position.lng - markerStart.lng) * ease,
       };
-      map.moveCamera({
+      moveDriverMap(map, {
         center: {
           lat: center.lat + (position.lat - center.lat) * ease,
           lng: center.lng + (position.lng - center.lng) * ease,
@@ -83,7 +90,7 @@ export class DriverMapCamera {
         tilt: tilt + (DRIVER_MAP_STYLE.tilt - tilt) * ease,
         zoom: zoom + (DRIVER_MAP_STYLE.zoom - zoom) * ease,
       });
-      updateCarMarkerBearing(marker, 0);
+      updateCarMarkerBearing(marker, isMapCameraManual(map) ? heading - (map.getHeading() ?? 0) : 0);
       if (progress < 1) this.frame = requestAnimationFrame(animate);
     };
     this.frame = requestAnimationFrame(animate);
@@ -99,9 +106,11 @@ export class DriverMapCamera {
 
 /** Fitting a route resets tilt on vector maps. Restore it after framing. */
 export function fitDriverMap(map: any, bounds: any, padding: number | Record<string, number>): void {
-  google.maps.event.addListenerOnce(map, 'idle', () => {
-    if (map.getTilt() === 0) map.setTilt(DRIVER_MAP_STYLE.tilt);
+  updateMapCamera(map, () => {
+    google.maps.event.addListenerOnce(map, 'idle', () => {
+      if (!isMapCameraManual(map) && map.getTilt() === 0) map.setTilt(DRIVER_MAP_STYLE.tilt);
+    });
+    map.fitBounds(bounds, padding);
+    if (!isMapCameraManual(map) && map.getTilt() === 0) map.setTilt(DRIVER_MAP_STYLE.tilt);
   });
-  map.fitBounds(bounds, padding);
-  if (map.getTilt() === 0) map.setTilt(DRIVER_MAP_STYLE.tilt);
 }

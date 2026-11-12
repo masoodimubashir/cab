@@ -1,3 +1,4 @@
+import { watchMapCamera, releaseMapCamera, resumeMapCamera } from '../../core/map-camera';
 import { CUSTOMER_MAP_STYLE, fitCustomerMap } from '../../core/customer-map';
 import { Component, NgZone, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -315,6 +316,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     });
   }
   ngOnDestroy(): void {
+    releaseMapCamera(this.fixedMap);
     this.stopApprovalWaiting();
     this.unsubscribeFixedCity?.();
     this.unsubscribeFixedCity = null;
@@ -495,6 +497,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
       if (!el) return;
 
       const start = (await this.geo.getCurrentPosition()) ?? { lat: 28.6139, lng: 77.209 };
+      releaseMapCamera(this.fixedMap);
       this.fixedMap = new google.maps.Map(el, {
         ...CUSTOMER_MAP_STYLE,
         center: start,
@@ -502,6 +505,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
         clickableIcons: false,
         mapId: 'DEMO_MAP_ID',
       });
+      watchMapCamera(this.fixedMap);
 
       this.fixedMapMarker = new google.maps.marker.AdvancedMarkerElement({
         position: start,
@@ -514,6 +518,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
       if (this.selectedRoute) this.drawRouteOnMap(this.selectedRoute);
       this.syncLiveVehicleTracking();
     } catch {
+      releaseMapCamera(this.fixedMap);
       this.fixedMap = null;
       this.fixedMapMarker = null;
     }
@@ -1108,6 +1113,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   pickRoute(route: FixedRoute): void {
+    resumeMapCamera(this.fixedMap);
     this.selectedRoute = route;
     this.selectedDeparture = null;
     this.departures = [];

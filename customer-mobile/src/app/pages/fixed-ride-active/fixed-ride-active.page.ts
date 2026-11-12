@@ -1,3 +1,4 @@
+import { watchMapCamera, releaseMapCamera, resumeMapCamera } from '../../core/map-camera';
 import { buildFixedRidePin, fixedRideNavigationTarget } from '../../core/fixed-ride-map';
 import { CUSTOMER_MAP_STYLE, fitCustomerMap, focusCustomerNavigation } from '../../core/customer-map';
 import { Component, ElementRef, NgZone, OnDestroy, ViewChild } from '@angular/core';
@@ -133,6 +134,8 @@ export class FixedRideActivePage implements OnDestroy {
   private driverMarker: any | null = null;
   private stopMarkers: any[] = [];
   private navRoute = new NavigationRouteRenderer();
+  manualMapCamera = false;
+  private mapGestureAbort: AbortController | null = null;
   private driverPosition: { lat: number; lng: number } | null = null;
   private driverBearing = 0;
   private userPosition: { lat: number; lng: number } | null = null;
@@ -465,6 +468,7 @@ export class FixedRideActivePage implements OnDestroy {
       if (this.walkingLeftPage || this.map || !this.mapElRef?.nativeElement || typeof google === 'undefined') return;
 
       const center = this.resolveCenter();
+      releaseMapCamera(this.map);
       this.map = new google.maps.Map(this.mapElRef.nativeElement, {
         ...CUSTOMER_MAP_STYLE,
         center,
@@ -475,14 +479,37 @@ export class FixedRideActivePage implements OnDestroy {
         fullscreenControl: false,
         mapId: 'DEMO_MAP_ID',
         gestureHandling: 'greedy',
+        headingInteractionEnabled: true,
+        tiltInteractionEnabled: true,
         clickableIcons: false,
       });
+      watchMapCamera(this.map, false);
 
+      this.bindMapGestures();
       this.updateMarkers();
       this.fitMapBounds();
     } catch {
       this.mapError = 'The map is unavailable. Your ride details are still shown. Refresh to try again.';
     }
+  }
+
+  private bindMapGestures(): void {
+    this.mapGestureAbort?.abort();
+    this.mapGestureAbort = new AbortController();
+    const element = this.mapElRef!.nativeElement;
+    const pauseCamera = () => {
+      this.manualMapCamera = true;
+      this.navRoute.setCameraPaused(true);
+    };
+    const options = { capture: true, passive: true, signal: this.mapGestureAbort.signal };
+    for (const event of ['pointerdown', 'touchstart', 'wheel']) {
+      element.addEventListener(event, pauseCamera, options);
+    }
+    element.addEventListener('keydown', (event) => {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '+', '-', '=', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
+        pauseCamera();
+      }
+    }, options);
   }
 
   private resolveCenter(): { lat: number; lng: number } {
@@ -597,7 +624,7 @@ export class FixedRideActivePage implements OnDestroy {
     this.renderRoutePolyline();
   }
 
-  private renderRoutePolyline(): void {
+  private renderRoutePolyline(recenter = false): void {
     const booking = this.booking;
     if (!this.map || !booking || !this.isActiveBooking(booking)) {
       this.navRoute.clear();
@@ -613,15 +640,19 @@ export class FixedRideActivePage implements OnDestroy {
     }
 
     void this.navRoute.render(this.map, origin, target, boarded ? 'drop' : 'pickup');
-    this.navRoute.follow(this.map, origin, target, boarded ? this.driverMarker : this.userLiveMarker);
+    this.navRoute.follow(this.map, origin, target, boarded ? this.driverMarker : this.userLiveMarker, recenter);
   }
 
   recenterMap(): void {
+    resumeMapCamera(this.map);
+    this.manualMapCamera = false;
+    this.navRoute.setCameraPaused(false);
+    this.renderRoutePolyline(true);
     this.fitMapBounds();
   }
 
   private fitMapBounds(): void {
-    if (this.navRoute.following) return;
+    if (this.manualMapCamera || this.navRoute.following) return;
     if (!this.map || typeof google === 'undefined') return;
     if (this.booking && (this.isActiveBooking(this.booking) || this.booking.status?.toUpperCase() === 'CANCELLED')) {
       focusCustomerNavigation(this.map, this.resolveCenter());
@@ -661,6 +692,10 @@ export class FixedRideActivePage implements OnDestroy {
   }
 
   private clearMap(): void {
+    this.mapGestureAbort?.abort();
+    this.mapGestureAbort = null;
+    this.manualMapCamera = false;
+    this.navRoute.setCameraPaused(false);
     if (this.pickupMarker) { this.pickupMarker.map = null; this.pickupMarker = null; }
     if (this.dropMarker) { this.dropMarker.map = null; this.dropMarker = null; }
     if (this.userLiveMarker) { this.userLiveMarker.map = null; this.userLiveMarker = null; }
@@ -668,6 +703,7 @@ export class FixedRideActivePage implements OnDestroy {
     for (const m of this.stopMarkers) m.map = null;
     this.stopMarkers = [];
     this.navRoute.clear();
+    releaseMapCamera(this.map);
     this.map = null;
   }
 

@@ -8,7 +8,8 @@
 
 declare const google: any;
 
-import { CUSTOMER_MAP_STYLE, CUSTOMER_NAVIGATION_ZOOM } from './customer-map';
+import { CUSTOMER_MAP_STYLE, CUSTOMER_NAVIGATION_ZOOM, moveCustomerMap } from './customer-map';
+import { isMapCameraManual } from './map-camera';
 import { updateCarMarkerBearing } from './car-marker.helper';
 
 export interface LatLngPoint {
@@ -54,6 +55,12 @@ export class NavigationRouteRenderer {
   private headingPosition: LatLngPoint | null = null;
   private followHeading: number | null = null;
   private followMarker: any = null;
+  private cameraPaused = false;
+
+  /** Keep marker motion alive while the passenger explores the map. */
+  setCameraPaused(paused: boolean): void {
+    this.cameraPaused = paused;
+  }
 
   get following(): boolean {
     return this.followPosition !== null;
@@ -96,7 +103,7 @@ export class NavigationRouteRenderer {
         lat: markerLat + (position.lat - markerLat) * ease,
         lng: markerLng + (position.lng - markerLng) * ease,
       };
-      map.moveCamera({
+      if (!this.cameraPaused) moveCustomerMap(map, {
         center: {
           lat: center.lat + (position.lat - center.lat) * ease,
           lng: center.lng + (position.lng - center.lng) * ease,
@@ -106,7 +113,8 @@ export class NavigationRouteRenderer {
         zoom: zoom + (CUSTOMER_NAVIGATION_ZOOM - zoom) * ease,
       });
       if (marker.content?.classList.contains('fixed-driver-car-marker')) {
-        updateCarMarkerBearing(marker, 0);
+        updateCarMarkerBearing(marker, (this.cameraPaused || isMapCameraManual(map))
+          ? (this.followHeading ?? 0) - (map.getHeading?.() ?? 0) : 0);
       }
       if (t < 1) this.cameraFrame = requestAnimationFrame(animate);
     };

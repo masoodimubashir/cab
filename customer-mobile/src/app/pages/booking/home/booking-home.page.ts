@@ -1,6 +1,7 @@
+import { watchMapCamera, releaseMapCamera, resumeMapCamera } from '../../../core/map-camera';
 import { buildFixedRidePin, fixedRideNavigationTarget } from '../../../core/fixed-ride-map';
 import { NavigationRouteRenderer, separateNavigationMarkers } from '../../../core/navigation-route.helper';
-import { CUSTOMER_MAP_STYLE, fitCustomerMap, focusCustomerNavigation } from '../../../core/customer-map';
+import { CUSTOMER_MAP_STYLE, fitCustomerMap, focusCustomerNavigation, moveCustomerMap } from '../../../core/customer-map';
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
@@ -321,6 +322,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.bannerPollSub?.unsubscribe();
     this.bannerPollSub = undefined;
     this.userMarker = null;
+    releaseMapCamera(this.map);
     this.map = null;
   }
 
@@ -493,6 +495,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
       const el = this.mapElRef.nativeElement;
 
+      releaseMapCamera(this.map);
       this.map = new google.maps.Map(el, {
         ...CUSTOMER_MAP_STYLE,
         center: this.currentCoords ?? { lat: 34.2985, lng: 74.4712 },
@@ -502,6 +505,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
         gestureHandling: 'greedy',    // single-finger pan on mobile
         clickableIcons: false,
       });
+      watchMapCamera(this.map);
 
       this.zone.run(() => {
         this.mapReady = true;
@@ -526,6 +530,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   async recenterMap(): Promise<void> {
     if (this.refreshingMapLocation) return;
+    resumeMapCamera(this.map);
     if (this.previewPickupKey) this.clearSelectedPickupRoute();
     this.gpsFollow = true;
     this.refreshingMapLocation = true;
@@ -583,7 +588,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     if (!bounds.isEmpty() && !bounds.getSouthWest().equals(bounds.getNorthEast())) {
       fitCustomerMap(this.map, bounds, { top: 78, bottom: 36, left: 36, right: 36 });
     } else if (!bounds.isEmpty()) {
-      this.map.moveCamera({ center: bounds.getCenter(), zoom: 14, heading: 0, tilt: CUSTOMER_MAP_STYLE.tilt });
+      moveCustomerMap(this.map, { center: bounds.getCenter(), zoom: 14, heading: 0, tilt: CUSTOMER_MAP_STYLE.tilt });
     }
   }
 
@@ -1036,6 +1041,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   private previewPickup(key: string, route: HomeRoute, stop: HomeRouteStop): void {
+    resumeMapCamera(this.map);
     this.clearPickupPreview();
     this.previewRoute = route;
     this.previewPickupKey = key;
@@ -1148,6 +1154,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   private resumeHomeCamera(): void {
+    resumeMapCamera(this.map);
     this.gpsFollow = true;
     if (this.map && this.currentCoords) {
       this.activeNavigation.follow(this.map, this.currentCoords, null, this.userMarker, true);
