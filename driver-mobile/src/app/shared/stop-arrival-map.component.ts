@@ -1,4 +1,5 @@
-import { DriverMapCamera, DRIVER_MAP_STYLE } from '../core/driver-map';
+import { watchMapCamera, releaseMapCamera } from '../core/map-camera';
+import { DriverMapCamera, DRIVER_MAP_STYLE, moveDriverMap } from '../core/driver-map';
 import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MapsLoaderService } from '../core/maps-loader.service';
@@ -44,6 +45,7 @@ export class StopArrivalMapComponent implements AfterViewInit, OnChanges, OnDest
     this.removeDriverMarker();
     if (this.stopMarker) this.stopMarker.map = null;
     this.stopMarker = null;
+    releaseMapCamera(this.map);
     this.map = null;
   }
   private valid(position: { lat?: number | null; lng?: number | null } | null): position is Position {
@@ -63,6 +65,7 @@ export class StopArrivalMapComponent implements AfterViewInit, OnChanges, OnDest
         center: stop, maxZoom: 18, mapId: 'DEMO_MAP_ID', disableDefaultUI: true,
         gestureHandling: 'cooperative', clickableIcons: false,
       });
+      watchMapCamera(this.map);
       if (this.stopMarker) this.stopMarker.map = null;
       const pin = buildStopMarkerElement({
         seq: this.stop!.seq ?? 1, name: this.stop!.name, isNext: true, isReached: this.reached,
@@ -81,7 +84,7 @@ export class StopArrivalMapComponent implements AfterViewInit, OnChanges, OnDest
       } else {
         this.camera.reset();
         this.removeDriverMarker();
-        this.map.moveCamera({ center: stop, tilt: DRIVER_MAP_STYLE.tilt, zoom: DRIVER_MAP_STYLE.zoom });
+        moveDriverMap(this.map, { center: stop, tilt: DRIVER_MAP_STYLE.tilt, zoom: DRIVER_MAP_STYLE.zoom });
       }
     } catch {
       if (this.ready && generation === this.generation) this.error = 'Map unavailable. You can still view passengers below.';

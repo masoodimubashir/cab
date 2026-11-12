@@ -1,4 +1,5 @@
-import { DriverMapCamera, DRIVER_MAP_STYLE, fitDriverMap, offsetPassengerMarker } from '../../core/driver-map';
+import { watchMapCamera, releaseMapCamera, resumeMapCamera, pauseMapCamera } from '../../core/map-camera';
+import { DriverMapCamera, DRIVER_MAP_STYLE, fitDriverMap, offsetPassengerMarker, moveDriverMap } from '../../core/driver-map';
 import { LIVE_NAVIGATION_STYLE, NavigationRouteRenderer } from '../../core/navigation-route.helper';
 import { ChangeDetectorRef, Component, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -2173,6 +2174,7 @@ export class FixedDriverPage implements OnDestroy {
       const div = document.getElementById('fixed-driver-embedded-map');
       if (!div) return;
       const firstStop = this.stops.find((stop) => this.hasStopCoords(stop));
+      releaseMapCamera(this.map);
       this.map = new google.maps.Map(div, {
         ...DRIVER_MAP_STYLE,
         center: this.driverPosition ?? (firstStop ? this.stopPosition(firstStop) : { lat: 28.6139, lng: 77.209 }),
@@ -2180,6 +2182,7 @@ export class FixedDriverPage implements OnDestroy {
         zoomControl: false,
         mapId: 'DEMO_MAP_ID',
       });
+      watchMapCamera(this.map);
       this.followEmbeddedDriver(this.driverBearing);
       this.refreshEmbeddedMap();
       void this.startDriverWatch();
@@ -2226,7 +2229,7 @@ export class FixedDriverPage implements OnDestroy {
     if (refit) {
       const stop = this.nextStopGuide ?? routeStops[0];
       if (!this.driverPosition && this.hasStopCoords(stop)) {
-        this.map.moveCamera({ center: this.stopPosition(stop), zoom: DRIVER_MAP_STYLE.zoom, tilt: DRIVER_MAP_STYLE.tilt });
+        moveDriverMap(this.map, { center: this.stopPosition(stop), zoom: DRIVER_MAP_STYLE.zoom, tilt: DRIVER_MAP_STYLE.tilt });
       }
     }
   }
@@ -2413,6 +2416,7 @@ export class FixedDriverPage implements OnDestroy {
       this.selfMarker.map = null;
       this.selfMarker = null;
     }
+    releaseMapCamera(this.map);
     this.map = null;
   }
 
@@ -2482,6 +2486,7 @@ export class FixedDriverPage implements OnDestroy {
     if (event) event.stopPropagation();
     const pos = this.passengerPosition(passenger, (passenger.status || '').toUpperCase() === 'BOARDED' ? 'drop' : 'pickup');
     if (pos && this.map) {
+      pauseMapCamera(this.map);
       this.map.panTo(pos);
       this.map.setZoom(16);
     }
@@ -2688,6 +2693,7 @@ export class FixedDriverPage implements OnDestroy {
 
       const defaultCenter = originCoord || { lat: 28.6139, lng: 77.209 };
 
+      releaseMapCamera(this.previewMap);
       this.previewMap = new google.maps.Map(div, {
         ...DRIVER_MAP_STYLE,
         center: defaultCenter,
@@ -2697,7 +2703,7 @@ export class FixedDriverPage implements OnDestroy {
         gestureHandling: 'greedy',
         mapId: 'DEMO_MAP_ID',
       });
-      this.previewMap.addListener('dragstart', () => this.stopPreviewFollow());
+      watchMapCamera(this.previewMap);
 
       this.renderRoutePreviewElements(route);
       this.previewMapLoading = false;
@@ -2820,6 +2826,7 @@ export class FixedDriverPage implements OnDestroy {
     this.updatePreviewMarkersSelection(stop.id);
 
     if (this.previewMap && this.hasStopCoords(stop)) {
+      pauseMapCamera(this.previewMap);
       this.previewMap.panTo(this.stopPosition(stop));
       this.previewMap.setZoom(15);
     }
@@ -2851,6 +2858,7 @@ export class FixedDriverPage implements OnDestroy {
   }
 
   recenterPreviewMap(): void {
+    resumeMapCamera(this.previewMap);
     this.clearSelectedPreviewStop();
     if (!this.previewFollowsDriver && this.driverPosition && this.previewDriverMarker?.content) {
       this.previewFollowsDriver = true;
@@ -2992,6 +3000,7 @@ export class FixedDriverPage implements OnDestroy {
       }
     }
     this.previewStopMarkers = [];
+    releaseMapCamera(this.previewMap);
     this.previewMap = null;
     this.selectedPreviewStop = null;
     if (!this.activeVehicle) {

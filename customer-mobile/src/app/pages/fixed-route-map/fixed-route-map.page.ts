@@ -1,3 +1,4 @@
+import { watchMapCamera, releaseMapCamera } from '../../core/map-camera';
 import { CUSTOMER_MAP_STYLE, fitCustomerMap } from '../../core/customer-map';
 import { Component, NgZone } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -143,6 +144,7 @@ export class FixedRouteMapPage {
       const pickup = { lat: Number(booking.board_lat), lng: Number(booking.board_lng) };
       const drop = { lat: Number(booking.drop_lat), lng: Number(booking.drop_lng) };
 
+      releaseMapCamera(this.map);
       this.map = new google.maps.Map(div, {
         ...CUSTOMER_MAP_STYLE,
         center: pickup,
@@ -151,6 +153,7 @@ export class FixedRouteMapPage {
         gestureHandling: 'greedy',
         mapId: 'DEMO_MAP_ID',
       });
+      watchMapCamera(this.map);
 
       this.pickupMarker = new google.maps.marker.AdvancedMarkerElement({
         position: pickup,
@@ -289,6 +292,7 @@ export class FixedRouteMapPage {
     for (const pl of this.routePolylines) pl.setMap?.(null);
     this.routePolylines = [];
     this.driverPosition = null;
+    releaseMapCamera(this.map);
     this.map = null;
   }
 }

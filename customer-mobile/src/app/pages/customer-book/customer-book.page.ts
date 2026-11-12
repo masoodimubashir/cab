@@ -1,3 +1,4 @@
+import { watchMapCamera, releaseMapCamera, resumeMapCamera } from '../../core/map-camera';
 import { CUSTOMER_MAP_STYLE, fitCustomerMap } from '../../core/customer-map';
 import { NavigationRouteRenderer } from '../../core/navigation-route.helper';
 import { Component, OnDestroy } from '@angular/core';
@@ -464,6 +465,7 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    releaseMapCamera(this.map);
     this.bookingCamera.clear();
     this.cleanupSearch();
     this.stopNearbyDriversPoll();
@@ -744,6 +746,7 @@ export class CustomerBookPage implements OnDestroy {
       const start = fix ?? { lat: 28.6139, lng: 77.209 };
       this.bookingCamera.clear();
       this.followBookingLocation = true;
+      releaseMapCamera(this.map);
       this.map = new google.maps.Map(div, {
         ...CUSTOMER_MAP_STYLE,
         center: start,
@@ -754,7 +757,7 @@ export class CustomerBookPage implements OnDestroy {
         // Cloud Console when going to production.
         mapId: 'DEMO_MAP_ID',
       });
-      this.map.addListener('dragstart', () => this.pauseBookingFollow());
+      watchMapCamera(this.map);
 
       this.pickupMarker = new google.maps.marker.AdvancedMarkerElement({
         position: start,
@@ -1068,6 +1071,8 @@ export class CustomerBookPage implements OnDestroy {
     let p = this.selfPosition;
     if (!p) p = await this.geo.getCurrentPosition();
     if (p && this.map) {
+      resumeMapCamera(this.map);
+      this.followBookingLocation = true;
       this.map.panTo(p);
       if (this.map.getZoom && this.map.getZoom() < 15) this.map.setZoom(16);
     }

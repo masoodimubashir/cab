@@ -1,3 +1,4 @@
+import { watchMapCamera, releaseMapCamera } from '../../core/map-camera';
 import { CUSTOMER_MAP_STYLE, fitCustomerMap } from '../../core/customer-map';
 import { Component } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -300,6 +301,7 @@ export class TripDetailsPage {
       const pickup = { lat: Number(this.trip.pickup_lat), lng: Number(this.trip.pickup_lng) };
       const drop = { lat: Number(this.trip.drop_lat), lng: Number(this.trip.drop_lng) };
 
+      releaseMapCamera(this.map);
       this.map = new google.maps.Map(div, {
         ...CUSTOMER_MAP_STYLE,
         center: pickup,
@@ -309,6 +311,7 @@ export class TripDetailsPage {
         gestureHandling: 'cooperative',
         mapId: 'DEMO_MAP_ID',
       });
+      watchMapCamera(this.map);
 
       this.pickupMarker = new google.maps.marker.AdvancedMarkerElement({
         position: pickup,
@@ -376,6 +379,7 @@ export class TripDetailsPage {
     this.routePolylines = [];
     if (this.pickupMarker) { this.pickupMarker.map = null; this.pickupMarker = null; }
     if (this.dropMarker) { this.dropMarker.map = null; this.dropMarker = null; }
+    releaseMapCamera(this.map);
     this.map = null;
   }
 }

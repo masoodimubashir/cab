@@ -30,42 +30,6 @@
     <div><h1>{{ firstName }}</h1><p *ngIf="homeVehicleIdentity"><ion-icon name="car-outline" aria-hidden="true"></ion-icon><span>{{ homeVehicleIdentity }}</span></p></div>
   </section>
 
-  <!-- ── Inline promotional banner card ── -->
-  <aside
-    class="dc-banner-half-card dc-anim-pop"
-    *ngIf="showHalfBanner && halfBanner"
-    role="complementary"
-    aria-label="Promotional banner"
-  >
-    <button
-      class="dc-banner-close-btn"
-      type="button"
-      (click)="collapseHalfBanner()"
-      aria-label="Collapse banner"
-    >
-      <ion-icon name="close"></ion-icon>
-    </button>
-    <div class="dc-banner-half-img-wrap" (click)="onBannerClick(halfBanner)">
-      <img
-        [src]="resolveBannerImageUrl(halfBanner.image_url)"
-        [alt]="halfBanner.title"
-        class="dc-banner-half-img"
-      />
-    </div>
-    <div class="dc-banner-half-body">
-      <h3 class="dc-banner-half-title" (click)="onBannerClick(halfBanner)">{{ halfBanner.title }}</h3>
-      <button
-        *ngIf="halfBanner.url_link"
-        class="dc-banner-cta-btn dc-press"
-        type="button"
-        (click)="onBannerClick(halfBanner)"
-      >
-        <span>Learn More</span>
-        <ion-icon name="open-outline"></ion-icon>
-      </button>
-    </div>
-  </aside>
-
   <!-- ── Full-Screen App Banner Overlay Modal (True Mobile Full Screen) ── -->
   <div
     class="dc-banner-fullscreen-modal dc-anim-fade"
@@ -319,6 +283,42 @@
       <button type="button" (click)="reopenOfferBanner()" aria-label="Open available offers"><span><ion-icon name="gift-outline" aria-hidden="true"></ion-icon></span>Offers</button>
     </div>
   </section>
+  <!-- ── Inline promotional banner card ── -->
+  <aside
+    class="dc-banner-half-card dc-anim-pop"
+    *ngIf="showHalfBanner && halfBanner"
+    role="complementary"
+    aria-label="Promotional banner"
+  >
+    <button
+      class="dc-banner-close-btn"
+      type="button"
+      (click)="collapseHalfBanner()"
+      aria-label="Collapse banner"
+    >
+      <ion-icon name="close"></ion-icon>
+    </button>
+    <div class="dc-banner-half-img-wrap" (click)="onBannerClick(halfBanner)">
+      <img
+        [src]="resolveBannerImageUrl(halfBanner.image_url)"
+        [alt]="halfBanner.title"
+        class="dc-banner-half-img"
+      />
+    </div>
+    <div class="dc-banner-half-body">
+      <h3 class="dc-banner-half-title" (click)="onBannerClick(halfBanner)">{{ halfBanner.title }}</h3>
+      <button
+        *ngIf="halfBanner.url_link"
+        class="dc-banner-cta-btn dc-press"
+        type="button"
+        (click)="onBannerClick(halfBanner)"
+      >
+        <span>Learn More</span>
+        <ion-icon name="open-outline"></ion-icon>
+      </button>
+    </div>
+  </aside>
+
   <aside class="home-readiness" *ngIf="showDocumentNotice">
     <ion-icon [name]="homeNotice.icon" aria-hidden="true"></ion-icon><div><h2>{{ homeNotice.title }}</h2><p>{{ homeNotice.text }}</p><button type="button" *ngIf="homeNotice.path" (click)="navTo(homeNotice.path!)">{{ homeNotice.action }}<ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon></button></div>
   </aside>

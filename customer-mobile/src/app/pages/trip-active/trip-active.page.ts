@@ -1,3 +1,4 @@
+import { watchMapCamera, releaseMapCamera } from '../../core/map-camera';
 import { CUSTOMER_MAP_STYLE, fitCustomerMap, focusCustomerNavigation } from '../../core/customer-map';
 import { Component, NgZone, OnDestroy, OnInit } from '@angular/core';
 import { Location } from '@angular/common';
@@ -383,6 +384,7 @@ export class TripActivePage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    releaseMapCamera(this.map);
     if (this.poll) clearInterval(this.poll);
     if (this.shuttleCodePoll) clearInterval(this.shuttleCodePoll);
     if (this.unsubscribeRealtime) this.unsubscribeRealtime();
@@ -415,6 +417,7 @@ export class TripActivePage implements OnInit, OnDestroy {
       }
       if (!div || this.map) return;
 
+      releaseMapCamera(this.map);
       this.map = new google.maps.Map(div, {
         ...CUSTOMER_MAP_STYLE,
         center: { lat: 28.6139, lng: 77.209 },
@@ -424,6 +427,7 @@ export class TripActivePage implements OnInit, OnDestroy {
         // production.
         mapId: 'DEMO_MAP_ID',
       });
+      watchMapCamera(this.map);
 
       // Draw whatever we already have (markers + route); otherwise just frame.
       if (this.trip) this.updateRouteMarkers();
