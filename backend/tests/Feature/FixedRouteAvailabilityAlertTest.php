@@ -75,22 +75,22 @@ class FixedRouteAvailabilityAlertTest extends TestCase
 
     public function test_subscription_is_durable_idempotent_and_visible_only_to_its_customer(): void
     {
-        $first = $this->postJson($this->endpoint())->assertOk()->assertJsonPath('available', false)->json('alert_expires_at');
-        $this->postJson($this->endpoint())->assertOk()->assertJsonPath('alert_expires_at', $first);
+        $this->postJson($this->endpoint())->assertOk()->assertJsonPath('available', false)->assertJsonPath('alert_active', true);
+        $this->postJson($this->endpoint())->assertOk()->assertJsonPath('alert_active', true);
         $this->assertDatabaseCount('fixed_route_alerts', 1);
-        $this->getJson('/api/fixed/routes/'.$this->route->id.'/departures')->assertOk()->assertJsonPath('alert_expires_at', $first);
+        $this->getJson('/api/fixed/routes/'.$this->route->id.'/departures')->assertOk()->assertJsonPath('alert_active', true);
         $other = User::factory()->create(); $other->addRole('customer'); Sanctum::actingAs($other, ['act-as:customer']);
         $this->deleteJson($this->endpoint())->assertNoContent();
         $this->assertDatabaseCount('fixed_route_alerts', 1);
-        $this->getJson('/api/fixed/routes/'.$this->route->id.'/departures')->assertOk()->assertJsonPath('alert_expires_at', null);
+        $this->getJson('/api/fixed/routes/'.$this->route->id.'/departures')->assertOk()->assertJsonPath('alert_active', false);
     }
 
-    public function test_customer_can_cancel_and_rearm_an_expired_alert(): void
+    public function test_customer_can_cancel_and_rearm_a_fulfilled_alert(): void
     {
         $this->postJson($this->endpoint())->assertOk();
-        $alert = FixedRouteAlert::first(); $alert->update(['expires_at' => now()->subMinute()]);
+        $alert = FixedRouteAlert::first(); $alert->update(['notified_at' => now()]);
         $this->postJson($this->endpoint())->assertOk();
-        $this->assertTrue($alert->fresh()->expires_at->isFuture());
+        $this->assertNull($alert->fresh()->notified_at);
         $this->deleteJson($this->endpoint())->assertNoContent();
         $this->assertDatabaseCount('fixed_route_alerts', 0);
     }
@@ -129,15 +129,21 @@ class FixedRouteAvailabilityAlertTest extends TestCase
         $this->assertDatabaseCount('app_notifications', 0);
     }
 
-    public function test_expired_and_inactive_route_interests_do_not_alert(): void
+    public function test_pending_interests_survive_months_and_inactive_routes_until_bookable(): void
     {
         $this->postJson($this->endpoint())->assertOk();
-        $this->departure($this->route);
-        FixedRouteAlert::first()->update(['expires_at' => now()->subSecond()]);
+        $this->travel(90)->days();
         $this->assertSame(0, app(FixedRouteAlertService::class)->dispatch());
-        FixedRouteAlert::first()->update(['expires_at' => now()->addHour()]);
+        $this->assertDatabaseCount('fixed_route_alerts', 1);
+        $this->getJson('/api/fixed/routes/'.$this->route->id.'/departures')->assertOk()->assertJsonPath('alert_active', true);
+        $this->departure($this->route);
         $this->route->update(['is_active' => false]);
         $this->assertSame(0, app(FixedRouteAlertService::class)->dispatch());
+        $this->assertDatabaseCount('fixed_route_alerts', 1);
+        $this->route->update(['is_active' => true]);
+        $this->assertSame(1, app(FixedRouteAlertService::class)->dispatch());
+        $this->assertSame(0, app(FixedRouteAlertService::class)->dispatch());
+        $this->travelBack();
     }
 
     public function test_nearby_results_only_include_bookable_alternative_routes_within_five_km(): void

@@ -58,9 +58,9 @@ class FixedRoutesController extends Controller
         }
 
         $alert = FixedRouteAlert::query()->where('user_id', $request->user()->id)->where('route_id', $route->id)
-            ->whereNull('notified_at')->where('expires_at', '>', now())->first();
+            ->whereNull('notified_at')->exists();
         return response()->json(['data' => $this->departures->customerDepartures($route),
-            'alert_expires_at' => $alert?->expires_at->toIso8601String()]);
+            'alert_active' => $alert]);
     }
 
     public function subscribeAlert(Request $request, Route $route, FixedRouteAlertService $alerts)
@@ -71,13 +71,13 @@ class FixedRoutesController extends Controller
         return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $route, $alerts) {
             \App\Models\User::query()->whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
             if ($alerts->availableDepartures($route)->isNotEmpty()) {
-                return response()->json(['available' => true, 'alert_expires_at' => null]);
+                return response()->json(['available' => true, 'alert_active' => false]);
             }
             $alert = FixedRouteAlert::query()->firstOrNew(['user_id' => $request->user()->id, 'route_id' => $route->id]);
-            if (!$alert->exists || $alert->notified_at || !$alert->expires_at || $alert->expires_at->isPast()) {
-                $alert->fill(['expires_at' => now()->addHours(24), 'notified_at' => null])->save();
+            if (!$alert->exists || $alert->notified_at) {
+                $alert->fill(['notified_at' => null])->save();
             }
-            return response()->json(['available' => false, 'alert_expires_at' => $alert->expires_at->toIso8601String()]);
+            return response()->json(['available' => false, 'alert_active' => true]);
         });
     }
 
