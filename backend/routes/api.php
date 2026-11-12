@@ -562,7 +562,11 @@ Route::post('/payments/webhook/razorpay', [PaymentsController::class, 'razorpayW
 // Fixed Route Module — dedicated endpoints, kept separate from legacy shared routes.
 Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::get('/fixed/routes', [FixedRoutesController::class, 'index']);
+    Route::get('/fixed/routes/{route}', [FixedRoutesController::class, 'show']);
     Route::get('/fixed/routes/{route}/departures', [FixedRoutesController::class, 'departures']);
+    Route::post('/fixed/routes/{route}/availability-alert', [FixedRoutesController::class, 'subscribeAlert'])->middleware('throttle:booking');
+    Route::delete('/fixed/routes/{route}/availability-alert', [FixedRoutesController::class, 'cancelAlert'])->middleware('throttle:booking');
+    Route::get('/fixed/routes/{route}/nearby-departures', [FixedRoutesController::class, 'nearbyDepartures']);
     Route::get('/fixed/departures/{departure}/seat-map', [FixedSeatMapController::class, 'show']);
     Route::get('/fixed/active-hold', [FixedBookingsController::class, 'activeHold']);
     Route::get('/fixed/seat-holds/{fixedSeatHold}', [FixedBookingsController::class, 'showSeatHold']);
