@@ -31,54 +31,6 @@ class AdminTripsController
 {
     public function __construct(private readonly FixedManifestService $fixedManifest) {}
 
-    /** Recoverably remove a stale fixed trip whose passenger service is already closed. */
-    public function destroy(Request $request, Trip $trip)
-    {
-        abort_unless(ManagerScope::isSuperAdmin(), 403);
-        ManagerScope::assertCityAllowed((int) $trip->city_id);
-        $data = $request->validate([
-            'reason' => ['required', 'string', 'max:500'],
-            'confirm_trip_id' => ['required', 'integer', 'in:' . $trip->id],
-        ]);
-
-        DB::transaction(function () use ($request, $trip, $data) {
-            // Lock departure before trip, matching fixed-vehicle lifecycle operations.
-            $departure = $trip->route_departure_id
-                ? RouteDeparture::query()->lockForUpdate()->find($trip->route_departure_id)
-                : null;
-            $locked = Trip::query()->lockForUpdate()->findOrFail($trip->id);
-            abort_unless($departure && $locked->route_departure_id === $departure->id
-                && $departure->trip_id === $locked->id
-                && $departure->route?->mode === 'fixed'
-                && in_array($departure->status, ['CANCELLED', 'COMPLETED'], true),
-                409, 'Only a fixed trip linked to its closed departure can be deleted.');
-            abort_if($locked->status === 'COMPLETED', 409, 'Completed trips cannot be deleted.');
-
-            $passengers = SeatReservation::query()
-                ->where(fn ($q) => $q->where('route_departure_id', $departure->id)->orWhere('trip_id', $locked->id))
-                ->lockForUpdate()->get();
-            $holds = FixedSeatHold::query()->where('route_departure_id', $departure->id)
-                ->whereIn('status', ['PENDING_DRIVER_APPROVAL', 'ACCEPTED', 'HELD'])
-                ->lockForUpdate()->get();
-            abort_if($passengers->contains(fn ($p) => $p->status !== 'CANCELLED')
-                || $holds->isNotEmpty() || $departure->seats_taken > 0,
-                409, 'Cancel all passenger bookings and release held seats before deleting this trip.');
-
-            // No refunds, ledger changes or notification replay: those belong to cancellation.
-            // Keep a terminal status even for raw SQL consumers that do not use SoftDeletes.
-            $locked->forceFill([
-                'status' => 'CANCELLED',
-                'cancelled_at' => $locked->cancelled_at ?: now(),
-                'cancelled_reason' => $locked->cancelled_reason ?: $data['reason'],
-                'deleted_by' => $request->user()->id,
-                'deletion_reason' => $data['reason'],
-            ])->save();
-            $locked->delete();
-        });
-
-        return response()->json(['message' => 'Trip deleted. Booking and financial records were preserved.', 'trip_id' => $trip->id]);
-    }
-
     /**
      * Lists trips for the admin ride-monitoring screens.
      *
