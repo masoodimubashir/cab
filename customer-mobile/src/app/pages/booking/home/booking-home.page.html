@@ -272,7 +272,7 @@
       <ng-template #fixedRoutes>
       <section class="bh-route-section" aria-labelledby="home-routes-title">
         <div class="bh-section-heading"><h2 id="home-routes-title">Explore fixed routes</h2>
-          <button type="button" (click)="browseFixedRoutes()">See all<ion-icon name="chevron-forward-outline" aria-hidden="true"></ion-icon></button></div>
+          <button class="bh-see-all-routes" type="button" (click)="browseFixedRoutes()">See all<ion-icon name="chevron-forward-outline" aria-hidden="true"></ion-icon></button></div>
         <p class="bh-section-subtitle">Routes starting within {{ routeRadiusKm }} km of your location.</p>
         <div class="bh-radius-options" role="group" aria-label="Route starting distance">
           <button *ngFor="let km of [1, 3, 5]" type="button" [attr.aria-pressed]="routeRadiusKm === km"

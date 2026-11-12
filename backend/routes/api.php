@@ -457,7 +457,6 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::delete('/admin/dynamic-pricing-rules/{dynamicPricingRule}', [AdminDynamicPricingController::class, 'destroy'])->middleware('permission:pricing');
     Route::get('/admin/trips', [AdminTripsController::class, 'index'])->middleware('permission:rides');
     Route::get('/admin/trips/{trip}', [AdminTripsController::class, 'show'])->middleware('permission:rides');
-    Route::delete('/admin/trips/{trip}', [AdminTripsController::class, 'destroy'])->middleware('permission:rides');
     Route::get('/admin/trips/{trip}/latest-location', [AdminTripsController::class, 'latestLocation'])->middleware('permission:rides|live_operations');
     Route::post('/admin/trips/{trip}/start', [AdminTripsController::class, 'start'])->middleware('permission:rides');
     Route::post('/admin/trips/{trip}/cancel', [AdminTripsController::class, 'cancel'])->middleware('permission:rides');

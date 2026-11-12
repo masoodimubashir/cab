@@ -32,6 +32,10 @@ Customer-Route-Seat-Payment-Verification-2026-10-21.md.
 
 ## User decisions and constraints
 
+- 2026-11-12: highlight See all beside Explore fixed routes as a visible,
+  high-contrast green button. Keep its padding compact; the user requested
+  less padding after the initial preview.
+
 - 2026-11-07: use the driver app’s dark fetching-location screen on
   Customer Home while it waits for location, with the green radar pin and
   progress bar. Show the retry screen if the location request fails.

@@ -4,6 +4,14 @@ Last updated: 2026-11-07 (Asia/Calcutta)
 
 ## Start here
 
+- Customer Home See all button (2026-11-12). Changed the fixed-route
+  action to a solid dark-green button with bold white text. User then
+  requested less padding: final height is 38 px with 10 px horizontal
+  padding. Verified in the local ChatGPT browser at 577 × 763; tapping
+  See all opened Choose your route. Angular template compilation passed.
+  Evidence: see-all-routes-button.png in this chat's outputs. Next, confirm
+  the compact button on a physical phone before the next app release.
+
 - Driver splash logo (2026-11-07). The driver splash now uses the same
   DreamCabs logo asset as the customer splash. Verified that the logo
   loaded alongside the driver tagline in the local browser. The driver
