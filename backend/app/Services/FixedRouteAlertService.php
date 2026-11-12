@@ -42,8 +42,7 @@ class FixedRouteAlertService
     public function dispatch(): int
     {
         $sent = 0;
-        $routeIds = FixedRouteAlert::query()->whereNull('notified_at')
-            ->where('expires_at', '>', now())->distinct()->pluck('route_id');
+        $routeIds = FixedRouteAlert::query()->whereNull('notified_at')->distinct()->pluck('route_id');
 
         foreach ($routeIds as $routeId) {
             $route = Route::query()->find($routeId);
@@ -52,11 +51,11 @@ class FixedRouteAlertService
             if (!$departure) continue;
 
             FixedRouteAlert::query()->where('route_id', $routeId)->whereNull('notified_at')
-                ->where('expires_at', '>', now())->chunkById(100, function ($alerts) use ($route, $departure, &$sent) {
+                ->chunkById(100, function ($alerts) use ($route, $departure, &$sent) {
                     foreach ($alerts as $alert) {
                         $sent += DB::transaction(function () use ($alert, $route, $departure) {
                             $locked = FixedRouteAlert::query()->lockForUpdate()->find($alert->id);
-                            if (!$locked || $locked->notified_at || $locked->expires_at->isPast()) return 0;
+                            if (!$locked || $locked->notified_at) return 0;
                             $this->notifications->notifyUserId(
                                 $locked->user_id, 'fixed_route_available', 'A departure is available',
                                 "A ride is now available on {$route->name}. Check the departure and seats before booking.",
@@ -69,8 +68,8 @@ class FixedRouteAlertService
                     }
                 });
         }
-        // Expired/completed interests are short-lived, rather than a permanent travel history.
-        FixedRouteAlert::query()->where('expires_at', '<', now()->subDays(7))->delete();
+        // Only fulfilled interests may be cleaned up; pending alerts never expire.
+        FixedRouteAlert::query()->whereNotNull('notified_at')->where('notified_at', '<', now()->subDays(7))->delete();
         return $sent;
     }
 }
