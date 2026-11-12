@@ -1,110 +1,50 @@
-.notif-page { --background: var(--dc-canvas, #F4F6F8); }
-
-/* ============ Hero header (navy) ============ */
-.page-header {
-  position: relative;
-  background: var(--dc-ink, #0D1B2A);
-  border-bottom-left-radius: 28px;
-  border-bottom-right-radius: 28px;
-  padding: calc(env(safe-area-inset-top, 18px) + 56px) 22px 24px;
-
-  .header-back,
-  .header-refresh {
-    position: absolute;
-    top: calc(env(safe-area-inset-top, 18px) + 12px);
-    width: 40px; height: 40px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.12);
-    border: none; color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; padding: 0;
-    transition: background 0.16s ease;
-    ion-icon { font-size: 20px; }
-    &:active { background: rgba(255, 255, 255, 0.22); }
-    &[disabled] { opacity: 0.5; }
-  }
-  .header-back { left: 16px; }
-  .header-refresh { right: 16px; }
-
-  .header-title { color: #fff; font-size: 22px; font-weight: 800; margin: 0; letter-spacing: -0.4px; }
-  .header-sub { color: #9CA3AF; font-size: 13px; margin: 6px 0 0; line-height: 1.4; }
-}
-
-/* ============ Body ============ */
-.page-body {
-  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
-  display: flex; flex-direction: column; gap: 12px;
-}
-
-.notif-toolbar {
-  display: flex; justify-content: flex-end;
-  .mark-all {
-    border: none; background: transparent;
-    color: var(--dc-green, #12B35B); font-size: 13px; font-weight: 800; cursor: pointer;
-    padding: 4px 2px;
-    &[disabled] { color: var(--dc-ink-faint, #9AA3AE); }
-  }
-}
-
-.page-error {
-  display: flex; align-items: center; gap: 8px;
-  margin: 0; padding: 12px 14px; border-radius: var(--dc-r-md, 14px);
-  background: var(--dc-danger-tint, #FEF2F2); color: var(--dc-danger, #DC3545);
-  font-size: 13px; font-weight: 600;
-}
-
-.notif-list { display: flex; flex-direction: column; gap: 10px; }
-
-.skel-card {
-  display: flex; align-items: center; gap: 12px;
-  background: var(--dc-surface, #fff); border: 1px solid var(--dc-hairline, #EEF0F2);
-  border-radius: var(--dc-r-lg, 18px); padding: 14px 16px;
-  .skel-circle { width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0; }
-  .skel-stack { flex: 1; display: flex; flex-direction: column; gap: 8px; }
-  .skel-line { height: 12px; border-radius: 7px; }
-  .skel-line--lg { width: 46%; height: 14px; }
-  .skel-line--full { width: 86%; }
-}
-
-/* ============ Notification cards ============ */
-.notif-card {
-  display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: left;
-  background: var(--dc-surface, #fff);
-  border: 1px solid var(--dc-hairline, #EEF0F2);
-  border-radius: var(--dc-r-lg, 18px);
-  padding: 14px 16px;
-  cursor: pointer;
-  box-shadow: var(--dc-shadow-sm, 0 2px 10px rgba(13, 27, 42, 0.04));
-  position: relative;
-  &.unread { background: #F2FAF5; border-color: var(--dc-green-tint-2, rgba(18,179,91,0.18)); }
-
-  .notif-icon {
-    width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
-    background: var(--dc-green-tint, rgba(18, 179, 91, 0.1));
-    display: flex; align-items: center; justify-content: center;
-    ion-icon { font-size: 20px; color: var(--dc-green, #12B35B); }
-  }
-  .notif-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-  .notif-title { font-size: 14.5px; font-weight: 800; color: var(--dc-ink, #0D1B2A); letter-spacing: -0.2px; }
-  .notif-body { font-size: 13px; color: var(--dc-ink-soft, #6C757D); line-height: 1.4; }
-  .notif-time { font-size: 11.5px; font-weight: 600; color: var(--dc-ink-faint, #9AA3AE); margin-top: 2px; }
-
-  .notif-dot {
-    position: absolute; top: 16px; right: 16px;
-    width: 9px; height: 9px; border-radius: 50%; background: var(--dc-green, #12B35B);
-  }
-}
-
-/* ============ Empty state ============ */
-.state-box {
-  display: flex; flex-direction: column; align-items: center; text-align: center;
-  padding: 48px 24px; gap: 6px;
-  .state-icon {
-    width: 64px; height: 64px; border-radius: 50%;
-    background: var(--dc-surface, #fff); border: 1px solid var(--dc-hairline, #EEF0F2);
-    display: flex; align-items: center; justify-content: center; margin-bottom: 6px;
-    ion-icon { font-size: 30px; color: var(--dc-ink-faint, #9AA3AE); }
-  }
-  .state-title { margin: 0; font-size: 16px; font-weight: 800; color: var(--dc-ink, #0D1B2A); }
-  .state-sub { margin: 0; font-size: 13px; color: var(--dc-ink-soft, #6C757D); line-height: 1.4; max-width: 260px; }
-}
+:host { --inbox-green: #087f50; --inbox-ink: #151c21; --inbox-muted: #647078; --inbox-line: #e8ebed; }
+.notif-page { --background: #fff; }
+.inbox-shell { min-height: 100%; max-width: 680px; margin: 0 auto; background: #fff; }
+.inbox-header { position: sticky; top: 0; z-index: 5; background: var(--dc-ink, #0d1b2a); padding-top: env(safe-area-inset-top, 0); }
+.inbox-titlebar { height: 76px; padding: 0 16px; display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; }
+.inbox-titlebar h1 { margin: 0; text-align: center; color: #fff; font-size: 22px; font-weight: 800; letter-spacing: -.4px; }
+.inbox-icon-button { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: #ffffff1f; color: #fff; }
+.inbox-icon-button ion-icon { font-size: 23px; }
+.inbox-icon-button:disabled { opacity: .4; }
+.inbox-filters { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--inbox-line); background: #fff; }
+.inbox-filters button { min-height: 51px; padding: 12px 8px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-bottom: 3px solid transparent; background: #fff; color: #687078; font: inherit; font-size: 12px; font-weight: 750; text-transform: uppercase; letter-spacing: .6px; }
+.inbox-filters button.is-active { color: var(--inbox-green); border-bottom-color: var(--inbox-green); }
+.inbox-count { min-width: 18px; height: 18px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; border-radius: 99px; background: #d92d3a; color: #fff; font-size: 10px; font-weight: 800; line-height: 1; letter-spacing: 0; }
+.inbox-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 49px; padding: 0 20px; border-bottom: 1px solid var(--inbox-line); }
+.inbox-section-heading h2 { margin: 0; font-size: 11px; font-weight: 750; color: var(--inbox-ink); text-transform: uppercase; letter-spacing: 1px; }
+.inbox-text-button { min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: var(--inbox-green); font: inherit; font-size: 12px; font-weight: 700; }
+.inbox-text-button:disabled { color: #8b9398; }
+.inbox-list { padding: 0 20px; margin: 0; list-style: none; }
+.inbox-list li + li { border-top: 1px solid var(--inbox-line); }
+.inbox-notification { display: flex; align-items: flex-start; gap: 13px; width: 100%; padding: 21px 0; border: 0; background: #fff; color: var(--inbox-ink); text-align: left; font: inherit; }
+.inbox-avatar { display: flex; align-items: center; justify-content: center; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%; background: #f0f3f2; color: #486259; }
+.inbox-avatar ion-icon { font-size: 18px; }
+.is-unread .inbox-avatar { background: #e5f3ec; color: var(--inbox-green); }
+.inbox-message { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 6px; }
+.inbox-message-heading { display: flex; align-items: baseline; gap: 10px; }
+.inbox-message-heading strong { flex: 1; min-width: 0; font-size: 15px; line-height: 1.4; font-weight: 750; letter-spacing: -.15px; overflow-wrap: anywhere; }
+.inbox-unread-dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: #d92d3a; }
+.inbox-message-body { font-size: 14px; font-weight: 400; line-height: 1.55; color: #414b52; overflow-wrap: anywhere; white-space: pre-line; }
+.inbox-message-time { font-size: 11px; line-height: 1.5; color: var(--inbox-muted); margin-top: 2px; }
+.inbox-error { margin: 18px 20px; padding: 12px 16px; border-radius: 10px; background: #fff4f3; color: #a92e32; font-size: 13px; line-height: 1.5; }
+.inbox-error p { margin: 0; }
+.inbox-action-error { margin: 12px 20px; color: #a92e32; font-size: 13px; }
+.inbox-empty { display: flex; flex-direction: column; align-items: center; padding: 72px 28px; text-align: center; }
+.inbox-empty-icon { display: flex; align-items: center; justify-content: center; width: 58px; height: 58px; margin-bottom: 18px; border-radius: 50%; background: #eef7f2; color: var(--inbox-green); }
+.inbox-empty-icon ion-icon { font-size: 28px; }
+.inbox-empty h3 { margin: 0 0 8px; color: var(--inbox-ink); font-size: 18px; font-weight: 750; }
+.inbox-empty p { max-width: 280px; margin: 0 0 12px; color: var(--inbox-muted); font-size: 14px; line-height: 1.6; }
+.inbox-loading { padding: 0 20px; }
+.inbox-skeleton { display: flex; gap: 13px; padding: 23px 0; border-bottom: 1px solid var(--inbox-line); }
+.inbox-skeleton-avatar { flex: 0 0 34px; height: 34px; border-radius: 50%; }
+.inbox-skeleton > div { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+.inbox-skeleton-title, .inbox-skeleton-body, .inbox-skeleton-time { display: block; height: 12px; border-radius: 4px; }
+.inbox-skeleton-title { width: 65%; }
+.inbox-skeleton-body { width: 95%; height: 28px; }
+.inbox-skeleton-time { width: 30%; height: 9px; }
+.inbox-load-more { display: block; width: calc(100% - 40px); min-height: 48px; margin: 18px 20px calc(24px + env(safe-area-inset-bottom, 0px)); border: 1px solid #dce7e1; border-radius: 10px; background: #fff; color: var(--inbox-green); font: inherit; font-size: 13px; font-weight: 700; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:focus-visible { outline: 2px solid var(--inbox-green); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (min-width: 700px) { .inbox-shell { border-left: 1px solid var(--inbox-line); border-right: 1px solid var(--inbox-line); } }

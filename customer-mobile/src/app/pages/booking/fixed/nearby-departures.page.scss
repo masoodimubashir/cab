@@ -1,0 +1,13 @@
+.nearby-intro { margin: 0 0 22px; font-size: 14px; line-height: 1.6; color: #526476; }
+.nearby-message { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 32px 20px; border-radius: 20px; background: #eef5f2; color: var(--dc-ink, #14252e); text-align: center; }
+.nearby-message > ion-icon { font-size: 38px; color: #087e4d; }
+.nearby-message > h2 { margin: 0; font-size: 20px; font-weight: 750; }
+.nearby-message > p { margin: 0; font-size: 14px; line-height: 1.6; color: #526476; }
+.nearby-message--error { background: #f3f5f7; }
+.nearby-primary { min-height: 48px; margin-top: 8px; padding: 12px 22px; border: 0; border-radius: 14px; background: #087e4d; color: #fff; font: inherit; font-size: 15px; font-weight: 750; }
+.nearby-results { display: grid; gap: 14px; }
+.nearby-route { display: flex; flex-direction: column; gap: 9px; width: 100%; padding: 18px; border: 1px solid #dbe5e1; border-radius: 18px; background: var(--dc-surface, #fff); color: var(--dc-ink, #14252e); text-align: left; font: inherit; }
+.nearby-route > strong { font-size: 16px; line-height: 1.5; }
+.nearby-route > span { font-size: 13px; line-height: 1.5; }
+.nearby-route__link { display: flex; align-items: center; gap: 4px; color: #087e4d; font-weight: 750; }
+button:focus-visible { outline: 3px solid #2a6fc0; outline-offset: 3px; }

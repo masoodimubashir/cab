@@ -109,7 +109,6 @@
 
         <!-- City Filter Chips (Kupwara, Sopore, etc.) -->
         <div class="route-city-chips-wrap" *ngIf="driverCities.length > 1">
-          <span class="filter-label">City:</span>
           <div class="route-city-chips">
             <button
               type="button"
@@ -366,7 +365,7 @@
           <span>No seat layout configured for this route. Please contact your fleet operator.</span>
         </div>
 
-        <!-- Primary CTA: Start boarding -->
+        <!-- Primary CTA: Open ride for bookings -->
         <button 
           class="dc-cta dc-cta--primary dc-press take-rides-btn" 
           (click)="openVehicle()"
@@ -424,7 +423,7 @@
 
           <!-- Primary Lifecycle Action (Start / Complete / Cancel) -->
           <div class="route-lifecycle-actions">
-          <!-- 1. START BOARDING (Before departure) -->
+          <!-- 1. START RIDE (Before departure) -->
           <button 
             class="dc-float-cta dc-float-cta--start dc-press" 
             *ngIf="canStart(vehicle)" 
@@ -432,7 +431,7 @@
             [disabled]="busy"
           >
             <ion-icon name="play"></ion-icon>
-            <span>Start boarding</span>
+            <span>Start Ride</span>
           </button>
           <button class="dc-float-cta dc-float-cta--start dc-press" *ngIf="canDepart(vehicle)" (click)="departRide()" [disabled]="busy">
             <ion-icon name="play"></ion-icon><span>Depart from origin</span>
@@ -522,10 +521,10 @@
 
               <!-- Contextual Ride Action Button inside Overview Card -->
               <div class="dc-overview-actions" *ngIf="canStart(vehicle) || canDepart(vehicle) || rideStarted || canCloseVehicle(vehicle)">
-                <!-- 1. START BOARDING (Before departure) -->
+                <!-- 1. START RIDE (Before departure) -->
                 <button class="dc-modal-action-cta dc-modal-action-cta--start dc-press" *ngIf="canStart(vehicle)" (click)="startRide()" [disabled]="busy">
                   <ion-icon name="play"></ion-icon>
-                  <span>Start boarding</span>
+                  <span>Start Ride</span>
                 </button>
                 <button class="dc-modal-action-cta dc-modal-action-cta--start dc-press" *ngIf="canDepart(vehicle)" (click)="departRide()" [disabled]="busy">
                   <ion-icon name="play"></ion-icon><span>Depart from origin</span>

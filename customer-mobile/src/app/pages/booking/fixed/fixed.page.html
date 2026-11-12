@@ -210,7 +210,40 @@
         </span>
       </button>
     </ng-container>
-    <p class="bk-note" *ngIf="!loading && !departures.length">No departures yet on this route. Try again later.</p>
+    <section class="fb-no-departures" *ngIf="!loading && !departureError && !departures.length" aria-labelledby="no-departures-title">
+      <img class="fb-no-departures__scene" src="assets/illustrations/no-departures.svg" alt="A passenger waiting at a mountain route stop" />
+      <h2 id="no-departures-title">No ride available right now</h2>
+      <p class="fb-no-departures__intro">There are currently no departures open for booking on this route.<br />Don’t worry — let’s find another way to get you there.</p>
+
+      <div class="fb-availability-alert">
+        <ion-icon name="notifications-outline" aria-hidden="true"></ion-icon>
+        <div>
+          <h3 id="availability-alert-label">Notify me when a ride is available</h3>
+          <p id="availability-alert-help">{{ alertEnabled ? 'Alert is on. We’ll notify you when a departure opens. It stays active until you’re notified or turn it off.' : 'Get notified when a departure opens. Your alert stays active until you’re notified or turn it off.' }}</p>
+        </div>
+        <button type="button" class="fb-alert-switch" role="switch" [attr.aria-checked]="alertEnabled"
+          aria-labelledby="availability-alert-label" aria-describedby="availability-alert-help"
+          [disabled]="alertBusy" (click)="toggleAvailabilityAlert()"><span></span></button>
+      </div>
+      <p *ngIf="alertBusy" class="fb-availability-status" role="status">Updating your alert…</p>
+      <p *ngIf="alertError" class="fb-availability-error" role="alert">{{ alertError }}</p>
+
+      <div class="fb-no-departures__options">
+        <button type="button" class="fb-empty-action fb-empty-action--nearby dc-press" (click)="viewNearbyDepartures()">
+          <ion-icon name="navigate-outline" aria-hidden="true"></ion-icon><span>View nearby departures</span>
+        </button>
+        <button type="button" class="fb-empty-action fb-empty-action--change dc-press" (click)="back()">
+          <ion-icon name="swap-horizontal-outline" aria-hidden="true"></ion-icon><span>Change route</span>
+        </button>
+      </div>
+      <button type="button" class="fb-refresh-availability dc-press" (click)="refreshDepartures()"><ion-icon name="refresh-outline" aria-hidden="true"></ion-icon>Refresh availability</button>
+    </section>
+
+    <div class="fb-departure-load-error" *ngIf="!loading && departureError" role="alert">
+      <h2>Couldn’t check availability</h2><p>{{ departureError }}</p>
+      <button type="button" class="fb-refresh-availability" (click)="refreshDepartures()">Try again</button>
+    </div>
+
   </app-step-shell>
 
   <!-- Step 3 — stops + luggage -->

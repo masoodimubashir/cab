@@ -47,8 +47,11 @@
       <span>{{ locationFetching || refreshingMapLocation ? 'Finding your location…' : (city?.name || 'Your location') }}</span>
       <ion-icon name="chevron-down-outline" aria-hidden="true"></ion-icon>
     </button>
-    <a class="bh-icon-button" routerLink="/customer-tabs/notifications" aria-label="Notifications">
-      <ion-icon name="notifications-outline" aria-hidden="true"></ion-icon>
+    <a class="bh-icon-button bh-notification-button" [class.bh-notification-button--unread]="unreadNotificationCount > 0"
+      routerLink="/customer-tabs/notifications"
+      [attr.aria-label]="unreadNotificationCount > 0 ? 'Notifications, ' + unreadNotificationCount + ' unread' : 'Notifications'">
+      <ion-icon [name]="unreadNotificationCount > 0 ? 'notifications' : 'notifications-outline'" aria-hidden="true"></ion-icon>
+      <span class="bh-notification-badge" *ngIf="unreadNotificationCount > 0" aria-hidden="true">{{ notificationBadgeLabel }}</span>
     </a>
   </header>
 

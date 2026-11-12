@@ -890,11 +890,11 @@ export class FixedDriverPage implements OnDestroy {
   async startRide(): Promise<void> {
     if (!this.activeVehicle) return;
     const alert = await this.alerts.create({
-      header: 'Start boarding here?',
+      header: 'Start Ride?',
       message: 'Begin boarding passengers at the current stop. Customers can still book seats for upcoming stops.',
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Start boarding', role: 'confirm' },
+        { text: 'Start Ride', role: 'confirm' },
       ],
     });
     await alert.present();
@@ -912,7 +912,7 @@ export class FixedDriverPage implements OnDestroy {
           void this.syncFixedTripLocationStreaming();
           this.refresh();
         },
-        error: (err) => this.error = err?.error?.message || 'Could not start boarding.',
+        error: (err) => this.error = err?.error?.message || 'Could not start the ride.',
       });
   }
 
@@ -1523,7 +1523,7 @@ export class FixedDriverPage implements OnDestroy {
   /** Why the Board button is disabled, or null when it's ready to tap. */
   boardBlockReason(passenger: FixedPassenger): string | null {
     if (!this.canBoardPassenger(passenger)) return null;
-    if (!this.rideStarted) return 'Start boarding to begin checking in passengers';
+    if (!this.rideStarted) return 'Tap Start Ride to begin checking in passengers';
     if (!this.isPassengerPickupReached(passenger)) {
       const stop = this.passengerBoardStop(passenger);
       return stop ? 'Board unlocks when you reach ' + stop.name : 'Board unlocks when you reach the pickup stop';
@@ -1747,7 +1747,7 @@ export class FixedDriverPage implements OnDestroy {
   passengerActionHint(passenger: FixedPassenger): string {
     const status = (passenger.status || '').toUpperCase();
     if (['BOOKED', 'CONFIRMED'].includes(status)) {
-      if (!this.rideStarted) return 'Start boarding to begin checking in passengers';
+      if (!this.rideStarted) return 'Tap Start Ride to begin checking in passengers';
       if (!this.isPassengerPickupReached(passenger)) return 'Board & no-show unlock once you reach the pickup stop';
       const secs = this.noShowCountdown(passenger);
       if (secs > 0) return 'Wait for the passenger — no-show unlocks in ' + this.noShowCountdownLabel(passenger);

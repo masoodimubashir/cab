@@ -1,0 +1,24 @@
+<ion-content [fullscreen]="true" [scrollY]="false" class="fb-booking-content">
+  <app-step-shell [reference]="true" [total]="0" title="Nearby departures" barLabel="Explore nearby routes" (back)="back()">
+    <p class="nearby-intro">Routes starting within 5 km {{ origin?.source === 'route' ? 'of your original route’s starting stop' : 'of your location' }}. Check the destination before choosing.</p>
+    <p *ngIf="loading" class="nearby-message" role="status"><ion-spinner name="crescent"></ion-spinner>Checking nearby departures…</p>
+    <div *ngIf="!loading && error" class="nearby-message nearby-message--error" role="alert">
+      <ion-icon name="cloud-offline-outline" aria-hidden="true"></ion-icon>
+      <h2>Couldn’t load departures</h2><p>{{ error }}</p>
+      <button type="button" class="nearby-primary" (click)="refresh()">Try again</button>
+    </div>
+    <div *ngIf="!loading && !error && !options.length" class="nearby-message">
+      <ion-icon name="bus-outline" aria-hidden="true"></ion-icon>
+      <h2>No nearby departures right now</h2><p>Try another route or check availability again later.</p>
+      <button type="button" class="nearby-primary" (click)="refresh()">Refresh availability</button>
+    </div>
+    <div *ngIf="!loading && !error && options.length" class="nearby-results">
+      <button type="button" class="nearby-route dc-press" *ngFor="let option of options" (click)="openRoute(option.route)">
+        <strong>{{ option.route.origin_name }} → {{ option.route.dest_name }}</strong>
+        <span>{{ option.route.starting_stop?.name }} · {{ distance(option.route.distance_to_start) }}</span>
+        <span>{{ option.departures.length }} {{ option.departures.length === 1 ? 'departure' : 'departures' }} · ₹{{ option.route.flat_fare }} / seat</span>
+        <span class="nearby-route__link">View departures <ion-icon name="chevron-forward-outline" aria-hidden="true"></ion-icon></span>
+      </button>
+    </div>
+  </app-step-shell>
+</ion-content>
