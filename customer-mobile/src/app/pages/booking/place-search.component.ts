@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, EventEmitter, HostListener, Input, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -24,7 +24,7 @@ import { Place } from './booking.models';
   // Icons are inline SVG (not ion-icon) so this standalone component needs no
   // web-component schema and can't trip AOT element checking.
   template: `
-    <label class="ps-field bk-field" [class.bk-field--on]="query.length > 0">
+    <label *ngIf="showSearch" class="ps-field bk-field" [class.bk-field--on]="query.length > 0">
       <svg class="ps-ic" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
         <path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -35,6 +35,7 @@ import { Place } from './booking.models';
         [placeholder]="placeholder"
         autocomplete="off"
         [(ngModel)]="query"
+        (focus)="openOptions()"
         (ngModelChange)="onQuery($event)" />
       <button *ngIf="query" class="ps-clear" type="button" aria-label="Clear" (click)="clear()">
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -43,6 +44,7 @@ import { Place } from './booking.models';
       </button>
     </label>
 
+    <ng-container *ngIf="!selectShortcuts || optionsOpen">
     <p class="bk-sub" *ngIf="searching">Looking…</p>
 
     <!-- Suggestions from Google. -->
@@ -64,8 +66,9 @@ import { Place } from './booking.models';
     </button>
 
     <!-- Shortcuts, shown only when the rider hasn't started typing. -->
-    <ng-container *ngIf="!query && !suggestions.length">
-      <button class="bk-opt ps-row" type="button" (click)="useCurrent()" [disabled]="locating">
+    <div *ngIf="(!query || query === selectedQuery) && !suggestions.length" class="ps-shortcuts" [class.ps-shortcuts--horizontal]="horizontalShortcuts" [class.ps-shortcuts--grid]="gridShortcuts"
+      role="region" aria-label="Location shortcuts" [attr.tabindex]="horizontalShortcuts ? 0 : null">
+      <button class="bk-opt ps-row ps-current-location" type="button" (click)="useCurrent()" [disabled]="locating">
         <span class="bk-opt__ic">
           <svg class="ps-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2"/>
@@ -92,17 +95,35 @@ import { Place } from './booking.models';
           <span class="bk-opt__s">{{ p.address }}</span>
         </span>
       </button>
-    </ng-container>
+    </div>
 
     <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
+    </ng-container>
   `,
   styles: [`
-    :host { display: flex; flex-direction: column; gap: 10px; }
+    :host { display: flex; flex-direction: column; gap: 10px; min-width: 0; max-width: 100%; }
     .ps-ic { flex: none; width: 20px; height: 20px; color: var(--dc-ink-faint); }
     .ps-clear { flex: none; width: 28px; height: 28px; padding: 4px; border: 0; background: transparent; color: var(--dc-ink-faint); display: flex; align-items: center; justify-content: center; }
     .ps-clear svg { width: 18px; height: 18px; }
     .ps-svg { width: 20px; height: 20px; color: var(--dc-green); }
     .ps-row { width: 100%; }
+    .ps-shortcuts { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .ps-shortcuts--horizontal {
+      flex-direction: row; width: 100%; max-width: 100%; overflow-x: auto;
+      padding: 2px 2px 8px; scroll-snap-type: x proximity; overscroll-behavior-x: contain;
+      scrollbar-width: thin; scrollbar-color: #b9d9cb transparent;
+    }
+    .ps-shortcuts--horizontal .ps-row { flex: 0 0 220px; width: 220px; min-width: 0; min-height: 70px; margin: 0; padding: 10px; gap: 9px; scroll-snap-align: start; }
+    .ps-shortcuts--horizontal .bk-opt__ic { flex: 0 0 34px; width: 34px; height: 34px; }
+    .ps-shortcuts--horizontal .bk-opt__main { min-width: 0; }
+    .ps-shortcuts--horizontal .bk-opt__t { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .ps-shortcuts--horizontal .bk-opt__s { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+    .ps-shortcuts--grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; }
+    .ps-shortcuts--grid .ps-row { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; min-width: 0; height: 108px; padding: 10px 7px; gap: 7px; margin: 0; text-align: center; box-sizing: border-box; }
+    .ps-shortcuts--grid .bk-opt__ic { flex: 0 0 30px; width: 30px; height: 30px; }
+    .ps-shortcuts--grid .bk-opt__main { width: 100%; min-width: 0; }
+    .ps-shortcuts--grid .bk-opt__t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; white-space: normal; overflow-wrap: anywhere; font-size: 12px; line-height: 1.25; }
+    .ps-shortcuts--grid .bk-opt__s { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; margin-top: 3px; }
   `],
 })
 export class PlaceSearchComponent implements OnInit {
@@ -110,10 +131,17 @@ export class PlaceSearchComponent implements OnInit {
   @Input() placeholder = 'Search a place or address';
   /** Bias autocomplete toward here (usually the pickup). */
   @Input() near?: { lat: number; lng: number };
+  @Input() horizontalShortcuts = false;
+  @Input() gridShortcuts = false;
+  @Input() showSearch = true;
+  @Input() selectShortcuts = false;
+  @Input() optionsOpen = false;
+  @Output() optionsOpenChange = new EventEmitter<boolean>();
 
   @Output() picked = new EventEmitter<Place>();
 
   query = '';
+  selectedQuery = '';
   suggestions: { place_id: string; main_text: string; secondary_text: string }[] = [];
   saved: Place[] = [];
   searching = false;
@@ -129,7 +157,19 @@ export class PlaceSearchComponent implements OnInit {
     private geo: GeolocationService,
     private booking: BookingService,
     private cdr: ChangeDetectorRef,
+    private element: ElementRef<HTMLElement>,
   ) {}
+
+  openOptions(): void { if (this.selectShortcuts) { this.optionsOpen = true; this.optionsOpenChange.emit(true); this.cdr.markForCheck(); } }
+  closeOptions(): void { if (this.selectShortcuts) { this.optionsOpen = false; this.optionsOpenChange.emit(false); this.cdr.markForCheck(); } }
+  toggleOptions(): void { this.optionsOpen ? this.closeOptions() : this.openOptions(); }
+
+  @HostListener('document:pointerdown', ['$event'])
+  onOutsidePointer(event: PointerEvent): void {
+    if (!this.selectShortcuts || !this.optionsOpen) return;
+    const target = event.target as HTMLElement;
+    if (!this.element.nativeElement.contains(target) && !target.closest('[data-place-search-control]')) this.closeOptions();
+  }
 
   async ngOnInit(): Promise<void> {
     try {
@@ -146,7 +186,19 @@ export class PlaceSearchComponent implements OnInit {
     this.cdr.markForCheck();
   }
 
+  setSelectedPlace(place: Place | null): void {
+    ++this.seq;
+    if (this.debounce) clearTimeout(this.debounce);
+    this.query = this.selectedQuery = place?.address ?? '';
+    this.suggestions = [];
+    this.searching = false;
+    this.cdr.markForCheck();
+  }
+
   onQuery(value: string): void {
+    this.selectedQuery = '';
+    const request = ++this.seq;
+    this.openOptions();
     this.query = value;
     this.error = null;
     if (this.debounce) clearTimeout(this.debounce);
@@ -163,11 +215,14 @@ export class PlaceSearchComponent implements OnInit {
 
     // 260 ms after the last keystroke — long enough not to fire on every
     // letter, short enough to feel live.
-    this.debounce = setTimeout(() => void this.run(value), 260);
+    this.debounce = setTimeout(() => void this.run(value, request), 260);
   }
 
   clear(): void {
-    this.query = '';
+    ++this.seq;
+    if (this.debounce) clearTimeout(this.debounce);
+    this.openOptions();
+    this.query = this.selectedQuery = '';
     this.suggestions = [];
     this.searching = false;
     this.cdr.markForCheck();
@@ -181,10 +236,12 @@ export class PlaceSearchComponent implements OnInit {
       this.cdr.markForCheck();
       return;
     }
+    this.closeOptions();
     this.picked.emit({ lat: detail.lat, lng: detail.lng, address: detail.description });
   }
 
   pick(place: Place): void {
+    this.closeOptions();
     this.picked.emit(place);
   }
 
@@ -196,6 +253,7 @@ export class PlaceSearchComponent implements OnInit {
       const fix = await this.geo.getCurrentPosition();
       if (!fix) throw new Error('no fix');
       const address = (await this.places.reverseGeocode(fix.lat, fix.lng)) ?? 'Current location';
+      this.closeOptions();
       this.picked.emit({ lat: fix.lat, lng: fix.lng, address });
     } catch {
       this.error = 'We couldn\'t get your location. Search for it instead.';
@@ -208,13 +266,13 @@ export class PlaceSearchComponent implements OnInit {
   trackBySuggestion = (_: number, s: { place_id: string }): string => s.place_id;
   trackBySaved = (_: number, p: Place): string => p.label ?? p.address;
 
-  private async run(value: string): Promise<void> {
-    const mine = ++this.seq;
+  private async run(value: string, mine: number): Promise<void> {
     try {
       const results = await this.places.autocompleteSearch(value, this.near);
       if (mine !== this.seq) return; // a newer query already answered
       this.suggestions = results;
     } catch {
+      if (mine !== this.seq) return;
       this.suggestions = [];
     } finally {
       if (mine === this.seq) this.searching = false;

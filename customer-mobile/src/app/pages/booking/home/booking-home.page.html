@@ -185,23 +185,17 @@
           <strong>{{ tile.title }}</strong>
         </button>
       </div>
-      <div class="bh-scope-row" *ngIf="hasScopeSwitch" role="group" aria-label="Journey type">
-        <button *ngFor="let s of scopes" type="button" [class.is-selected]="scope === s"
-          [attr.aria-pressed]="scope === s" (click)="pickScope(s)">{{ scopeLabel(s) }}</button>
-        <span *ngIf="city">{{ city.name }}</span>
-      </div>
     </div>
 
     <div #bookingScroll class="bh-home-scroll">
       <div id="home-service-panel" [ngSwitch]="mode">
         <section *ngSwitchCase="'private'" class="bh-service-panel" aria-label="Private booking">
           <h1 class="bh-home-title">Where are you going?</h1>
-          <button class="bh-search" type="button" (click)="whereTo()">
+          <button class="bh-search bh-search--book" type="button" (click)="whereTo()">
             <ion-icon name="search-outline" aria-hidden="true"></ion-icon>
             <span>Where to?</span>
-            <span class="bh-search-action"><ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon></span>
+            <span class="bh-search-action bh-search-action--label">Book a ride</span>
           </button>
-          <ng-container *ngTemplateOutlet="savedPlacesPanel"></ng-container>
         </section>
         <section *ngSwitchCase="'fixed'" class="bh-service-panel" aria-label="Fixed booking">
           <ng-container *ngTemplateOutlet="fixedRoutes"></ng-container>
@@ -262,16 +256,6 @@
         </div>
       </section>
 
-      <ng-template #savedPlacesPanel>
-      <div class="bh-saved-places" aria-label="Saved places">
-        <a *ngFor="let place of savedPlaces" routerLink="/customer-tabs/saved-locations" [attr.aria-label]="'View saved place: ' + place.label">
-          <ion-icon [name]="place.label.toLowerCase() === 'home' ? 'home-outline' : (place.label.toLowerCase() === 'work' ? 'briefcase-outline' : 'location-outline')" aria-hidden="true"></ion-icon>{{ place.label }}
-        </a>
-        <a routerLink="/customer-tabs/saved-locations"><ion-icon name="add-outline" aria-hidden="true"></ion-icon>{{ savedPlaces.length ? 'Add place' : 'Save a place' }}</a>
-      </div>
-
-      </ng-template>
-
       <ng-template #fixedRoutes>
       <section class="bh-route-section" aria-labelledby="home-routes-title">
         <div class="bh-section-heading"><h2 id="home-routes-title">Explore fixed routes</h2>
@@ -324,4 +308,33 @@
 
   </div>
 </ion-content>
+
+<ion-modal [isOpen]="nearbyCarsModalOpen" (didDismiss)="nearbyCarsModalOpen = false" class="bh-nearby-modal"
+  [initialBreakpoint]="0.8" [breakpoints]="[0, 0.8]" [handle]="true">
+  <ng-template>
+    <ion-content class="bh-nearby-content">
+      <section class="bh-nearby-details" aria-labelledby="nearby-drivers-title">
+        <header>
+          <div><h2 id="nearby-drivers-title">Drivers Available</h2></div>
+          <button type="button" aria-label="Close driver details" (click)="nearbyCarsModalOpen = false"><ion-icon name="close-outline"></ion-icon></button>
+        </header>
+        <p class="bh-nearby-explainer"><ion-icon name="location-outline" aria-hidden="true"></ion-icon><span>Near your current location</span><span class="bh-nearby-count" [attr.aria-label]="selectedNearbyCars.length + ' drivers available'">{{ selectedNearbyCars.length }}</span></p>
+        <p class="bh-nearby-empty" role="status" *ngIf="nearbyCarsError">Couldn’t refresh availability. Trying again…</p>
+        <p class="bh-nearby-empty" role="status" *ngIf="!nearbyCarsError && !selectedNearbyCars.length">These drivers are no longer available here.</p>
+        <article class="bh-nearby-driver" *ngFor="let car of selectedNearbyCars">
+          <div class="bh-nearby-vehicle">
+            <img *ngIf="nearbyCarImage(car) as vehicleImage; else nearbyCarImageFallback" [src]="vehicleImage" [alt]="nearbyCarName(car)" (error)="onNearbyCarImageError(vehicleImage)" />
+            <ng-template #nearbyCarImageFallback><div class="bh-nearby-image-fallback"><ion-icon name="car-sport-outline" aria-hidden="true"></ion-icon><span>Vehicle image unavailable</span></div></ng-template>
+          </div>
+          <div class="bh-nearby-card-body">
+            <h3>{{ car.driver_name || 'Name unavailable' }}</h3>
+            <p class="bh-nearby-car-name">{{ nearbyCarName(car) }}</p>
+            <span class="bh-nearby-colour">{{ car.vehicle?.color || 'Colour unavailable' }}</span>
+          </div>
+          <div class="bh-nearby-distance"><ion-icon name="navigate-outline" aria-hidden="true"></ion-icon><strong>{{ nearbyCarDistance(car) }}</strong></div>
+        </article>
+      </section>
+    </ion-content>
+  </ng-template>
+</ion-modal>
 

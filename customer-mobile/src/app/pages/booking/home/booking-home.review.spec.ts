@@ -47,7 +47,7 @@ describe('Booking Home location regressions', () => {
     const sharedOffers = root.querySelector('.bh-offers-section');
     const services = root.querySelectorAll<HTMLButtonElement>('.bh-service-controls .bh-services button');
     expect(root.querySelector('.bh-service-panel')?.textContent).toContain('Where to?');
-    expect(root.querySelector('.bh-saved-places')).not.toBeNull();
+    expect(root.querySelector('.bh-saved-places')).toBeNull();
     expect(root.querySelector('.bh-route-section')).toBeNull();
     expect(services[1].textContent).toContain('Book A Car');
 

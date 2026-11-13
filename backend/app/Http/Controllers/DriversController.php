@@ -823,6 +823,7 @@ class DriversController extends Controller
                 ];
             })
             ->filter(fn ($d) => $d['distance_km'] <= $radiusKm)
+            ->unique('id')
             ->sortBy('distance_km')
             ->take($limit)
             ->values();
@@ -834,7 +835,7 @@ class DriversController extends Controller
         $driverUserIds = $nearby->pluck('id')->all();
         $drivers = Driver::query()
             ->whereIn('user_id', $driverUserIds)
-            ->with(['cityVehicleType:id,display_name', 'vehicleType:id,name'])
+            ->with(['cityVehicleType:id,display_name', 'vehicleType:id,name', 'user:id,name'])
             ->get()
             ->keyBy('user_id');
 
@@ -849,9 +850,11 @@ class DriversController extends Controller
                 $requestedPlatform,
                 preloadedImages: $preloaded
             );
+            $d['driver_name'] = $driver?->user?->name;
             $d['map_marker_url'] = $imagePayload['map_marker_url'];
             $d['image_url'] = $imagePayload['image_url'];
             $d['vehicle'] = [
+                'name' => $familyName,
                 'type' => $driver?->vehicle_type,
                 'brand' => $driver?->vehicle_brand,
                 'model' => $driver?->vehicle_model,

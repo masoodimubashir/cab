@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
 
@@ -6,6 +6,7 @@ import { ApiService } from '../../../core/api.service';
 import { RealtimeService } from '../../../core/realtime.service';
 import { BookingService } from '../booking.service';
 import { Place } from '../booking.models';
+import { PlaceSearchComponent } from '../place-search.component';
 
 type Step = 'pickup' | 'drop' | 'car' | 'price';
 type Waiting = 'idle' | 'searching' | 'bids';
@@ -79,6 +80,16 @@ export class PrivateBookPage implements OnInit, OnDestroy {
 
   busy = false;
   error: string | null = null;
+  locationViewActive = false;
+  pickupSearchOpen = false;
+  pickupConfirmed = false;
+  dropConfirmed = false;
+  private pickupSearch?: PlaceSearchComponent;
+  @ViewChild('pickupSearch') set pickupSearchControl(search: PlaceSearchComponent | undefined) {
+    this.pickupSearch = search;
+    if (search) search.setSelectedPlace(this.activeMapPlace);
+  }
+  dropSearchOpen = false;
 
   private countdown?: ReturnType<typeof setInterval>;
   private poll?: ReturnType<typeof setInterval>;
@@ -101,9 +112,29 @@ export class PrivateBookPage implements OnInit, OnDestroy {
       void this.router.navigate(['/customer-tabs/go']);
       return;
     }
-    // If they already set a pickup on the home map, start at the drop.
-    if (this.booking.trip.pickup) this.step = 'drop';
+    this.booking.clearPlaces();
+    this.step = 'pickup';
     this.loadVehicleTypes();
+  }
+
+  ionViewWillEnter(): void {
+    this.locationViewActive = Boolean(this.booking.trip.cityId);
+    // Ionic can reuse this page after returning Home. A new, unsubmitted flow
+    // starts empty rather than restoring the previous location choices.
+    if (!this.tripId && this.booking.trip.cityId && !this.booking.trip.pickup && !this.booking.trip.drop) {
+      this.step = 'pickup';
+      this.pickupConfirmed = false;
+      this.dropConfirmed = false;
+      this.error = null;
+      this.cdr.markForCheck();
+    }
+  }
+
+  ionViewWillLeave(): void {
+    this.locationViewActive = false;
+    this.pickupSearchOpen = false;
+    this.dropSearchOpen = false;
+    this.cdr.markForCheck();
   }
 
   ngOnDestroy(): void {
@@ -114,6 +145,17 @@ export class PrivateBookPage implements OnInit, OnDestroy {
 
   get fromLabel(): string { return this.booking.trip.pickup?.address ?? ''; }
   get toLabel(): string { return this.booking.trip.drop?.address ?? ''; }
+  get mapPickup(): Place | null { return this.booking.trip.pickup ?? null; }
+  get mapInitialPosition(): { lat: number; lng: number } | null { return this.booking.homeLocation?.fix ?? null; }
+  get activeMapPlace(): Place | null { return this.step === 'drop' ? this.booking.trip.drop ?? null : this.mapPickup; }
+  get placeConfirmed(): boolean { return this.step === 'drop' ? this.dropConfirmed : this.pickupConfirmed; }
+  get placeSearchPlaceholder(): string { return this.step === 'drop' ? 'Search your destination' : 'Search your pickup'; }
+  get placeOptionsOpen(): boolean { return this.step === 'drop' ? this.dropSearchOpen : this.pickupSearchOpen; }
+  set placeOptionsOpen(open: boolean) { if (this.step === 'drop') this.dropSearchOpen = open; else this.pickupSearchOpen = open; }
+
+  invalidatePlaceSelection(): void { if (this.step === 'drop') this.dropConfirmed = false; else this.pickupConfirmed = false; }
+  onPlacePicked(place: Place): void { if (this.step === 'drop') this.onDrop(place); else this.onPickup(place); }
+  continuePlace(): void { if (this.step === 'drop') this.continueToCar(); else this.continueToDestination(); }
 
   get stepIndex(): number {
     return { pickup: 1, drop: 2, car: 3, price: 4 }[this.step];
@@ -127,13 +169,56 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   // ---- steps 1 & 2: pickup / drop --------------------------------------
 
   onPickup(place: Place): void {
+    this.pickupSearchOpen = false;
     this.booking.setPickup(place);
-    this.step = 'drop';
+    this.pickupConfirmed = true;
+    this.pickupSearch?.setSelectedPlace(place);
+    this.error = null;
     this.cdr.markForCheck();
+  }
+
+  continueToDestination(): void {
+    if (!this.booking.trip.pickup) {
+      this.error = 'Choose your pickup first.';
+      this.cdr.markForCheck();
+      return;
+    }
+    this.error = null;
+    this.step = 'drop';
+    this.pickupSearchOpen = this.dropSearchOpen = false;
+    this.pickupSearch?.setSelectedPlace(this.booking.trip.drop ?? null);
+    this.cdr.markForCheck();
+  }
+
+  editPickup(): void {
+    this.step = 'pickup';
+    this.error = null;
+    this.pickupSearchOpen = this.dropSearchOpen = false;
+    this.pickupSearch?.setSelectedPlace(this.mapPickup);
+    this.cdr.markForCheck();
+  }
+
+  editDestination(): void { if (this.step !== 'drop') this.continueToDestination(); }
+
+  onDeviceLocation(place: Place): void {
+    if (this.locationViewActive && !this.booking.trip.pickup) {
+      this.booking.setPickup(place);
+      if (this.step === 'pickup') this.pickupSearch?.setSelectedPlace(place);
+      this.cdr.markForCheck();
+    }
   }
 
   onDrop(place: Place): void {
     this.booking.setDrop(place);
+    this.dropConfirmed = true;
+    this.dropSearchOpen = false;
+    this.pickupSearch?.setSelectedPlace(place);
+    this.error = null;
+    this.cdr.markForCheck();
+  }
+
+  continueToCar(): void {
+    if (!this.booking.trip.drop) return;
     this.step = 'car';
     this.loadVehicleTypes();
     void this.loadEstimate();
@@ -156,11 +241,18 @@ export class PrivateBookPage implements OnInit, OnDestroy {
     void this.loadEstimate();
   }
 
+  get selectedVehicle(): VehicleType | null {
+    return this.vehicleTypes.find(vehicle => vehicle.id === this.vehicleTypeId) ?? null;
+  }
+
+  retryEstimate(): void { void this.loadEstimate(); }
+
   private async loadEstimate(): Promise<void> {
     const { pickup, drop, cityId } = this.booking.trip;
     if (!pickup || !drop || !cityId) return;
 
     this.estimating = true;
+    this.error = null;
     this.error = null;
     this.cdr.markForCheck();
 
@@ -280,7 +372,7 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   back(): void {
     this.error = null;
     switch (this.step) {
-      case 'drop': this.step = this.booking.trip.pickup ? 'pickup' : 'pickup'; break;
+      case 'drop': this.editPickup(); break;
       case 'car': this.step = 'drop'; break;
       case 'price': this.step = 'car'; break;
       default: void this.router.navigate(['/customer-tabs/go']);

@@ -199,8 +199,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/trips/{trip}/negotiation', [FareNegotiationController::class, 'show']);
     Route::get('/drivers/me', [DriversController::class, 'me']);
-    // Anonymized nearby-drivers list for the customer "searching" map.
-    // Returns lat/lng + opaque driver id only — no PII.
+    // Available nearby drivers for the customer map and driver-detail preview.
     Route::get('/drivers/nearby', [DriversController::class, 'nearby']);
 });
 

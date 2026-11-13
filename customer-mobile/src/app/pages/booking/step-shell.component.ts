@@ -29,9 +29,9 @@ import { IonicModule } from '@ionic/angular';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, IonicModule],
   template: `
-    <div class="sf" [class.sf--reference]="reference">
+    <div class="sf" [class.sf--reference]="reference" [class.sf--header-title]="titleInHeader" [class.sf--map-layout]="mapLayout" [class.sf--inline-search]="inlineSearch" [class.sf--body-hidden]="hideBody">
       <!-- Bar: back · trip · step counter. Fixed; never scrolls away. -->
-      <header class="sf__bar">
+      <header class="sf__bar" *ngIf="!mapHeader">
         <button class="sf__back" type="button" aria-label="Go back" (click)="back.emit()"><ion-icon name="arrow-back-outline" aria-hidden="true"></ion-icon></button>
 
         <div class="sf__trip" *ngIf="from || to; else titleInBar">
@@ -41,19 +41,23 @@ import { IonicModule } from '@ionic/angular';
         </div>
         <ng-template #titleInBar><div class="sf__trip sf__trip--label">{{ barLabel }}</div></ng-template>
 
+        <h1 class="sf__bar-title" *ngIf="titleInHeader">{{ title }}</h1>
+
         <span class="sf__step" *ngIf="fareLabel || stepLabel">{{ fareLabel || stepLabel }}</span>
       </header>
 
       <!-- Progress: one segment per step, filled up to the current one. -->
-      <div class="sf__prg" *ngIf="total > 0" aria-hidden="true">
+      <div class="sf__prg" *ngIf="total > 0 && !mapHeader" aria-hidden="true">
         <span *ngFor="let seg of segments; let i = index" [class.on]="i < step"></span>
       </div>
 
+      <div class="sf__map" *ngIf="mapLayout"><ng-content select="[step-map]"></ng-content></div>
+
       <!-- The step's own content. Scrolls if it must; the button never does. -->
-      <div class="sf__body">
+      <div class="sf__body" [hidden]="hideBody">
         <h1 class="sf__caption" *ngIf="reference && compactTitle">Step {{ step }} of {{ total }} · {{ title }}</h1>
-        <p class="sf__caption" *ngIf="reference && total > 0 && !compactTitle">Step {{ step }} of {{ total }} · {{ title }}</p>
-        <div class="sf__title-row" *ngIf="title && !compactTitle">
+        <p class="sf__caption" *ngIf="reference && total > 0 && !compactTitle">Step {{ step }} of {{ total }}<ng-container *ngIf="!titleInHeader"> · {{ title }}</ng-container></p>
+        <div class="sf__title-row" *ngIf="title && !compactTitle && !titleInHeader">
           <h1 class="bk-title">{{ title }}</h1>
           <ng-content select="[title-action]"></ng-content>
         </div>
@@ -65,16 +69,22 @@ import { IonicModule } from '@ionic/angular';
            action (Back, Cancel) can be projected in via [slot=dock-extra]. -->
       <footer class="sf__dock" *ngIf="cta || hasDock">
         <ng-content select="[dock-extra]"></ng-content>
-        <div class="sf__actions" [class.sf__actions--pair]="secondaryLabel">
+        <div class="sf__actions" [class.sf__actions--pair]="secondaryLabel" [class.sf__actions--search]="inlineSearch">
+        <ng-content select="[dock-search]"></ng-content>
         <button
           *ngIf="cta"
           class="sf__cta"
           type="button"
           [class.sf__cta--ghost]="ghost"
           [class.sf__cta--danger]="danger"
+          [class.sf__cta--select]="selectAction"
+          [attr.aria-expanded]="selectAction ? selectExpanded : null"
+          [attr.data-place-search-control]="selectAction ? '' : null"
           [disabled]="disabled"
           (click)="primary.emit()">
           {{ cta }}
+          <ion-icon *ngIf="actionArrow && !selectAction" name="arrow-forward-outline" aria-hidden="true"></ion-icon>
+          <ion-icon *ngIf="selectAction" [name]="selectExpanded ? 'chevron-up-outline' : 'chevron-down-outline'" aria-hidden="true"></ion-icon>
         </button>
         <button *ngIf="secondaryLabel" class="sf__secondary" type="button" [disabled]="secondaryDisabled" (click)="secondary.emit()">{{ secondaryLabel }}</button>
         </div>
@@ -128,6 +138,8 @@ import { IonicModule } from '@ionic/angular';
       color: var(--dc-ink);
     }
     .sf__trip--label { color: var(--dc-ink); }
+    .sf--header-title .sf__trip { flex: 1 1 0; }
+    .sf__bar-title { flex: 1 1 0; min-width: 0; margin: 0; text-align: center; color: var(--dc-ink); font-size: 16px; font-weight: 750; line-height: 1.3; overflow-wrap: anywhere; }
     /* Each place truncates on its own, so a long name on one end never
        squeezes the other down to nothing. */
     .sf__place { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -217,6 +229,18 @@ import { IonicModule } from '@ionic/angular';
     .sf--reference .bk-title { font-size: 20px; }
     .sf--reference .sf__dock { box-shadow: none; border-top: 1px solid var(--dc-hairline); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
     .sf--reference .sf__cta { box-shadow: none; border-radius: 12px; }
+    .sf__map { flex: 1 1 auto; min-height: 140px; position: relative; overflow: hidden; }
+    .sf--map-layout { position: relative; }
+    .sf--map-layout .sf__map { position: absolute; inset: 0; min-height: 0; }
+    .sf--map-layout .sf__body { flex: 0 1 auto; max-height: 42%; margin: auto 12px 0; padding: 12px; background: var(--dc-canvas); border-radius: 18px; box-shadow: 0 3px 18px #14223716; z-index: 1; }
+    .sf--map-layout .sf__dock { position: relative; z-index: 1; margin: 10px 12px max(32px, env(safe-area-inset-bottom)); padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+    .sf__actions--search { grid-template-columns: minmax(0, 8fr) minmax(0, 2fr); gap: 8px; align-items: stretch; }
+    .sf__body[hidden] { display: none; }
+    .sf--map-layout.sf--body-hidden .sf__dock { margin-top: auto; }
+    .sf--inline-search .sf__cta { min-width: 0; padding: 8px; font-size: 12px; line-height: 1.3; overflow-wrap: anywhere; }
+    .sf--inline-search .sf__cta--select { display: flex; align-items: center; justify-content: center; gap: 5px; background: #fff; color: var(--dc-green); border: 0; box-shadow: none; cursor: pointer; }
+    .sf__cta--select ion-icon { flex: none; font-size: 16px; }
+    .sf--inline-search .sf__cta:not(.sf__cta--select) { display: flex; align-items: center; justify-content: center; gap: 6px; }
     button:focus-visible { outline: 2px solid var(--dc-green); outline-offset: 2px; }
     @media (prefers-reduced-motion: reduce) { .sf__prg span { transition: none; } }
   `],
@@ -224,6 +248,14 @@ import { IonicModule } from '@ionic/angular';
 export class StepShellComponent {
   @Input() reference = false;
   @Input() compactTitle = false;
+  @Input() titleInHeader = false;
+  @Input() mapLayout = false;
+  @Input() mapHeader = false;
+  @Input() inlineSearch = false;
+  @Input() selectAction = false;
+  @Input() selectExpanded = false;
+  @Input() actionArrow = false;
+  @Input() hideBody = false;
   @Input() fareLabel = '';
   @Input() dockHint = '';
   @Input() secondaryLabel = '';

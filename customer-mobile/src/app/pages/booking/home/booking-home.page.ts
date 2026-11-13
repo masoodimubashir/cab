@@ -39,6 +39,7 @@ import {
 } from '../booking.service';
 import { City, RideMode, ServiceTile, TripScope } from '../booking.models';
 import { environment } from '../../../../environments/environment';
+import { NearbyHomeCar, NearbyCarGroup, groupNearbyCars, NearbyRoadDistances, carName, carImage } from './nearby-cars';
 
 declare const google: any;
 
@@ -104,14 +105,6 @@ interface HomeRouteStop {
   is_drop: boolean;
   is_active: boolean;
   is_temporarily_unavailable: boolean;
-}
-
-interface NearbyHomeCar {
-  id: number;
-  lat: number;
-  lng: number;
-  bearing_deg?: number | null;
-  map_marker_url?: string | null;
 }
 
 interface HomeOffer {
@@ -185,7 +178,6 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.syncHomeMap();
   }
   offersTab: 'offers' | 'coupons' = 'offers';
-  savedPlaces: Array<{ label: string }> = [];
   homeOffers: HomeOffer[] = [];
   offerBanners: AppBanner[] = [];
   private failedHomeBannerImages = new Set<string>();
@@ -203,6 +195,35 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   private previewPickupKey: string | null = null;
   private nearbyCarsSub?: Subscription;
   private nearbyCarMarkers = new Map<number, any>();
+  nearbyCarGroups: NearbyCarGroup[] = [];
+  nearbyCarsError = false;
+  nearbyCarsModalOpen = false;
+  private selectedNearbyCarIds: number[] = [];
+  private failedNearbyCarImages = new Set<string>();
+  private nearbyRoadDistances = new NearbyRoadDistances(
+    (origins, destination) => this.fetchNearbyRoadDistances(origins, destination),
+    () => this.zone.run(() => this.refreshNearbyDistanceLabels()),
+  );
+
+  get selectedNearbyCars(): NearbyHomeCar[] {
+    return this.nearbyCarGroups.find(group => group.cars.some(car => this.selectedNearbyCarIds.includes(car.id)))?.cars ?? [];
+  }
+
+  nearbyCarDistance(car: NearbyHomeCar): string { return this.nearbyRoadDistances.label(car, this.currentCoords); }
+  nearbyCarName(car: NearbyHomeCar): string { return carName(car); }
+  nearbyCarImage(car: NearbyHomeCar): string | null { return carImage(car, this.failedNearbyCarImages); }
+  onNearbyCarImageError(url: string): void {
+    this.failedNearbyCarImages.add(url);
+    this.cdr.markForCheck();
+  }
+
+  openNearbyCars(key: number): void {
+    const group = this.nearbyCarGroups.find(item => item.key === key);
+    if (!group) return;
+    this.selectedNearbyCarIds = group.cars.map(car => car.id);
+    this.nearbyCarsModalOpen = true;
+    this.cdr.markForCheck();
+  }
 
   // ── App Banners ─────────────────────────────────────────────────────────
   fullScreenBanner: AppBanner | null = null;
@@ -301,7 +322,6 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   ionViewWillEnter(): void {
     this.pageActive = true;
     this.startNotificationBadge();
-    this.loadSavedPlaces();
     this.loadHomeOffers();
     if (!this.located || !this.city) {
       void this.initHome();
@@ -492,10 +512,34 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   private initHome(): Promise<void> {
     if (this.homeInitPromise) return this.homeInitPromise;
-    const work = Promise.all([this.loadLocationAndCatalog(), this.ensureMap(), this.startWatch()]).then(() => {});
+    this.restoreHomeLocation();
+    const work = Promise.all([
+      this.located && this.city ? Promise.resolve() : this.loadLocationAndCatalog(),
+      this.ensureMap(), this.startWatch(),
+    ]).then(() => {});
     this.homeInitPromise = work;
     void work.finally(() => { if (this.homeInitPromise === work) this.homeInitPromise = null; });
     return work;
+  }
+
+  private restoreHomeLocation(): void {
+    if (this.located && this.city) return;
+    const saved = this.booking.homeLocation;
+    const userId = this.auth.getUser()?.id;
+    if (!saved || !userId || saved.userId !== userId || !this.validCoords(saved.fix)) return;
+    this.city = saved.city;
+    this.catalog = saved.catalog;
+    this.catalogFix = saved.fix;
+    this.currentCoords = this.geo.recentPosition() || saved.fix;
+    this.located = true;
+    this.loading = this.locationFetching = this.locationPermissionNeeded = false;
+    this.booking.setCity(saved.city.id);
+    const offered = scopesOffered(this.catalog);
+    this.scopes = offered.length ? offered : ['local'];
+    this.scope = this.scopes[0];
+    this.rebuildTiles();
+    this.loadHomeRoutes();
+    this.cdr.markForCheck();
   }
 
   async requestLocation(): Promise<void> {
@@ -684,6 +728,10 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     const latlng = { lat, lng };
     const revision = ++this.positionRevision;
     this.currentCoords = latlng;
+    if (this.mode === 'private' && this.nearbyCarGroups.length) {
+      this.nearbyRoadDistances.update(this.nearbyCarGroups.reduce<NearbyHomeCar[]>((cars, group) => cars.concat(group.cars), []), latlng);
+      this.refreshNearbyDistanceLabels();
+    }
     this.updateNearbyRoutes();
     if (!this.map) return;
 
@@ -729,6 +777,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   private beginLocationRequest(): number {
     const request = ++this.locationRevision;
+    // Once Home has usable location/catalog data, movement refreshes it quietly.
+    if (this.located && this.city) return request;
     this.zone.run(() => {
       this.loading = true;
       this.locationFetching = true;
@@ -750,6 +800,11 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   private failLocation(request: number, message = 'We couldn’t access your location. Enable location access and try again.'): void {
     if (!this.isCurrentLocationRequest(request)) return;
+    if (this.located && this.city) {
+      this.resolvingFix = null;
+      this.catalogRetryAfter = Date.now() + 15000;
+      return;
+    }
     this.zone.run(() => {
       this.located = false;
       this.loading = false;
@@ -847,6 +902,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
         this.locationPermissionNeeded = false;
         this.booking.setCity(activeCity.id);
         this.catalog = catalogData;
+        const userId = this.auth.getUser()?.id;
+        if (userId) this.booking.homeLocation = { userId, city: activeCity, catalog: catalogData, fix: { ...fix } };
 
         const offered = scopesOffered(this.catalog);
         this.scopes = offered.length ? offered : ['local'];
@@ -927,7 +984,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     if (mode) this.booking.setMode(mode, this.tiles.find(tile => tile.mode === mode)?.rideTypeId ?? null);
 
     switch (mode) {
-      case 'private': void this.router.navigate(['/customer-tabs/go/private']); break;
+      case 'private': this.booking.clearPlaces(); void this.router.navigate(['/customer-tabs/go/private']); break;
       case 'fixed':   void this.router.navigate(['/customer-tabs/go/fixed'], { queryParams: { scope: this.scope } }); break;
       case 'shuttle': void this.router.navigate(['/customer-tabs/go/shuttle']); break;
       default:        void this.router.navigate(['/customer-tabs/go/private']);
@@ -946,18 +1003,6 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   get offersFixed(): boolean {
     return this.tiles.some(tile => tile.mode === 'fixed');
-  }
-
-  private loadSavedPlaces(): void {
-    this.booking.savedPlaces().then(res => {
-      this.savedPlaces = (res.data ?? [])
-        .filter(place => typeof place.label === 'string' && place.label.trim())
-        .slice(0, 4);
-      this.cdr.markForCheck();
-    }).catch(() => {
-      this.savedPlaces = [];
-      this.cdr.markForCheck();
-    });
   }
 
   private loadHomeOffers(): void {
@@ -1126,31 +1171,57 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   private startNearbyCars(): void {
     if (this.nearbyCarsSub) return;
     this.nearbyCarsSub = timer(0, 6000).pipe(exhaustMap(() => {
-      const { lat, lng } = this.currentCoords!;
+      if (!this.currentCoords) return of({ data: [] as NearbyHomeCar[], failed: false });
+      const { lat, lng } = this.currentCoords;
       const params = new URLSearchParams({
         lat: String(lat), lng: String(lng), service_mode: 'private', scope: this.scope,
       });
       return this.api.get<{ data: NearbyHomeCar[] }>('/drivers/nearby?' + params)
-        .pipe(catchError(() => of({ data: [] as NearbyHomeCar[] })));
-    })).subscribe(({ data }) => {
+        .pipe(catchError(() => of({ data: [] as NearbyHomeCar[], failed: true })));
+    })).subscribe((response) => {
+      const { data } = response;
+      this.nearbyCarsError = 'failed' in response && response.failed === true;
+      this.nearbyCarGroups = groupNearbyCars(data ?? []);
+      this.nearbyRoadDistances.update(this.nearbyCarGroups.reduce<NearbyHomeCar[]>((cars, group) => cars.concat(group.cars), []), this.currentCoords);
       const ids = new Set<number>();
-      for (const car of data ?? []) {
-        if (!this.validCoords(car)) continue;
-        ids.add(car.id);
-        const bearing = car.bearing_deg ?? 0;
-        const markerUrl = car.map_marker_url || carSport;
+      for (const group of this.nearbyCarGroups) {
+        const car = group.cars[0];
+        ids.add(group.key);
         const position = { lat: car.lat, lng: car.lng };
-        let marker = this.nearbyCarMarkers.get(car.id);
+        let marker = this.nearbyCarMarkers.get(group.key);
+        const title = `${group.cars.length === 1 ? 'Available driver' : group.cars.length + ' available drivers'}, ${this.nearbyCarDistance(car)}, tap for details`;
         if (marker) {
           marker.position = position;
-          updateCarMarkerBearing(marker, bearing);
-          updateCarMarkerImage(marker, markerUrl);
+          marker.title = title;
+          const content = marker.content as HTMLElement;
+          content.querySelector('.bh-car-count')!.textContent = group.cars.length > 1 ? String(group.cars.length) : '';
+          (content.querySelector('.bh-car-count') as HTMLElement).hidden = group.cars.length === 1;
+          content.querySelector('.bh-car-distance')!.textContent = this.nearbyCarDistance(car);
+          updateCarMarkerBearing(marker, car.bearing_deg ?? 0);
+          updateCarMarkerImage(marker, car.map_marker_url || carSport);
         } else {
+          const content = document.createElement('div');
+          content.className = 'bh-nearby-car-marker';
+          const icon = buildReusableCarMarkerElement({ bearing: car.bearing_deg ?? 0, markerUrl: car.map_marker_url || carSport, width: 30, height: 46 });
+          content.appendChild(icon);
+          const count = document.createElement('span');
+          count.className = 'bh-car-count';
+          count.textContent = String(group.cars.length);
+          count.hidden = group.cars.length === 1;
+          content.appendChild(count);
+          const label = document.createElement('span');
+          label.className = 'bh-car-distance';
+          label.textContent = this.nearbyCarDistance(car);
+          content.appendChild(label);
+          const hint = document.createElement('span');
+          hint.className = 'bh-car-tap';
+          hint.textContent = 'Tap for details';
+          content.appendChild(hint);
           marker = new google.maps.marker.AdvancedMarkerElement({
-            position, map: this.map, title: 'Available Private car',
-            content: buildReusableCarMarkerElement({ bearing, markerUrl, width: 22, height: 42 }),
+            position, map: this.map, title, content, anchorTop: '-25px',
           });
-          this.nearbyCarMarkers.set(car.id, marker);
+          marker.addListener('click', () => this.zone.run(() => this.openNearbyCars(group.key)));
+          this.nearbyCarMarkers.set(group.key, marker);
         }
       }
       for (const [id, marker] of this.nearbyCarMarkers) {
@@ -1158,6 +1229,38 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
         marker.map = null;
         this.nearbyCarMarkers.delete(id);
       }
+      this.cdr.markForCheck();
+    });
+  }
+
+  private refreshNearbyDistanceLabels(): void {
+    for (const group of this.nearbyCarGroups) {
+      const marker = this.nearbyCarMarkers.get(group.key);
+      if (!marker) continue;
+      const distance = this.nearbyCarDistance(group.cars[0]);
+      marker.title = `${group.cars.length === 1 ? 'Available driver' : group.cars.length + ' available drivers'}, ${distance}, tap for details`;
+      const label = (marker.content as HTMLElement)?.querySelector('.bh-car-distance');
+      if (label) label.textContent = distance;
+    }
+    this.cdr.markForCheck();
+  }
+
+  private async fetchNearbyRoadDistances(origins: Array<{ lat: number; lng: number }>, destination: { lat: number; lng: number }): Promise<Array<number | null>> {
+    await this.places.ensureLoaded();
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve([]), 12000);
+      try {
+        new google.maps.DistanceMatrixService().getDistanceMatrix(
+          { origins, destinations: [destination], travelMode: 'DRIVING' },
+          (response: any, status: string) => {
+            clearTimeout(timeout);
+            resolve(origins.map((_, index) => {
+              const element = status === 'OK' ? response?.rows?.[index]?.elements?.[0] : null;
+              return element?.status === 'OK' ? element.distance?.value ?? null : null;
+            }));
+          },
+        );
+      } catch { clearTimeout(timeout); resolve([]); }
     });
   }
 
@@ -1226,6 +1329,12 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.nearbyPickupMarkers.clear();
     this.pickupChoices.clear();
     this.nearbyCarMarkers.clear();
+    this.nearbyRoadDistances.clear();
+    this.nearbyCarGroups = [];
+    this.nearbyCarsModalOpen = false;
+    this.selectedNearbyCarIds = [];
+    this.nearbyCarsError = false;
+    this.failedNearbyCarImages.clear();
   }
 
   openHomeRoute(route: HomeRoute): void {

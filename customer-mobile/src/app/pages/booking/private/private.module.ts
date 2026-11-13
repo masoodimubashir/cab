@@ -7,6 +7,7 @@ import { RouterModule, Routes } from '@angular/router';
 import { PrivateBookPage } from './private.page';
 import { StepShellComponent } from '../step-shell.component';
 import { PlaceSearchComponent } from '../place-search.component';
+import { PrivatePlaceMapComponent } from './private-place-map.component';
 
 const routes: Routes = [{ path: '', component: PrivateBookPage }];
 
@@ -18,6 +19,7 @@ const routes: Routes = [{ path: '', component: PrivateBookPage }];
     RouterModule.forChild(routes),
     StepShellComponent,
     PlaceSearchComponent,
+    PrivatePlaceMapComponent,
   ],
   declarations: [PrivateBookPage],
 })
