@@ -58,11 +58,7 @@ class AdminFixedRoutesController
 
         $routes = array_map(function (array $draft) use ($city) {
             $name = trim((string) ($draft['name'] ?? ''));
-            $existing = $name === '' ? null : Route::query()
-                ->where('city_id', $city->id)
-                ->where('mode', 'fixed')
-                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)])
-                ->first();
+            $existing = $this->routes->findAdminRouteByName($city, $name);
 
             $draft['existing_route_id'] = $existing?->id;
             $draft['existing'] = $existing
@@ -112,11 +108,7 @@ class AdminFixedRoutesController
         $skipped = [];
         foreach ($parsed as $draft) {
             $name = trim((string) ($draft['name'] ?? ''));
-            $exists = $name !== '' && Route::query()
-                ->where('city_id', $city->id)
-                ->where('mode', 'fixed')
-                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)])
-                ->exists();
+            $exists = $this->routes->findAdminRouteByName($city, $name) !== null;
             if ($exists) {
                 $skipped[] = $name;
                 continue;
@@ -154,7 +146,11 @@ class AdminFixedRoutesController
         $this->availability->assertCityOwnsRoute($city, $route);
         $request->merge(['name' => is_string($request->input('name')) ? trim($request->input('name')) : $request->input('name')]);
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:120', Rule::unique('routes', 'name')->where(fn ($query) => $query->where('city_id', $city->id)->where('mode', 'fixed'))],
+            'name' => ['required', 'string', 'max:120', function ($attribute, $value, $fail) use ($city) {
+                if (is_string($value) && $this->routes->findAdminRouteByName($city, $value)) {
+                    $fail('A route with this name already exists in this city.');
+                }
+            }],
             'reverse' => ['required', 'boolean'],
             'is_active' => ['nullable', 'boolean'],
             'assigned_group_ids' => ['nullable', 'array'],

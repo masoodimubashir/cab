@@ -51,6 +51,80 @@ describe('Existing route editor names and assignments', () => {
     expect(payload.city_vehicle_type_id).toBe(5); expect(payload.fare_config.seat_fare).toBe(50);
     expect(api.put).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled(); expect(loads).toHaveBeenCalled();
   });
+  it('recognizes multiple models linked through stands and saves a route without a legacy model', async () => {
+    const record = route(); record.city_vehicle_type_id = null;
+    page.openEdit(record);
+    page.groups = [{ id: 10, name: 'Linked stand', vehicle_set_ids: [90], route_ids: [7], driver_user_ids: [100] }];
+    page.vehicleTypes = [
+      { id: 5, display_name: 'SUMO', max_people: 9, luggage_capacity: 0, vehicle_set_id: 90 },
+      { id: 6, display_name: 'TAVERA', max_people: 9, luggage_capacity: 0, vehicle_set_id: 90 },
+      { id: 8, display_name: 'Other', max_people: 4, luggage_capacity: 0, vehicle_set_id: 91 },
+    ];
+    expect(page.vehicleTypes.map(vehicle => page.isVehicleLinkedThroughStand(vehicle))).toEqual([true, true, false]);
+    expect(page.getVehicleDisplayName(null)).toBe('SUMO (9 seats), TAVERA (9 seats)');
+    expect(page.vehicleFilteredGroups.length).toBe(1);
+    expect(page.formValid).toBeTrue();
+    page.goToStep(6); expect(page.wizardStep).toBe(6);
+    page.submit(); await Promise.resolve();
+    expect(api.patch.calls.mostRecent().args[1].city_vehicle_type_id).toBeNull();
+    expect(api.patch.calls.count()).toBe(1);
+    expect(api.put).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
+  });
+  it('does not assign an arbitrary catalogue model when the saved route model is null', () => {
+    const record = route(); record.city_vehicle_type_id = null;
+    page.openEdit(record);
+    api.get.and.returnValue(of({ data: [{ id: '5', display_name: 'SUMO', max_people: 9, is_fixed: true, vehicle_set_id: '90' }] }));
+    page.loadVehicleTypes();
+    expect(page.form.city_vehicle_type_id).toBeNull();
+    expect(page.vehicleTypes[0].id).toBe(5); expect(page.vehicleTypes[0].vehicle_set_id).toBe(90);
+  });
+  it('normalizes the saved vehicle ID so the corresponding chip is selected', () => {
+    const record = route(); record.city_vehicle_type_id = '5';
+    page.openEdit(record);
+    expect(page.form.city_vehicle_type_id).toBe(5);
+  });
+  it('searches independently of the editable endpoint names', async () => {
+    page.openEdit(route());
+    const geocode = spyOn(page, 'geocodeAndSetLocation').and.resolveTo();
+    page.originSearchText = 'New start search';
+    page.destSearchText = 'New destination search';
+    await page.onOriginSearchEnter();
+    await page.onDestSearchEnter();
+    expect(geocode.calls.allArgs()).toEqual([['New start search', 'origin'], ['New destination search', 'dest']]);
+    expect(page.form.origin_name).toBe('Original start');
+    expect(page.form.dest_name).toBe('Original end');
+    page.form.origin_name = 'Custom start';
+    page.form.dest_name = 'Custom end';
+    page.onOriginSearchBlur(); page.onDestSearchBlur();
+    expect(geocode).toHaveBeenCalledTimes(2);
+    expect(page.form.origin_lat).toBe(34); expect(page.form.dest_lat).toBe(34.1);
+  });
+  it('prefills existing endpoint searches and clears them for a new route', () => {
+    page.originSearchText = 'Old start'; page.destSearchText = 'Old end';
+    page.openEdit(route());
+    expect(page.originSearchText).toBe('Original start'); expect(page.destSearchText).toBe('Original end');
+    page.originSearchText = 'Another start'; page.destSearchText = 'Another end';
+    page.openCreate();
+    expect(page.originSearchText).toBe(''); expect(page.destSearchText).toBe('');
+    expect(page.form.origin_name).toBe(''); expect(page.form.dest_name).toBe('');
+  });
+  it('autofills names from located places and permits renaming before saving', async () => {
+    page.openCreate();
+    (page as any).map = { panTo: () => undefined, setZoom: () => undefined };
+    const location = { lat: () => 34, lng: () => 74 };
+    (page as any).geocoder = { geocode: (_request: any, callback: any) => callback([
+      { formatted_address: 'Selected landmark, City', geometry: { location } },
+    ], 'OK') };
+    spyOn<any>(page, 'bestGeocodeStopName').and.returnValue('Selected landmark');
+    spyOn<any>(page, 'setOrigin').and.resolveTo();
+    spyOn<any>(page, 'setDest').and.resolveTo();
+    page.originSearchText = 'Start search'; page.destSearchText = 'End search';
+    await page.onOriginSearchEnter(); await page.onDestSearchEnter();
+    expect(page.form.origin_name).toBe('Selected landmark');
+    expect(page.form.dest_name).toBe('Selected landmark');
+    page.form.origin_name = 'Custom origin'; page.form.dest_name = 'Custom destination';
+    expect(page.originSearchText).toBe('Selected landmark'); expect(page.destSearchText).toBe('Selected landmark');
+  });
   it('adds an explicitly selected stand without removing existing stand memberships', async () => {
     page.openEdit(route()); spyOn(page, 'loadGroupsAndDrivers');
     page.form.assigned_group_id = 12; page.form.assigned_driver_ids = [];

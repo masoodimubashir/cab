@@ -17,7 +17,7 @@
       ></ion-back-button>
     </ion-buttons>
     <ion-title class="pg-header-title">
-      {{ selectedRoute ? selectedRoute.name : (activeVehicle ? activeVehicle.route_name || 'Active Route' : 'Choose Route') }}
+      {{ selectedRoute ? getRouteOriginName(selectedRoute) + ' → ' + getRouteDestName(selectedRoute) : (activeVehicle ? vehicleRouteLine(activeVehicle) : 'Choose Route') }}
     </ion-title>
     <ion-buttons slot="end">
       <ion-button class="dc-press" (click)="refresh()" [disabled]="loading || busy" aria-label="Reload">
@@ -1042,7 +1042,7 @@
             <span class="ir-live-dot"></span>
             INCOMING SEAT REQUEST
           </span>
-          <h2 class="ir-main-title">{{ activeVehicle?.route_name || 'Fixed Route Corridor' }}</h2>
+          <h2 class="ir-main-title">{{ vehicleRouteLine(activeVehicle) || 'Fixed Route Corridor' }}</h2>
         </div>
 
         <!-- Circular Countdown Timer (Fills as time passes) -->

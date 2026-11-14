@@ -297,7 +297,7 @@ class RefundRegisterService
             ['module' => 'fixed', 'reservation_id' => $row->id],
         );
 
-        return $this->shapeFixed($row->fresh(['route:id,name', 'routeDeparture:id,service_date,depart_at,driver_id', 'routeDeparture.driver:id,name', 'customer:id,name,phone', 'boardStop:id,name', 'dropStop:id,name', 'refundedBy:id,name']));
+        return $this->shapeFixed($row->fresh(['route:id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture:id,service_date,depart_at,driver_id', 'routeDeparture.driver:id,name', 'customer:id,name,phone', 'boardStop:id,name', 'dropStop:id,name', 'refundedBy:id,name']));
     }
 
     private function markShuttleRefunded(int $id, User $actor, string $method, ?string $reference, ?string $note): array
@@ -433,7 +433,7 @@ class RefundRegisterService
     {
         $query = SeatReservation::query()
             ->with([
-                'route:id,name',
+                'route:id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
                 'routeDeparture:id,service_date,depart_at,driver_id',
                 'routeDeparture.driver:id,name',
                 'customer:id,name,phone',

@@ -99,7 +99,7 @@ interface FixedRouteRow {
   stops: RouteStopRow[];
 }
 
-interface VehicleTypeOption { id: number; display_name: string; max_people: number; luggage_capacity: number; }
+interface VehicleTypeOption { vehicle_set_id?: number | null; id: number; display_name: string; max_people: number; luggage_capacity: number; }
 interface CityOption { id: number; name: string; }
 
 /** A route parsed from a Google My Maps KML/KMZ export, awaiting review + save. */
@@ -357,14 +357,19 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
               <input
                 id="wizard-origin-search"
                 type="text"
-                [(ngModel)]="form.origin_name"
+                [(ngModel)]="originSearchText"
                 (keydown.enter)="onOriginSearchEnter($event)"
                 (blur)="onOriginSearchBlur()"
                 [placeholder]="'Search start in ' + (getCityName(form.origin_city_id) || cityName) + '...'" />
             </label>
 
             <!-- Origin Loading Indicator -->
-            <p class="muted small">To rename this point, edit the text and continue. Press Enter to search for a different location.</p>
+            <p class="muted small">Select a search result, press Enter, or tap the map to set the start location.</p>
+            <label class="field" *ngIf="form.origin_lat != null">
+              <span class="field__lbl">Origin name <i>*</i></span>
+              <input type="text" [(ngModel)]="form.origin_name" maxlength="160" placeholder="Enter origin name" />
+              <small class="muted">Filled from the selected location. You can change this name without moving the map point.</small>
+            </label>
             <div class="location-setting-loader" *ngIf="isSettingOrigin">
               <div class="spinner-sm"></div>
               <span>Adding the origin, please wait...</span>
@@ -399,14 +404,19 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
               <input
                 id="wizard-dest-search"
                 type="text"
-                [(ngModel)]="form.dest_name"
+                [(ngModel)]="destSearchText"
                 (keydown.enter)="onDestSearchEnter($event)"
                 (blur)="onDestSearchBlur()"
                 [placeholder]="'Search destination in ' + ((form.scope === 'outstation' ? getCityName(form.dest_city_id) : null) || cityName) + '...'" />
             </label>
 
             <!-- Destination Loading Indicator -->
-            <p class="muted small">To rename this point, edit the text and continue. Press Enter to search for a different location.</p>
+            <p class="muted small">Select a search result, press Enter, or tap the map to set the destination location.</p>
+            <label class="field" *ngIf="form.dest_lat != null">
+              <span class="field__lbl">Destination name <i>*</i></span>
+              <input type="text" [(ngModel)]="form.dest_name" maxlength="160" placeholder="Enter destination name" />
+              <small class="muted">Filled from the selected location. You can change this name without moving the map point.</small>
+            </label>
             <div class="location-setting-loader" *ngIf="isSettingDest">
               <div class="spinner-sm"></div>
               <span>Adding the destination, please wait...</span>
@@ -687,24 +697,26 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
           <div class="wstep-content" *ngIf="wizardStep === 5">
             <div class="wstep-lead">
               <h3>Assign Vehicle, Stand & Drivers</h3>
-              <p>Attach this route to a vehicle model, stand, and assign local drivers.</p>
+              <p>Review linked vehicle models, choose a stand, and assign local drivers.</p>
               <p *ngIf="editingId">Existing stand assignments are kept when you save. Remove assignments from Stands when needed.</p>
               <p *ngIf="additionalStandNames">Also assigned to: {{ additionalStandNames }}</p>
             </div>
 
             <!-- 1. Vehicle Type Chips -->
             <div class="field">
-              <span class="field__lbl">1. Select Vehicle Type <i>*</i></span>
+              <span class="field__lbl">1. Vehicle models</span>
+              <p class="muted small">Models linked through this route’s stands are marked below. An additional route model is optional.</p>
               <div class="chips-grid" *ngIf="vehicleTypes.length; else noVehiclesCue">
                 <button type="button" class="chip-card" *ngFor="let v of vehicleTypes"
-                  [class.is-selected]="form.city_vehicle_type_id === v.id"
+                  [class.is-selected]="(form.city_vehicle_type_id === v.id || isVehicleLinkedThroughStand(v))"
                   (click)="onVehiclePicked(v.id)">
                   <span class="chip-icon">🚐</span>
                   <div class="chip-info">
                     <b class="chip-title">{{ v.display_name }}</b>
                     <span class="chip-sub">{{ v.max_people }} seats • {{ v.luggage_capacity || 0 }} luggage</span>
+                    <small *ngIf="isVehicleLinkedThroughStand(v)">Linked through stand</small>
                   </div>
-                  <tm-icon *ngIf="form.city_vehicle_type_id === v.id" name="check" [size]="16" class="chip-check text-green" />
+                  <tm-icon *ngIf="(form.city_vehicle_type_id === v.id || isVehicleLinkedThroughStand(v))" name="check" [size]="16" class="chip-check text-green" />
                 </button>
               </div>
               <ng-template #noVehiclesCue>
@@ -718,8 +730,8 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
               <span>Loading stands and drivers for vehicle...</span>
             </div>
 
-            <!-- Hidden until a vehicle is picked and loaded -->
-            <ng-container *ngIf="form.city_vehicle_type_id && !loadingVehicleGroups">
+            <!-- Stand allocation does not require a legacy route model. -->
+            <ng-container *ngIf="!loadingVehicleGroups">
               <!-- 2. Route Group Assignment Chips -->
               <div class="field" style="margin-top: 14px;">
                 <span class="field__lbl">2. Stand Assignment <i>*</i></span>
@@ -1596,7 +1608,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   wizardStep: 1 | 2 | 3 | 4 | 5 | 6 = 1;
   discardConfirmOpen = false;
   saveConfirmOpen = false;
-  groups: Array<{ id: number; name: string; vehicle_type_id?: number | null; route_ids: number[]; driver_user_ids: number[] }> = [];
+  groups: Array<{ id: number; name: string; vehicle_type_id?: number | null; vehicle_set_ids?: number[]; route_ids: number[]; driver_user_ids: number[] }> = [];
   cityDrivers: Array<{ id: number; user_id?: number; name: string; phone?: string; city_vehicle_type_id?: number | null; vehicle_model?: string }> = [];
   clearPathConfirmOpen = false;
   stopAvailabilityConfirmOpen = false;
@@ -1632,6 +1644,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   private boundOriginEl: HTMLInputElement | null = null;
   private boundDestEl: HTMLInputElement | null = null;
   isSettingOrigin = false;
+  originSearchText = '';
+  destSearchText = '';
   isSettingDest = false;
   loadingVehicleGroups = false;
 
@@ -1823,7 +1837,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     if (f.origin_lat == null || f.origin_lng == null || f.dest_lat == null || f.dest_lng == null) return false;
     if (f.seat_fare == null || f.seat_fare <= 0) return false;
     if (f.scope === 'outstation' && (f.origin_city_id == null || f.dest_city_id == null)) return false;
-    if (f.city_vehicle_type_id == null) return false;
     if ((!this.editingId && f.assigned_group_id == null) || (f.assigned_group_id === 'new' && !f.new_group_name.trim())) return false;
     return true;
   }
@@ -1891,15 +1904,15 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
         }
 
         this.vehicleTypes = list.map((v: any) => ({
-          id: v.id,
+          id: Number(v.id),
+          vehicle_set_id: v.vehicle_set_id == null ? null : Number(v.vehicle_set_id),
           display_name: v.display_name ?? v.name ?? ('#' + v.id),
           max_people: Number(v.max_people ?? 0),
           luggage_capacity: Number(v.luggage_capacity ?? 0),
         }));
 
-        if (this.vehicleTypes.length && (!this.form.city_vehicle_type_id || !this.vehicleTypes.some((vt) => vt.id === this.form.city_vehicle_type_id))) {
-          this.form.city_vehicle_type_id = this.vehicleTypes[0].id;
-        }
+        // Loading the catalogue must not overwrite a route’s saved model or
+        // select an arbitrary model for routes allocated through stands.
       },
       error: () => (this.vehicleTypes = []),
     });
@@ -1988,8 +2001,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
         this.groups = (res?.data || []).map((g: any) => ({
           id: g.id,
           name: g.name,
-          vehicle_type_id: g.city_vehicle_type_id ?? g.vehicle_type_id,
-          route_ids: g.route_ids || [],
+          vehicle_type_id: g.city_vehicle_type_id == null && g.vehicle_type_id == null ? null : Number(g.city_vehicle_type_id ?? g.vehicle_type_id),
+          vehicle_set_ids: (g.vehicle_set_ids || []).map(Number),
+          route_ids: (g.route_ids || []).map(Number),
           driver_user_ids: g.driver_user_ids || [],
         }));
         if (editingId && this.assignmentSignature() === this.originalAssignments) {
@@ -2058,13 +2072,13 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     }
   }
 
-  get vehicleFilteredGroups(): Array<{ id: number; name: string; vehicle_type_id?: number | null; route_ids: number[]; driver_user_ids: number[] }> {
-    if (!this.form.city_vehicle_type_id) return [];
+  get vehicleFilteredGroups(): Array<{ id: number; name: string; vehicle_type_id?: number | null; vehicle_set_ids?: number[]; route_ids: number[]; driver_user_ids: number[] }> {
+    if (!this.form.city_vehicle_type_id) return this.groups;
     return this.groups.filter((g) => !g.vehicle_type_id || g.vehicle_type_id === this.form.city_vehicle_type_id || (!!this.editingId && g.route_ids.includes(this.editingId)));
   }
 
   get vehicleFilteredDrivers(): Array<{ id: number; user_id?: number; name: string; phone?: string; city_vehicle_type_id?: number | null; vehicle_model?: string }> {
-    if (!this.form.city_vehicle_type_id) return [];
+    if (!this.form.city_vehicle_type_id) return this.cityDrivers;
     const vId = this.form.city_vehicle_type_id;
     const matching = this.cityDrivers.filter((d) => d.city_vehicle_type_id === vId);
     return matching.length > 0 ? matching : this.cityDrivers;
@@ -2118,13 +2132,13 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
             const landmarkName = this.bestGeocodeStopName(results) || results[0].formatted_address.split(',')[0].trim() || trimmed;
 
             if (which === 'origin') {
-              this.form.origin_name = landmarkName;
+              this.originSearchText = this.form.origin_name = landmarkName;
               this.map.panTo(loc);
               this.map.setZoom(16);
               await this.setOrigin(lat, lng, false);
               this.toast.success(`Start point placed at "${landmarkName}"`);
             } else {
-              this.form.dest_name = landmarkName;
+              this.destSearchText = this.form.dest_name = landmarkName;
               this.map.panTo(loc);
               await this.setDest(lat, lng, false);
               this.toast.success(`Destination placed at "${landmarkName}"`);
@@ -2143,26 +2157,26 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
   async onOriginSearchEnter(event?: Event): Promise<void> {
     if (event) event.preventDefault();
-    const query = this.form.origin_name.trim();
+    const query = this.originSearchText.trim();
     if (!query) return;
     await this.geocodeAndSetLocation(query, 'origin');
   }
 
   onOriginSearchBlur(): void {
-    const query = this.form.origin_name.trim();
+    const query = this.originSearchText.trim();
     if (!query || this.form.origin_lat != null || this.isSettingOrigin) return;
     void this.geocodeAndSetLocation(query, 'origin');
   }
 
   async onDestSearchEnter(event?: Event): Promise<void> {
     if (event) event.preventDefault();
-    const query = this.form.dest_name.trim();
+    const query = this.destSearchText.trim();
     if (!query) return;
     await this.geocodeAndSetLocation(query, 'dest');
   }
 
   onDestSearchBlur(): void {
-    const query = this.form.dest_name.trim();
+    const query = this.destSearchText.trim();
     if (!query || this.form.dest_lat != null || this.isSettingDest) return;
     void this.geocodeAndSetLocation(query, 'dest');
   }
@@ -2177,8 +2191,16 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     }
   }
 
+  isVehicleLinkedThroughStand(vehicle: VehicleTypeOption): boolean {
+    return this.groups.some(group =>
+      ((!!this.editingId && group.route_ids.includes(this.editingId)) || group.id === this.form.assigned_group_id)
+      && (group.vehicle_type_id === vehicle.id
+        || (vehicle.vehicle_set_id != null && (group.vehicle_set_ids || []).includes(vehicle.vehicle_set_id))));
+  }
+
   getVehicleDisplayName(id: number | null): string {
-    if (id == null) return 'Not assigned';
+    if (id == null) return this.vehicleTypes.filter(vehicle => this.isVehicleLinkedThroughStand(vehicle))
+      .map(vehicle => `${vehicle.display_name} (${vehicle.max_people} seats)`).join(', ') || 'No additional route model';
     const v = this.vehicleTypes.find((x) => x.id === id);
     return v ? `${v.display_name} (${v.max_people} seats)` : `#${id}`;
   }
@@ -2677,10 +2699,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       return;
     }
     if (step === 6) {
-      if (!this.form.city_vehicle_type_id) {
-        this.toast.error('Please select a vehicle model.');
-        return;
-      }
       if ((!this.editingId && this.form.assigned_group_id == null) || (this.form.assigned_group_id === 'new' && !this.form.new_group_name.trim())) {
         this.toast.error('Please select a stand or create a new stand.');
         return;
@@ -2805,6 +2823,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   }
 
   openCreate(): void {
+    this.originSearchText = this.destSearchText = '';
     this.originalAssignments = null;
     this.pendingEditRouteId = null;
     this.editingId = null;
@@ -2841,6 +2860,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   }
 
   openEdit(r: FixedRouteRow): void {
+    this.originSearchText = r.origin_name;
+    this.destSearchText = r.dest_name;
     this.editingId = r.id;
     this.selectedRemovedStopIndexes.clear();
     this.restoredStopIds.clear();
@@ -2867,7 +2888,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       commission_type: (fc.commission_type ?? 'percent') as 'percent' | 'fixed',
       commission_percent: fc.commission_percent ?? null,
       fixed_commission: fc.fixed_commission ?? null,
-      city_vehicle_type_id: r.city_vehicle_type_id,
+      city_vehicle_type_id: r.city_vehicle_type_id == null ? null : Number(r.city_vehicle_type_id),
       booking_window_hours: r.booking_window_hours,
       waiting_time_per_stop_minutes: r.waiting_time_per_stop_minutes,
       luggage_surcharge_amount: r.luggage_surcharge_amount,
@@ -2922,6 +2943,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
    *    existing route (stops without ids are re-created; old ones are retired).
    *  Nothing is saved until the admin hits Save/Create. */
   openImported(draft: ImportedRouteDraft, asUpdate = false): void {
+    this.originSearchText = this.destSearchText = '';
     const existing = asUpdate && draft.existing_route_id ? draft.existing ?? null : null;
     this.editingId = existing ? draft.existing_route_id ?? null : null;
     this.originalStopBookable.clear();
@@ -2967,10 +2989,10 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.form.origin_stop_id = null;
     this.form.dest_stop_id = null;
     this.form.name = draft.name || (existing?.name ?? '');
-    this.form.origin_name = draft.origin_name || '';
+    this.originSearchText = this.form.origin_name = draft.origin_name || '';
     this.form.origin_lat = draft.origin_lat;
     this.form.origin_lng = draft.origin_lng;
-    this.form.dest_name = draft.dest_name || '';
+    this.destSearchText = this.form.dest_name = draft.dest_name || '';
     this.form.dest_lat = draft.dest_lat;
     this.form.dest_lng = draft.dest_lng;
     this.form.stops = (draft.stops || []).map((s) => ({
@@ -3496,12 +3518,12 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     const oldOriginLng = this.form.origin_lng;
     const oldOriginStopId = this.form.origin_stop_id;
 
-    this.form.origin_name = this.form.dest_name;
+    this.originSearchText = this.form.origin_name = this.form.dest_name;
     this.form.origin_lat = this.form.dest_lat;
     this.form.origin_lng = this.form.dest_lng;
     this.form.origin_stop_id = this.form.dest_stop_id;
 
-    this.form.dest_name = oldOriginName;
+    this.destSearchText = this.form.dest_name = oldOriginName;
     this.form.dest_lat = oldOriginLat;
     this.form.dest_lng = oldOriginLng;
     this.form.dest_stop_id = oldOriginStopId;
@@ -3845,7 +3867,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
         this.map.setZoom(16);
 
         if (this.tool === 'origin') {
-          this.form.origin_name = placeName;
+          this.originSearchText = this.form.origin_name = placeName;
           void this.setOrigin(lat, lng, false);
           this.toast.success(`Start point set to "${placeName}"`);
           this.clearSearchMarker();
@@ -3853,7 +3875,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
         }
 
         if (this.tool === 'dest') {
-          this.form.dest_name = placeName;
+          this.destSearchText = this.form.dest_name = placeName;
           void this.setDest(lat, lng, false);
           this.toast.success(`Destination set to "${placeName}"`);
           this.clearSearchMarker();
@@ -3885,7 +3907,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
             const lat = place.geometry.location.lat();
             const lng = place.geometry.location.lng();
             const name = this.extractLegitimateLocationName(place);
-            this.form.origin_name = name;
+            this.originSearchText = this.form.origin_name = name;
             this.map.panTo(place.geometry.location);
             this.map.setZoom(16);
             void this.setOrigin(lat, lng, false);
@@ -3913,7 +3935,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
             const lat = place.geometry.location.lat();
             const lng = place.geometry.location.lng();
             const name = this.extractLegitimateLocationName(place);
-            this.form.dest_name = name;
+            this.destSearchText = this.form.dest_name = name;
             this.map.panTo(place.geometry.location);
             this.map.setZoom(16);
             void this.setDest(lat, lng, false);
@@ -3958,14 +3980,14 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     `;
 
     infoContent.querySelector('#search-set-origin-btn')?.addEventListener('click', () => {
-      this.form.origin_name = title;
+      this.originSearchText = this.form.origin_name = title;
       void this.setOrigin(lat, lng, false);
       this.clearSearchMarker();
       this.toast.success(`Start point set to "${title}"`);
     });
 
     infoContent.querySelector('#search-set-dest-btn')?.addEventListener('click', () => {
-      this.form.dest_name = title;
+      this.destSearchText = this.form.dest_name = title;
       void this.setDest(lat, lng, false);
       this.clearSearchMarker();
       this.toast.success(`Destination set to "${title}"`);
@@ -4188,8 +4210,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       if (seq !== this.geocodeSeq || !this.map || !this.open) return;
       if (statusStr === 'OK' && results && results.length) {
         const name = this.bestGeocodeStopName(results) || results[0].formatted_address.split(',')[0].trim();
-        if (which === 'origin' && !this.form.origin_name.trim()) this.form.origin_name = name;
-        if (which === 'dest' && !this.form.dest_name.trim()) this.form.dest_name = name;
+        if (which === 'origin' && !this.form.origin_name.trim()) this.originSearchText = this.form.origin_name = name;
+        if (which === 'dest' && !this.form.dest_name.trim()) this.destSearchText = this.form.dest_name = name;
         this.maybeAutoName();
       }
     });
@@ -4531,6 +4553,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   clearPath(): void { if (this.hasRouteDraftData) this.clearPathConfirmOpen = true; }
 
   confirmClearPath(): void {
+    this.originSearchText = this.destSearchText = '';
     this.clearPathConfirmOpen = false;
     this.routeSeq++;
     this.snapSeqOrigin++;
@@ -4624,7 +4647,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       {
         id: f.origin_stop_id ?? undefined,
         seq: 1,
-        name: this.cleanStopName(f.origin_name) || f.origin_name.trim(),
+        name: f.origin_name.trim(),
         lat: f.origin_lat,
         lng: f.origin_lng,
         is_pickup: true,
@@ -4648,7 +4671,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       {
         id: f.dest_stop_id ?? undefined,
         seq: f.stops.length + 2,
-        name: this.cleanStopName(f.dest_name) || f.dest_name.trim(),
+        name: f.dest_name.trim(),
         lat: f.dest_lat,
         lng: f.dest_lng,
         is_pickup: false,
@@ -4666,8 +4689,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       origin_city_id: f.scope === 'outstation' ? f.origin_city_id : null,
       dest_city_id: f.scope === 'outstation' ? f.dest_city_id : null,
       name: this.normalizedRouteName(f.name, f.origin_name, f.dest_name),
-      origin_name: this.cleanStopName(f.origin_name) || f.origin_name.trim(),
-      dest_name: this.cleanStopName(f.dest_name) || f.dest_name.trim(),
+      origin_name: f.origin_name.trim(),
+      dest_name: f.dest_name.trim(),
       origin_lat: f.origin_lat,
       origin_lng: f.origin_lng,
       dest_lat: f.dest_lat,

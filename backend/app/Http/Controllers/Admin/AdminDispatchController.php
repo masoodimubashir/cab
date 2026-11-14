@@ -56,7 +56,7 @@ class AdminDispatchController
         // Assigned tasks panel, which looks inconsistent).
         $busyStatuses = array_merge(['CONFIRMED'], Trip::ACTIVE_DRIVER_STATUSES);
         $activeTripsByDriver = Trip::query()
-            ->with(['customer', 'driver', 'rideType', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
+            ->with(['customer', 'driver', 'rideType', 'route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture.route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng'])
             ->whereNotNull('driver_id')
             ->whereIn('status', $busyStatuses)
             ->when($cityId, fn ($q) => $q->where('city_id', $cityId))
@@ -159,7 +159,7 @@ class AdminDispatchController
 
         // Unassigned tasks: in REQUESTED or NEGOTIATION (no driver bound yet).
         $unassigned = Trip::query()
-            ->with(['customer', 'rideType', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
+            ->with(['customer', 'rideType', 'route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture.route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng'])
             ->whereIn('status', ['REQUESTED', 'NEGOTIATION'])
             ->when($cityId, fn ($q) => $q->where('city_id', $cityId))
             ->orderByDesc('created_at')
@@ -169,7 +169,7 @@ class AdminDispatchController
 
         // Assigned tasks: anything with a driver and still active (CONFIRMED + ACTIVE_DRIVER_STATUSES).
         $assigned = Trip::query()
-            ->with(['customer', 'driver', 'rideType', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
+            ->with(['customer', 'driver', 'rideType', 'route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture.route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng'])
             ->whereNotNull('driver_id')
             ->whereIn('status', array_merge(['CONFIRMED'], Trip::ACTIVE_DRIVER_STATUSES))
             ->when($cityId, fn ($q) => $q->where('city_id', $cityId))

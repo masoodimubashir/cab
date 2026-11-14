@@ -1,5 +1,33 @@
 @use '../service-booking';
 
+.pv-place-map { position: relative; height: 100%; }
+.pv-location-summary { position: absolute; z-index: 2; top: max(16px, env(safe-area-inset-top)); left: 16px; right: 16px; display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 9px 12px; }
+.pv-summary-pickup { display: flex; align-items: center; padding: 0 12px; border: 1px solid #e1e7ed; border-radius: 16px; background: #fff; box-shadow: 0 4px 16px #14223710; }
+.pv-summary-pickup.is-active, .pv-location-summary .pv-location-field--destination.is-active { border-color: #008453; background: #f3fbf7; box-shadow: 0 0 0 1px #008453, 0 4px 16px #14223710; }
+.pv-summary-back { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; background: #fff; border: 1px solid #e1e7ed; border-radius: 16px; color: #142237; font-size: 23px; box-shadow: 0 4px 16px #14223710; }
+.pv-summary-pickup .pv-location-field { flex: 1; min-width: 0; }
+.pv-location-summary .pv-location-field--destination { grid-column: 1 / -1; padding: 13px 12px; border: 1px solid #e1e7ed; border-radius: 16px; background: #fff; box-shadow: 0 4px 16px #14223710; }
+@media (prefers-reduced-motion: no-preference) {
+  .pv-location-field--destination { animation: pv-destination-enter 240ms ease-out both; }
+  @keyframes pv-destination-enter { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: translateX(0); } }
+}
+.pv-dock-search { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 50px; padding: 0 12px; background: #fff; border: 1px solid #e0e5ed; border-radius: 12px; box-shadow: 0 2px 8px #14223708;
+  > ion-icon { flex-shrink: 0; font-size: 18px; color: #8a96a5; }
+  input { min-width: 0; width: 100%; flex: 1; padding: 0; border: 0; outline: 0; background: transparent; color: #142237; font-size: 13px; }
+  button { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 28px; border: 0; background: transparent; color: #758396; }
+}
+.pv-location-field { display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 0; text-align: left; border: 0; background: transparent; color: #142237;
+  + .pv-location-field { border-top: 1px solid #edf1f4; }
+  > span:nth-child(2) { flex: 1; min-width: 0; }
+  small { display: block; color: #758396; font-size: 10px; line-height: 1.3; margin-bottom: 4px; }
+  strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 650; }
+  .is-empty { color: #8a96a5; font-weight: 500; }
+  > ion-icon { flex-shrink: 0; color: #758396; font-size: 18px; }
+  &.is-active small, &.is-active > ion-icon { color: #087f50; }
+}
+.pv-location-dot { flex: 0 0 9px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid #087f50; box-shadow: 0 0 0 4px #e7f5ed; }
+.pv-location-dot--drop { border-color: #e36a77; box-shadow: 0 0 0 4px #fcedef; }
+
 /* "Book a car" — the parts unique to name-your-price. Everything structural
    comes from the shared StepShell and the .bk-* utilities. */
 
@@ -82,3 +110,58 @@
 .pv-bid { flex-wrap: wrap; }
 .pv-bid .bk-opt__main { min-width: 100px; }
 .pv-take { border-radius: 12px; }
+
+/* Vehicle choice: route context, selected vehicle, readable option cards. */
+.pv-rides { display: flex; flex-direction: column; height: 100%; max-width: 620px; margin: 0 auto; background: #f6f8fa; color: #142237; }
+.pv-rides-header { display: flex; align-items: center; gap: 12px; padding: max(16px, env(safe-area-inset-top)) 16px 16px; }
+.pv-rides-header h1 { flex: 1; margin: 0; font-size: 22px; font-weight: 750; letter-spacing: -.6px; }
+.pv-rides-step { padding: 6px 10px; border-radius: 10px; background: #e2f3eb; color: #008453; font-size: 12px; font-weight: 750; }
+.pv-rides-progress { display: flex; gap: 4px; margin: 0 16px 14px; }
+.pv-rides-progress span { height: 3px; flex: 1; border-radius: 3px; background: #dde5ed; }
+.pv-rides-progress .on { background: #008453; }
+.pv-rides-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 16px; scrollbar-width: thin; }
+.pv-rides-route { position: relative; padding: 13px 44px 13px 16px; border: 1px solid #e2e8ef; border-radius: 18px; background: white; }
+.pv-rides-route > div { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.pv-rides-route > div + div { margin-top: 13px; }
+.pv-rides-route > div > span:last-child { flex: 1; min-width: 0; }
+.pv-rides-route small { display: block; color: #8290a2; font-size: 10px; margin-bottom: 2px; }
+.pv-rides-route strong { display: block; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-rides-route button { position: absolute; right: 5px; top: calc(50% - 22px); display: grid; place-items: center; width: 40px; height: 44px; border: 0; border-radius: 10px; background: transparent; color: #008453; font-size: 20px; }
+.pv-rides-selection { display: flex; align-items: center; gap: 18px; padding: 20px 16px; margin: 16px 0 22px; border-radius: 20px; background: linear-gradient(125deg, #e5f5ed, #f2f9f5 65%, #fff); border: 1px solid #d9eae0; overflow: hidden; }
+.pv-rides-hero-image { flex: 0 0 135px; height: 100px; display: grid; place-items: center; }
+.pv-rides-hero-image img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 7px 4px #15392a1a); }
+.pv-rides-hero-image ion-icon { font-size: 82px; color: #008453; }
+.pv-rides-selection-copy { min-width: 0; }
+.pv-rides-eyebrow { color: #4f8a70; font-size: 9px; letter-spacing: 1.2px; font-weight: 750; }
+.pv-rides-selection h2 { margin: 6px 0 5px; font-size: 23px; line-height: 1.15; letter-spacing: -.5px; overflow-wrap: anywhere; }
+.pv-rides-selection p { margin: 0; color: #64786e; font-size: 11px; line-height: 1.5; }
+.pv-rides-duration { display: inline-flex; align-items: center; gap: 4px; color: #4f7764; font-size: 11px; margin-top: 10px; }
+.pv-rides-list-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+.pv-rides-list-heading h2 { margin: 0; font-size: 17px; font-weight: 750; }
+.pv-rides-list-heading > span { color: #7c8a9d; font-size: 11px; }
+.pv-rides-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pv-vehicle { position: relative; display: flex; align-items: center; gap: 10px; min-height: 83px; min-width: 0; padding: 12px; border: 1px solid #e0e6ed; border-radius: 16px; background: #fff; text-align: left; color: #314158; }
+.pv-vehicle.is-selected { border-color: #008453; box-shadow: inset 0 0 0 1px #008453; background: #eff9f3; color: #006e46; }
+.pv-vehicle-image { flex: 0 0 54px; width: 54px; height: 45px; display: grid; place-items: center; }
+.pv-vehicle-image img { width: 100%; height: 100%; object-fit: contain; }
+.pv-vehicle-image ion-icon { font-size: 35px; color: #8a9aa9; }
+.pv-vehicle.is-selected .pv-vehicle-image ion-icon { color: #008453; }
+.pv-vehicle-name { flex: 1; min-width: 0; padding-right: 12px; font-size: 12px; line-height: 1.4; font-weight: 700; overflow-wrap: anywhere; }
+.pv-vehicle-radio { position: absolute; right: 9px; top: 9px; width: 14px; height: 14px; border: 1px solid #d9e1e8; border-radius: 50%; color: #fff; display: grid; place-items: center; }
+.pv-vehicle.is-selected .pv-vehicle-radio { border-color: #008453; background: #008453; }
+.pv-vehicle-radio ion-icon { font-size: 11px; }
+.pv-rides-price-note { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 18px 0 3px; color: #7a8798; font-size: 11px; line-height: 1.5; }
+.pv-rides-footer { padding: 12px 16px max(16px, env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid #e5eaf0; }
+.pv-rides-footer-row { display: flex; align-items: center; gap: 16px; }
+.pv-rides-fare { flex: 1; min-width: 0; }
+.pv-rides-fare > span { display: block; color: #7a8798; font-size: 11px; margin-bottom: 4px; }
+.pv-rides-fare strong { display: block; font-size: 24px; letter-spacing: -.5px; }
+.pv-rides-fare strong.is-loading, .pv-rides-fare strong.is-unavailable { font-size: 16px; font-weight: 650; color: #64748b; letter-spacing: 0; }
+.pv-rides-next { display: flex; align-items: center; justify-content: center; gap: 12px; flex: 0 0 145px; min-height: 50px; border: 0; border-radius: 14px; background: #008453; color: #fff; font-size: 14px; font-weight: 750; }
+.pv-rides-next:disabled { background: #e0e6ed; color: #8b98a8; }
+.pv-rides-error { display: flex; align-items: center; gap: 7px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid #edf0f4; color: #92612f; font-size: 11px; line-height: 1.4; }
+.pv-rides-error > ion-icon { flex: none; font-size: 17px; }
+.pv-rides-error > span { flex: 1; }
+.pv-rides-error button { padding: 7px 9px; border: 0; border-radius: 8px; color: #008453; background: #ecf7f1; font-size: 11px; font-weight: 750; }
+.pv-rides button:focus-visible { outline: 2px solid #008453; outline-offset: 3px; }
+@media (max-width: 380px) { .pv-rides-header h1 { font-size: 20px; } .pv-rides-hero-image { flex-basis: 104px; } .pv-rides-selection { gap: 12px; } .pv-vehicle { padding: 10px 8px; gap: 7px; } .pv-vehicle-image { flex-basis: 42px; width: 42px; } .pv-vehicle-name { font-size: 11px; } .pv-rides-next { flex-basis: 130px; } }

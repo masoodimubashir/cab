@@ -23,7 +23,7 @@ class FixedRefundService
         return DB::transaction(function () use ($reservation) {
             /** @var SeatReservation|null $res */
             $res = SeatReservation::query()
-                ->with(['route:id,mode,name', 'customer:id', 'routeDeparture:id,depart_at,announced_depart_at,seats_taken,trip_id,status'])
+                ->with(['route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'customer:id', 'routeDeparture:id,depart_at,announced_depart_at,seats_taken,trip_id,status'])
                 ->lockForUpdate()
                 ->find($reservation->id);
 
@@ -66,7 +66,7 @@ class FixedRefundService
             $this->notifyAdminsOfRefundOutcome($res, $refundOutcome);
 
             return [
-                'reservation' => $res->fresh(['route:id,name,scope,mode', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']),
+                'reservation' => $res->fresh(['route:id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']),
                 'refunded' => $refundOutcome['refunded'],
                 'refund_pending' => $refundOutcome['refund_pending'],
                 'refund_status' => $refundOutcome['refund_status'],
@@ -79,7 +79,7 @@ class FixedRefundService
         return DB::transaction(function () use ($reservation) {
             /** @var SeatReservation|null $res */
             $res = SeatReservation::query()
-                ->with(['route:id,mode,name', 'routeDeparture:id,seats_taken,luggage_taken'])
+                ->with(['route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture:id,seats_taken,luggage_taken'])
                 ->lockForUpdate()
                 ->find($reservation->id);
             if (!$res || $res->route?->mode !== 'fixed') {
@@ -113,7 +113,7 @@ class FixedRefundService
 
             $this->notifyNoShow($res);
 
-            return $res->fresh(['route:id,name,scope,mode', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']);
+            return $res->fresh(['route:id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']);
         });
     }
 
@@ -122,7 +122,7 @@ class FixedRefundService
         return DB::transaction(function () use ($reservation, $reason, $actor, $detail) {
             /** @var SeatReservation|null $res */
             $res = SeatReservation::query()
-                ->with(['route:id,mode,name', 'customer:id', 'routeDeparture:id,seats_taken,trip_id'])
+                ->with(['route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'customer:id', 'routeDeparture:id,seats_taken,trip_id'])
                 ->lockForUpdate()
                 ->find($reservation->id);
 
@@ -184,13 +184,13 @@ class FixedRefundService
 
             $this->notifySystemCancelled($res, $reason, $refundOutcome);
 
-            return $res->fresh(['route:id,name,scope,mode', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']);
+            return $res->fresh(['route:id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']);
         });
     }
 
     private function notifyCustomerCancelled(SeatReservation $reservation, array $refundOutcome): void
     {
-        $reservation->load(["route:id,name", "routeDeparture:id,driver_id,route_id"]);
+        $reservation->load(["route:id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng", "routeDeparture:id,driver_id,route_id"]);
         $routeName = $reservation->route?->name ?: "Fixed route";
         $refundText = $this->customerRefundLine($refundOutcome);
         $data = $this->notificationData($reservation) + [
@@ -274,7 +274,7 @@ class FixedRefundService
             return;
         }
 
-        $reservation->loadMissing(["route:id,name", "customer:id,name"]);
+        $reservation->loadMissing(["route:id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng", "customer:id,name"]);
         $routeName = $reservation->route?->name ?: "Fixed route";
         $customerName = $reservation->customer?->name ?: ("Customer #" . $reservation->customer_id);
         $amount = "₹" . number_format((float) ($refundOutcome["refund_amount"] ?? 0), 2);
@@ -308,7 +308,7 @@ class FixedRefundService
 
     private function notifyNoShow(SeatReservation $reservation): void
     {
-        $reservation->load(["route:id,name", "routeDeparture:id,driver_id,route_id"]);
+        $reservation->load(["route:id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng", "routeDeparture:id,driver_id,route_id"]);
         $routeName = $reservation->route?->name ?: "Fixed route";
         $data = $this->notificationData($reservation) + ["refund_status" => "REJECTED"];
 
@@ -318,7 +318,7 @@ class FixedRefundService
 
     private function notifySystemCancelled(SeatReservation $reservation, string $reason, array $refundOutcome): void
     {
-        $reservation->load(["route:id,name", "routeDeparture:id,driver_id,route_id"]);
+        $reservation->load(["route:id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng", "routeDeparture:id,driver_id,route_id"]);
         $routeName = $reservation->route?->name ?: "Fixed route";
         $type = $reason === "driver_missed_stop" ? "fixed_driver_missed_pickup" : "fixed_booking_cancelled_by_admin";
         $title = $reason === "driver_missed_stop" ? "Driver missed pickup" : "Fixed booking cancelled";

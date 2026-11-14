@@ -112,8 +112,20 @@ class FixedRouteService
             ->map(fn (Route $route) => $this->shapeAdminRoute($route));
     }
 
+    public function findAdminRouteByName(City $city, string $name): ?Route
+    {
+        $name = mb_strtolower(trim($name));
+        if ($name === '') return null;
+        // Imports and duplicate checks must recognize the same title users see,
+        // including legacy rows whose stored title still has Google names.
+        return Route::query()->where('city_id', $city->id)->where('mode', 'fixed')
+            ->get()->first(fn (Route $route) => mb_strtolower(trim((string) $route->name)) === $name
+                || mb_strtolower(trim((string) $route->getRawOriginal('name'))) === $name);
+    }
+
     public function createAdminRoute(City $city, array $data): Route
     {
+        $data = $this->withEndpointDisplayNames($data);
         $this->assertStopPlanIsValid($data['stops'] ?? []);
 
         return DB::transaction(function () use ($city, $data) {
@@ -192,6 +204,16 @@ class FixedRouteService
     public function updateAdminRoute(City $city, Route $route, array $data): Route
     {
         $this->availability->assertCityOwnsRoute($city, $route);
+        $data = $this->withEndpointDisplayNames($data);
+        // Keep generated corridor titles in sync, while preserving explicitly
+        // named routes such as "Airport Express".
+        foreach ([' → ', ' -> ', ' to '] as $separator) {
+            if (trim((string) ($data['name'] ?? '')) === trim($route->name)
+                && trim($route->name) === trim($route->origin_name.$separator.$route->dest_name)) {
+                $data['name'] = trim($data['origin_name']).' → '.trim($data['dest_name']);
+                break;
+            }
+        }
         $this->assertStopPlanIsValid($data['stops'] ?? []);
 
         return DB::transaction(function () use ($city, $route, $data) {
@@ -418,6 +440,18 @@ class FixedRouteService
                 ? $boardingConfirmationMode
                 : 'driver_only',
         ];
+    }
+
+    private function withEndpointDisplayNames(array $data): array
+    {
+        $stops = $data['stops'] ?? [];
+        if (count($stops) >= 2) {
+            $ordered = collect($stops)->sortBy('seq')->keys()->values();
+            $stops[$ordered->first()]['name'] = trim((string) $data['origin_name']);
+            $stops[$ordered->last()]['name'] = trim((string) $data['dest_name']);
+            $data['stops'] = $stops;
+        }
+        return $data;
     }
 
     private function syncStops(Route $route, array $stops): void

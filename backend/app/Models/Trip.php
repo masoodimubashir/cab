@@ -82,6 +82,32 @@ class Trip extends Model
 
     public const TERMINAL_STATUSES = ['COMPLETED', 'CANCELLED'];
 
+    public function getPickupAddressAttribute($value): ?string
+    {
+        return $this->fixedEndpointDisplayName('origin', 'pickup') ?: $value;
+    }
+
+    public function getDropAddressAttribute($value): ?string
+    {
+        return $this->fixedEndpointDisplayName('dest', 'drop') ?: $value;
+    }
+
+    private function fixedEndpointDisplayName(string $endpoint, string $point): ?string
+    {
+        if (!$this->route_id || $this->route?->mode !== 'fixed') return null;
+        // A passenger-specific pin or changed drop must never acquire the
+        // corridor endpoint's label just because it belongs to that route.
+        $route = $this->route;
+        $lat = $this->getAttribute($point.'_lat');
+        $lng = $this->getAttribute($point.'_lng');
+        $endpointLat = $route->getAttribute($endpoint.'_lat');
+        $endpointLng = $route->getAttribute($endpoint.'_lng');
+        if ($lat === null || $lng === null || $endpointLat === null || $endpointLng === null
+            || abs((float) $lat - (float) $endpointLat) > 0.00001
+            || abs((float) $lng - (float) $endpointLng) > 0.00001) return null;
+        return $route->getAttribute($endpoint.'_name');
+    }
+
     /**
      * A driver is "busy" (cannot take another trip) once they hold a trip in any
      * of these — CONFIRMED (bound/pre-assigned, not yet accepted) through the

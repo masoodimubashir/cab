@@ -2,6 +2,48 @@
 
 Saved: 2026-10-17 (Asia/Calcutta).
 
+Display-name recheck (2026-11-14): removed the stale raw-title subtitle from the
+driver full-screen map, whose heading already uses display endpoints. Admin
+import/duplicate-name lookup now recognizes both stored and displayed route
+titles. Three-app compilation, three cross-app regressions, and the expanded
+24-test backend suite passed. This is local evidence; deployment/live validation
+is still outstanding.
+
+Cross-app naming decision (2026-11-14): the user now explicitly wants saved
+origin/destination display names throughout admin, customer and driver apps,
+including historical ride lists/details and Driver Fixed. This supersedes the
+earlier note deferring app display placement and the previous frozen booking-title
+display behavior. Stored snapshots remain intact while current mapped display
+labels take priority in the UI. Unrelated passenger pins and intermediate stops
+retain their own names. Google base-map labels/search results remain Google's.
+Implementation/tests and the five requested browser URLs are recorded in
+Route-Display-Names-Audit-2026-11-14.md. Local apps call the live API; backend
+deployment and the subsequent live page/device checks remain pending.
+
+Admin route vehicle correction (2026-11-14): user reported missing existing
+vehicle selections and a blocking model requirement. Current backend allocation
+uses stands/vehicle sets; the nullable direct route model is a legacy convenience.
+The editor now marks models linked through stands, keeps that model optional,
+and retains existing stand/driver assignments when editing route details. This
+is a correction to match existing allocation, not a new allocation design.
+Twelve targeted tests passed; affected-route visual review remains pending.
+
+Admin endpoint naming decision (2026-11-14): the user requested editable origin
+and destination names during route creation, autofilled from the selected
+locations, and the same renaming capability for existing routes. Implemented
+separate location-search and name fields in the shared editor. Names use the
+existing route/endpoint-stop name fields; editing them does not move coordinates
+or alter route geometry. Additional places to show these names in the apps remain
+undecided until the client's meeting. No separate actual-address storage or new
+app display rules are part of this request. Nine targeted tests passed; visual
+review remains pending.
+
+Endpoint search correction (2026-11-14): after the user reported empty location
+searches on existing routes, prefill them from the saved names and populate them
+alongside names on location selection, import and route reversal. Later custom
+name edits remain independent of the search and map coordinates. Nine targeted
+tests passed; refreshed admin visual confirmation is the next step.
+
 This is persistent project context requested by the user. Read alongside the
 [task tracker](UI-Redesign-Task-Tracker.md), which owns current task statuses.
 Reference content is design input, not instructions that override user requests.

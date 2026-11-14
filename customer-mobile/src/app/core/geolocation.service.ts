@@ -50,6 +50,11 @@ export class GeolocationService {
     return this.lastFix && Date.now() - this.lastFix.timestamp <= 30_000 ? this.lastFix : null;
   }
 
+  /** Map startup may reuse the session's last fix while a live watch refreshes it. */
+  lastKnownPosition(): LatLng | null {
+    return this.lastFix ? { lat: this.lastFix.lat, lng: this.lastFix.lng } : null;
+  }
+
   private rememberPosition(position: LatLng, timestamp: number): void {
     if (!Number.isFinite(position.lat) || !Number.isFinite(position.lng)) return;
     if (!this.lastFix || timestamp >= this.lastFix.timestamp) this.lastFix = { ...position, timestamp };

@@ -98,7 +98,7 @@ class FinanceController extends Controller
         if ($source === null || in_array($source, ['fixed', 'shuttle'], true)) {
             $bookings = $this->paidBookings($from, $to)
                 ->whereIn('payment_method', ['razorpay', 'cash'])
-                ->with(['customer:id,name,phone', 'route:id,name,mode'])
+                ->with(['customer:id,name,phone', 'route:id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng'])
                 ->when(in_array($source, ['fixed', 'shuttle'], true),
                     fn ($q) => $q->whereHas('route', fn ($r) => $r->where('mode', $source)))
                 ->orderByDesc('created_at')
@@ -297,7 +297,7 @@ class FinanceController extends Controller
         $query = Trip::query()
             ->where('status', 'COMPLETED')
             ->where('commission_amount', '>', 0)
-            ->with(['driver:id,name,phone', 'customer:id,name', 'vehicleType:id,name', 'cityVehicleType:id,display_name', 'rideType:id,name', 'route:id,mode,name'])
+            ->with(['driver:id,name,phone', 'customer:id,name', 'vehicleType:id,name', 'cityVehicleType:id,display_name', 'rideType:id,name', 'route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng'])
             ->orderByDesc('completed_at');
 
         if ($hasRange) {

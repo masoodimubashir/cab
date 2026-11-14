@@ -73,7 +73,7 @@ class AdminFixedDeparturesController
             ->whereHas('route', fn ($q) => $q->where('mode', 'fixed')->where('city_id', $city->id))
             ->with([
                 'customer:id,name,phone',
-                'route:id,name,scope,mode,city_id',
+                'route:id,name,scope,mode,city_id,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
                 'route.stops:id,route_id,seq,name',
                 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status,departure_kind,driver_id,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
                 'routeDeparture.driver:id,name,phone',
@@ -701,7 +701,7 @@ class AdminFixedDeparturesController
         $reservation = SeatReservation::query()
             ->with([
                 'customer:id,name,phone',
-                'route:id,name,scope,mode,city_id',
+                'route:id,name,scope,mode,city_id,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
                 'route.stops:id,route_id,seq,name',
                 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status,departure_kind,driver_id,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
                 'routeDeparture.driver:id,name,phone',

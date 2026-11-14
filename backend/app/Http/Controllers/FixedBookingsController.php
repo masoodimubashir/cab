@@ -134,7 +134,7 @@ class FixedBookingsController extends Controller
 
         return response()->json([
             'reservation' => $this->bookings->shapeBooking($reservation->fresh([
-                'route:id,name,scope,mode',
+                'route:id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
                 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status',
                 'boardStop:id,name,lat,lng',
                 'dropStop:id,name,lat,lng',

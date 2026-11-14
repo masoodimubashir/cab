@@ -34,7 +34,7 @@ class FixedAvailabilityService
 
     public function assertFixedDeparture(RouteDeparture $departure): void
     {
-        $departure->loadMissing('route:id,mode,city_id,is_active,booking_window_hours');
+        $departure->loadMissing('route:id,mode,city_id,is_active,booking_window_hours,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng');
         if (!$departure->route || $departure->route->mode !== 'fixed') {
             abort(404);
         }
@@ -79,7 +79,7 @@ class FixedAvailabilityService
     public function adminDeparturesQuery(City $city): Builder
     {
         return RouteDeparture::query()
-            ->with(['route:id,city_id,name,scope,mode', 'driver:id,name'])
+            ->with(['route:id,city_id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'driver:id,name'])
             ->whereHas('route', fn ($q) => $q->where('city_id', $city->id)->where('mode', 'fixed'));
     }
 

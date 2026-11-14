@@ -905,7 +905,7 @@ class FixedSeatHoldService
 
     private function notifyBookingConfirmed(SeatReservation $reservation): void
     {
-        $reservation->loadMissing(["route:id,name", "routeDeparture:id,driver_id,route_id,service_date,depart_at,announced_depart_at"]);
+        $reservation->loadMissing(["route:id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng", "routeDeparture:id,driver_id,route_id,service_date,depart_at,announced_depart_at"]);
         $routeName = $reservation->route?->name ?: "Fixed route";
         $data = $this->notificationData($reservation);
 
@@ -968,7 +968,7 @@ class FixedSeatHoldService
 
     private function broadcastDepartureUpdate(int $departureId, string $reason): void
     {
-        $departure = RouteDeparture::query()->with('route:id,city_id')->find($departureId);
+        $departure = RouteDeparture::query()->with('route:id,city_id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng')->find($departureId);
         if ($departure?->route?->city_id) {
             try {
                 broadcast(new FixedRouteCatalogUpdated((int) $departure->route->city_id, (int) $departure->route_id, $reason))->toOthers();

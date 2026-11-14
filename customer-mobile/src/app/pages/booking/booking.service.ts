@@ -1,7 +1,8 @@
-import { Injectable } from '@angular/core';
+import { Injectable, Optional } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { City, EMPTY_TRIP, MODE_COPY, Place, RideMode, ServiceTile, TripDraft, TripScope } from './booking.models';
 
 /**
@@ -12,12 +13,16 @@ import { City, EMPTY_TRIP, MODE_COPY, Place, RideMode, ServiceTile, TripDraft, T
  */
 @Injectable({ providedIn: 'root' })
 export class BookingService {
+  /** In-memory Home state survives route recreation; never use a booking pickup as device GPS. */
+  homeLocation: { userId: number; city: City; catalog: RawScope[]; fix: { lat: number; lng: number } } | null = null;
   routeRadiusKm: 1 | 3 | 5 = 1;
   // rev5 — draft trip + catalogue, wired to existing endpoints.
   private draft: TripDraft = { ...EMPTY_TRIP };
   private readonly supportCityKey = 'dc.support.city-id';
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, @Optional() auth?: AuthService) {
+    auth?.registerSessionCleanup(() => { this.homeLocation = null; });
+  }
 
   get trip(): TripDraft {
     return this.draft;
@@ -48,6 +53,11 @@ export class BookingService {
     this.draft.drop = place;
   }
 
+  clearPlaces(): void {
+    this.draft.pickup = null;
+    this.draft.drop = null;
+  }
+
   setCity(cityId: number | null): void {
     this.draft.cityId = cityId;
     try {
@@ -58,6 +68,7 @@ export class BookingService {
   }
 
   reset(): void {
+    this.homeLocation = null;
     this.draft = { ...EMPTY_TRIP };
   }
 
