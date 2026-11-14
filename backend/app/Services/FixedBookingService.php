@@ -22,7 +22,7 @@ class FixedBookingService
             ->where('customer_id', $customer->id)
             ->whereHas('route', fn ($q) => $q->where('mode', 'fixed'))
             ->with([
-                'route:id,name,scope,mode',
+                'route:id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
                 'routeDeparture:id,route_id,trip_id,driver_id,city_vehicle_type_id,vehicle_snapshot,service_date,depart_at,announced_depart_at,status,capacity,seats_taken,luggage_capacity,luggage_taken,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
                 'routeDeparture.driver:id,name,phone',
                 'routeDeparture.cityVehicleType:id,display_name,vehicle_type_id',
@@ -54,7 +54,7 @@ class FixedBookingService
         }
 
         $reservation->loadMissing([
-            'route:id,name,scope,mode',
+            'route:id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
             'route.stops' => fn ($q) => $q->orderBy('seq'),
             'routeDeparture:id,route_id,trip_id,driver_id,city_vehicle_type_id,vehicle_snapshot,service_date,depart_at,announced_depart_at,status,capacity,seats_taken,luggage_capacity,luggage_taken,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
             'routeDeparture.driver:id,name,phone',
@@ -110,8 +110,8 @@ class FixedBookingService
     {
         $reservation->loadMissing([
             'routeDeparture.cityVehicleType:id,display_name',
-            'routeDeparture.route:id,city_id,origin_city_id',
-            'route:id,city_id,origin_city_id',
+            'routeDeparture.route:id,city_id,origin_city_id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
+            'route:id,city_id,origin_city_id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
         ]);
         $departure = $reservation->routeDeparture;
         $identity = $departure ? app(FixedDepartureVehicleService::class)->identity($departure) : null;
@@ -152,10 +152,11 @@ class FixedBookingService
         return [
             'id' => $reservation->id,
             'route_id' => $reservation->route_id,
-            // Frozen at booking time so renaming the route never changes the
-            // name shown on past rides; falls back to the live name for any
-            // legacy row without a snapshot.
+            // Current operator display names take priority; stored snapshots
+            // remain a fallback when the original route is unavailable.
             'route_name' => $reservation->route_name ?: $reservation->route?->name,
+            'origin_name' => $reservation->route?->origin_name,
+            'dest_name' => $reservation->route?->dest_name,
             'scope' => $reservation->route?->scope,
             'route_departure_id' => $reservation->route_departure_id,
             'trip_id' => $departure?->trip_id,

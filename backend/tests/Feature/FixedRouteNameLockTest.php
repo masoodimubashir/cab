@@ -13,11 +13,7 @@ use Illuminate\Support\Facades\Schema;
 use Tests\Support\SeatLayoutFactory;
 use Tests\TestCase;
 
-/**
- * Verifies the route-name lock: a ride freezes its route's name at booking time
- * so renaming the route later never changes the name shown on past rides, while
- * the ride's from/to (already snapshotted) stays correct too.
- */
+/** Stored snapshots remain intact; current operator labels win in the UI. */
 class FixedRouteNameLockTest extends TestCase
 {
     use RefreshDatabase;
@@ -86,7 +82,17 @@ class FixedRouteNameLockTest extends TestCase
         $this->assertTrue(Schema::hasColumn('seat_reservations', 'route_name'));
     }
 
-    public function test_renaming_route_does_not_change_name_on_past_ride(): void
+    public function test_import_and_duplicate_lookup_accepts_current_and_original_corridor_titles(): void
+    {
+        $city = \App\Models\City::findOrFail($this->makeCity('Lookup City'));
+        $route = $this->makeRoute($city->id, 'Google start → Google end');
+        $service = app(\App\Services\FixedRouteService::class);
+        $this->assertSame($route->id, $service->findAdminRouteByName($city, ' sopore → SRINAGAR ')?->id);
+        $this->assertSame($route->id, $service->findAdminRouteByName($city, 'Google start → Google end')?->id);
+        $this->assertNull($service->findAdminRouteByName($city, 'Another route'));
+    }
+
+    public function test_current_display_name_replaces_snapshot_on_past_ride(): void
     {
         $cityId = $this->makeCity('Lock City');
         $customer = User::factory()->create();
@@ -98,9 +104,12 @@ class FixedRouteNameLockTest extends TestCase
 
         $shaped = app(FixedBookingService::class)->shapeBooking($res->fresh(['route', 'routeDeparture']));
 
-        // The frozen name wins — old ride is unaffected by the rename.
-        $this->assertSame('Sopore Express', $shaped['route_name']);
-        // And the from/to snapshot is still correct too.
+        // Display the current name without rewriting the stored snapshot.
+        $this->assertSame('Gulmarg Express', $shaped['route_name']);
+        $this->assertSame('Sopore Express', $res->getRawOriginal('route_name'));
+        $this->assertSame('Tangmarg', $shaped['origin_name']);
+        $this->assertSame('Gulmarg', $shaped['dest_name']);
+        // Unmapped pickup/drop points retain their own labels.
         $this->assertSame('Sopore', $shaped['board']);
         $this->assertSame('Srinagar', $shaped['drop']);
     }
@@ -115,5 +124,26 @@ class FixedRouteNameLockTest extends TestCase
         $shaped = app(FixedBookingService::class)->shapeBooking($res->fresh(['route', 'routeDeparture']));
 
         $this->assertSame('Live Name', $shaped['route_name']);
+    }
+
+    public function test_booking_list_uses_current_mapped_stop_names_instead_of_google_snapshots(): void
+    {
+        $cityId = $this->makeCity('Display City');
+        $customer = User::factory()->create();
+        $route = $this->makeRoute($cityId, 'Google start → Google end');
+        $start = $route->stops()->create(['seq' => 1, 'name' => 'Custom start', 'lat' => 34.29, 'lng' => 74.47,
+            'is_pickup' => true, 'is_drop' => false, 'is_active' => true]);
+        $end = $route->stops()->create(['seq' => 2, 'name' => 'Custom end', 'lat' => 34.08, 'lng' => 74.79,
+            'is_pickup' => false, 'is_drop' => true, 'is_active' => true]);
+        $reservation = $this->makeReservation($route, $customer, 'Google start → Google end');
+        $reservation->update(['board_stop_id' => $start->id, 'drop_stop_id' => $end->id]);
+        $route->update(['origin_name' => 'Custom start', 'dest_name' => 'Custom end']);
+        $rows = app(FixedBookingService::class)->myBookings($customer)['data'];
+        $this->assertSame('Custom start → Custom end', $rows[0]['route_name']);
+        $this->assertSame('Custom start', $rows[0]['origin_name']);
+        $this->assertSame('Custom end', $rows[0]['dest_name']);
+        $this->assertSame('Custom start', $rows[0]['board']);
+        $this->assertSame('Custom end', $rows[0]['drop']);
+        $this->assertSame('Sopore', $reservation->fresh()->getRawOriginal('board_address'));
     }
 }

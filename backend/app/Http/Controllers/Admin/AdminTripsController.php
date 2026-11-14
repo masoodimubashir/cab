@@ -49,7 +49,10 @@ class AdminTripsController
     public function index(Request $request)
     {
         $query = Trip::query()
-            ->with(['customer', 'driver', 'rideType', 'pricingRule', 'seatReservations.customer']);
+            ->with(['customer', 'driver', 'rideType', 'pricingRule',
+                'route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
+                'seatReservations.customer', 'seatReservations.route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
+                'seatReservations.boardStop:id,name', 'seatReservations.dropStop:id,name']);
 
         // Restrict to the manager's city scope. Super Admin sees all.
         ManagerScope::applyCityScope($query, 'city_id');
@@ -172,6 +175,7 @@ class AdminTripsController
         ManagerScope::assertCityAllowed((int) $trip->city_id);
 
         $trip->load([
+            'route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
             'customer:id,name,phone,email,avatar_path',
             'driver:id,name,phone,email,avatar_path',
             'rideType:id,name',
@@ -181,7 +185,7 @@ class AdminTripsController
             'pricingRule',
             'payment:id,trip_id,method,provider,status,amount,discount_amount,paid_at,coupon_assignment_id,razorpay_payment_id,razorpay_order_id',
             'payment.couponAssignment.coupon:id,title,discount_type,discount_value',
-            'routeDeparture.route:id,city_id,name,scope,mode,origin_name,dest_name',
+            'routeDeparture.route:id,city_id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
         ]);
 
         // Driver profile fields (vehicle reg, brand etc) aren't on users —

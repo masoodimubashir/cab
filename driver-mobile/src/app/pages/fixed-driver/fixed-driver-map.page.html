@@ -9,7 +9,6 @@
     <div class="map-sheet__copy">
       <span>{{ vehicle?.status || 'Route map' }}</span>
       <strong>{{ routeLineText() }}</strong>
-      <p *ngIf="vehicle?.route_name">{{ vehicle?.route_name }}</p>
       <small class="map-passenger-summary">{{ passengerSummaryText() }}</small>
     </div>
     <ion-spinner *ngIf="loading" name="crescent"></ion-spinner>

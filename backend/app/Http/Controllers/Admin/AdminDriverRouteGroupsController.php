@@ -113,7 +113,7 @@ class AdminDriverRouteGroupsController
         return Route::query()
             ->whereIn('id', $ids)
             ->orderBy('name')
-            ->get(['id', 'name', 'origin_name', 'dest_name', 'scope', 'is_active'])
+            ->get(['id', 'mode', 'name', 'origin_name', 'dest_name', 'scope', 'is_active'])
             ->map(fn (Route $r) => [
                 'id' => $r->id,
                 'name' => $r->name,

@@ -56,6 +56,7 @@ class FixedManifestService
             ->whereHas('route', fn ($q) => $q->where('mode', 'fixed'))
             ->with([
                 'customer:id,name,phone,avatar_path,current_lat,current_lng,current_location_updated_at',
+                'route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng',
                 'boardStop:id,name,lat,lng,seq',
                 'dropStop:id,name,lat,lng',
             ])

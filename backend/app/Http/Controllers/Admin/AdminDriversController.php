@@ -671,7 +671,7 @@ class AdminDriversController
                 fn ($q) => $q->where('status', 'CANCELLED'),
                 fn ($q) => $q->where('status', '!=', 'CANCELLED'),
             )
-            ->with(['customer:id,name', 'rideType:id,name', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
+            ->with(['customer:id,name', 'rideType:id,name', 'route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture.route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng'])
             ->orderByDesc('created_at')
             ->limit(200)
             ->get();

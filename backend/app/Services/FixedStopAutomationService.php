@@ -313,7 +313,7 @@ class FixedStopAutomationService
     private function loadNotificationReservation(SeatReservation $reservation): ?SeatReservation
     {
         return SeatReservation::query()
-            ->with(["route:id,name", "routeDeparture:id,status", "boardStop:id,name", "dropStop:id,name"])
+            ->with(["route:id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng", "routeDeparture:id,status", "boardStop:id,name", "dropStop:id,name"])
             ->find($reservation->id);
     }
 

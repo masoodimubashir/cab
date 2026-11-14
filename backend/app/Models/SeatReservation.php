@@ -38,6 +38,40 @@ class SeatReservation extends Model
     /** Never serialize the boarding-code hash into API payloads. */
     protected $hidden = ['boarding_otp_hash'];
 
+    // Keep booking snapshots in storage, but show the operator's current labels
+    // for fixed routes and mapped stops in every serializer/manifest.
+    public function getRouteNameAttribute($value): ?string
+    {
+        return $this->route?->mode === 'fixed' ? ($this->route->name ?: $value) : $value;
+    }
+
+    public function getBoardAddressAttribute($value): ?string
+    {
+        return $this->currentPointLabel('board', 'origin', $value);
+    }
+
+    public function getDropAddressAttribute($value): ?string
+    {
+        return $this->currentPointLabel('drop', 'dest', $value);
+    }
+
+    private function currentPointLabel(string $point, string $endpoint, ?string $snapshot): ?string
+    {
+        $route = $this->route;
+        if ($route?->mode !== 'fixed') return $snapshot;
+        $stop = $this->getAttribute($point.'_stop_id') ? $this->getRelationValue($point.'Stop') : null;
+        $lat = $this->getAttribute($point.'_lat') ?? $stop?->lat;
+        $lng = $this->getAttribute($point.'_lng') ?? $stop?->lng;
+        $endpointLat = $route->getAttribute($endpoint.'_lat');
+        $endpointLng = $route->getAttribute($endpoint.'_lng');
+        if ($lat !== null && $lng !== null && $endpointLat !== null && $endpointLng !== null
+            && abs((float) $lat - (float) $endpointLat) <= 0.00001
+            && abs((float) $lng - (float) $endpointLng) <= 0.00001) {
+            return $route->getAttribute($endpoint.'_name') ?: ($stop?->name ?: $snapshot);
+        }
+        return $stop?->name ?: $snapshot;
+    }
+
     protected $casts = [
         'seats' => 'integer',
         'seat_labels' => 'array',

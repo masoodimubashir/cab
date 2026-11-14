@@ -27,6 +27,20 @@ class Route extends Model
 {
     use HasFactory;
 
+    public function getNameAttribute($value): ?string
+    {
+        // Corridor titles may still contain the original geocoder names after
+        // endpoint renaming. Render those titles from the current display names.
+        // Standalone titles such as "Airport Express" remain unchanged.
+        if (($this->attributes['mode'] ?? null) === 'fixed'
+            && trim((string) ($this->attributes['origin_name'] ?? '')) !== ''
+            && trim((string) ($this->attributes['dest_name'] ?? '')) !== ''
+            && preg_match('/(?:→|->|\s+to\s+)/iu', (string) $value, $separator)) {
+            return trim($this->attributes['origin_name']).' '.trim($separator[0]).' '.trim($this->attributes['dest_name']);
+        }
+        return $value;
+    }
+
     protected $casts = [
         'origin_lat' => 'float',
         'origin_lng' => 'float',

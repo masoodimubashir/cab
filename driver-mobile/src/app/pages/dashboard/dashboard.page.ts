@@ -851,7 +851,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   routeTitle(route: FixedRouteOption): string {
-    return route.name || ((route.origin_name && route.dest_name) ? route.origin_name + ' to ' + route.dest_name : 'Fixed route #' + route.id);
+    return (route.origin_name && route.dest_name) ? route.origin_name + ' to ' + route.dest_name : route.name || 'Fixed route #' + route.id;
   }
 
   get fixedRouteLineTitle(): string {

@@ -4,6 +4,59 @@ Last updated: 2026-11-07 (Asia/Calcutta)
 
 ## Start here
 
+- Display-name recheck (2026-11-14): found and fixed the raw route-title subtitle
+  in the driver full-screen map and import/duplicate matching against only stored
+  titles. Lookup now recognizes both original and displayed titles within the
+  city. Repeated all three Angular compilations and the three cross-app tests;
+  the combined 17-test backend suite passed (166 assertions). Expanded KML/bulk
+  import/copy/reimport/display-name checks passed all 24 tests (183 assertions).
+  Production deployment/live confirmation
+  remain outstanding; this recheck does not assert the live API is updated.
+
+- Cross-app route display names (2026-11-14): user now explicitly requests saved
+  endpoint names throughout admin/customer/driver, including the four linked
+  ride/history pages and Driver Fixed. Implemented current-label precedence in
+  backend route/booking/trip serializers, endpoint-stop saves, admin departures,
+  and customer/driver corridor labels; retained geometry and raw snapshots.
+  All three Angular compilations, 12 admin editor tests, 3 cross-app method tests
+  and the 16-test backend route/copy/reimport suite passed. Final legacy-point
+  serializer/history coverage also passed all 10 tests (37 assertions).
+  Browser reviewed all
+  five supplied URLs; Driver Fixed preview shows the revised endpoint heading.
+  The local apps use the live dreamcabs.in API, so customer/admin history still
+  needs the backend deployment. No production records changed. Next: deploy the
+  tested backend, then recheck all five pages. See
+  [display-name audit](Route-Display-Names-Audit-2026-11-14.md) for scope/limits.
+
+- Route editor vehicle allocation correction (2026-11-14): the user reported
+  missing preselected vehicles and a vehicle-model validation error. The editor
+  required the legacy direct route model although the backend permits null and
+  allocates via stands/vehicle sets. It now reads stand vehicle-set IDs, marks
+  linked models, shows stands without a direct model, and allows Review/save with
+  a null model. Catalogue loading no longer picks an arbitrary first model;
+  numeric model IDs are normalized for saved selections. All 12 targeted editor
+  tests passed, including multiple inherited models and preserving assignments.
+  The admin production build passed.
+  Next, visually review the affected route after refreshing/reopening the editor.
+
+- Endpoint search prefill correction (2026-11-14): existing route editors now
+  prefill the search boxes from saved endpoint names. Selecting/geocoding a new
+  location fills both its search text and editable name; changing only the name
+  keeps the location search independent. Imports and route reversal also fill
+  the search boxes. Nine targeted route-editor tests passed after the correction.
+  Next, refresh/reopen the admin editor and visually confirm both endpoint steps.
+
+- Admin route endpoint names (2026-11-14): implemented separate location search
+  and editable Origin name / Destination name fields for route creation and
+  editing. Selected locations autofill the names; renaming uses the existing save
+  payload and retains coordinates, route geometry and stop IDs. All nine targeted
+  route-editor tests passed in headless Chrome, covering autofill, independent
+  searches, renaming and saved geometry. The admin production build passed.
+  Browser visual review remains pending.
+  Next, review both fields in the admin editor. The client will identify any
+  additional app display locations after the meeting; no new display rules are
+  approved in this change.
+
 - Customer Home See all button (2026-11-12). Changed the fixed-route
   action to a solid dark-green button with bold white text. User then
   requested less padding: final height is 38 px with 10 px horizontal

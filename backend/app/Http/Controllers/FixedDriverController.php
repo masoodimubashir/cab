@@ -131,7 +131,7 @@ class FixedDriverController extends Controller
     public function vehicles(Request $request)
     {
         $rows = RouteDeparture::query()
-            ->with(['route:id,city_id,name,scope,mode,origin_name,dest_name', 'driver:id,name'])
+            ->with(['route:id,city_id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'driver:id,name'])
             ->where('driver_id', $request->user()->id)
             ->whereHas('route', fn ($q) => $q->where('mode', 'fixed'))
             ->whereNotIn('status', ['COMPLETED', 'CANCELLED'])
@@ -434,7 +434,7 @@ class FixedDriverController extends Controller
         $this->guardDriverDeparture($request, $departure);
 
         $result = DB::transaction(function () use ($request, $departure) {
-            $dep = RouteDeparture::query()->with('route:id,city_id,mode')->lockForUpdate()->findOrFail($departure->id);
+            $dep = RouteDeparture::query()->with('route:id,city_id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng')->lockForUpdate()->findOrFail($departure->id);
             $this->guardDriverDeparture($request, $dep);
 
             if ($dep->status !== 'FORMING') {
@@ -497,7 +497,7 @@ class FixedDriverController extends Controller
                 'boarding_closed_at' => null,
             ]);
 
-            return $dep->fresh(['route:id,city_id,name,scope,mode,origin_name,dest_name', 'driver:id,name']);
+            return $dep->fresh(['route:id,city_id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'driver:id,name']);
         });
 
         $this->broadcastAvailability($departure, 'bookings_opened');
@@ -517,7 +517,7 @@ class FixedDriverController extends Controller
     public function sendBoardingOtp(Request $request, SeatReservation $reservation)
     {
         $this->guardDriverReservation($request, $reservation);
-        $reservation->loadMissing('routeDeparture.route:id,fixed_settings_json', 'boardStop:id,route_id,seq,name,lat,lng', 'customer:id,name,phone,email,push_unsubscribed');
+        $reservation->loadMissing('routeDeparture.route:id,fixed_settings_json,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'boardStop:id,route_id,seq,name,lat,lng', 'customer:id,name,phone,email,push_unsubscribed');
 
         // Same preconditions as boarding itself, so a code can never be
         // requested in a state where boarding would be rejected anyway.
@@ -560,7 +560,7 @@ class FixedDriverController extends Controller
         ]);
 
         $this->guardDriverReservation($request, $reservation);
-        $reservation->loadMissing('routeDeparture.route:id,fixed_settings_json', 'boardStop:id,route_id,seq,name,lat,lng');
+        $reservation->loadMissing('routeDeparture.route:id,fixed_settings_json,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'boardStop:id,route_id,seq,name,lat,lng');
 
         if (!in_array($reservation->status, ['BOOKED', 'CONFIRMED'], true)) {
             abort(422, 'This passenger cannot be boarded from the current status.');
@@ -620,7 +620,7 @@ class FixedDriverController extends Controller
     public function drop(Request $request, SeatReservation $reservation)
     {
         $this->guardDriverReservation($request, $reservation);
-        $reservation->loadMissing('routeDeparture.route:id,fixed_settings_json', 'dropStop:id,route_id,seq,name,lat,lng');
+        $reservation->loadMissing('routeDeparture.route:id,fixed_settings_json,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'dropStop:id,route_id,seq,name,lat,lng');
 
         if ($reservation->status !== 'BOARDED') {
             abort(422, 'This passenger must be boarded before drop-off.');
@@ -711,7 +711,7 @@ class FixedDriverController extends Controller
                 'status' => 'COMPLETED',
             ]);
 
-            return $dep->fresh(['route:id,city_id,name,scope,mode,origin_name,dest_name', 'driver:id,name']);
+            return $dep->fresh(['route:id,city_id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'driver:id,name']);
         });
 
         $this->broadcastAvailability($departure, 'vehicle_completed');
@@ -750,7 +750,7 @@ class FixedDriverController extends Controller
         // the stop and instantly no-show a passenger who is walking up. Reload
         // so we see the freshly recorded reach time / arrival timer.
         $reservation->refresh()->loadMissing('boardStop:id,seq');
-        $departure->refresh()->loadMissing('route:id,city_id,waiting_time_per_stop_minutes');
+        $departure->refresh()->loadMissing('route:id,city_id,waiting_time_per_stop_minutes,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng');
         $unlockAt = FixedNoShowPolicy::unlockAt($reservation, $departure);
         if ($unlockAt && now()->lessThan($unlockAt)) {
             $secs = abs(now()->diffInSeconds($unlockAt));
@@ -864,7 +864,7 @@ class FixedDriverController extends Controller
         // what the operator configured. Falls back to the route's own value, then a
         // floor, only when City Settings is missing. No upper cap: the operator's
         // number wins everywhere.
-        $departure->loadMissing('route:id,city_id,fixed_settings_json');
+        $departure->loadMissing('route:id,city_id,fixed_settings_json,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng');
         $legacy = is_array($departure->route?->fixed_settings_json) ? $departure->route->fixed_settings_json : [];
         $citySettings = \App\Models\CitySetting::query()->where('city_id', $departure->route?->city_id)->first();
         $radiusM = max(5, (int) ($citySettings?->fixed_stop_arrival_radius_m ?? ($legacy['stop_arrival_radius_m'] ?? 150)));
@@ -899,7 +899,7 @@ class FixedDriverController extends Controller
     private function notifyFixedStarted(RouteDeparture $departure, bool $boarding = false): void
     {
         try {
-            $departure->loadMissing("route:id,name");
+            $departure->loadMissing("route:id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng");
             $routeName = $departure->route?->name ?: "Fixed route";
             $event = $boarding ? 'fixed_boarding_started' : 'fixed_vehicle_started';
             $title = $boarding ? 'Boarding started' : 'Vehicle departed';
@@ -926,7 +926,7 @@ class FixedDriverController extends Controller
     private function notifyFixedCompleted(RouteDeparture $departure): void
     {
         try {
-            $departure->loadMissing("route:id,name");
+            $departure->loadMissing("route:id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng");
             $routeName = $departure->route?->name ?: "Fixed route";
             $this->notifier->notifyAdmins("fixed_vehicle_completed", "Fixed vehicle completed", "Driver completed " . $routeName . ".", [
                 "route_departure_id" => $departure->id,
@@ -941,7 +941,7 @@ class FixedDriverController extends Controller
 
     private function broadcastAvailability(RouteDeparture $departure, string $reason): void
     {
-        $departure->loadMissing('route:id,city_id');
+        $departure->loadMissing('route:id,city_id,name,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng');
         if ($departure->route?->city_id) {
             try {
                 broadcast(new FixedRouteCatalogUpdated((int) $departure->route->city_id, (int) $departure->route_id, $reason))->toOthers();
@@ -972,7 +972,7 @@ class FixedDriverController extends Controller
 
     private function guardDriverReservation(Request $request, SeatReservation $reservation): void
     {
-        $reservation->loadMissing('route:id,mode', 'routeDeparture.trip:id,driver_id');
+        $reservation->loadMissing('route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture.trip:id,driver_id');
         if ($reservation->route?->mode !== 'fixed') {
             abort(404);
         }

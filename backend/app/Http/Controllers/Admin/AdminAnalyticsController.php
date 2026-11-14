@@ -493,7 +493,8 @@ class AdminAnalyticsController
                 ->whereBetween('created_at', [$from, $to])
                 ->orderByDesc('created_at')
                 ->limit(2000)
-                ->get(['id', 'created_at', 'status', 'pickup_address', 'drop_address', 'final_fare'])
+                ->with('route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng')
+                ->get(['id', 'route_id', 'created_at', 'status', 'pickup_address', 'drop_address', 'final_fare'])
                 ->map(fn ($t) => [
                     'id' => $t->id,
                     'created_at' => optional($t->created_at)->toIso8601String(),

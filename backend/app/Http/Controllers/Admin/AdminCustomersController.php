@@ -450,7 +450,7 @@ class AdminCustomersController
                 fn ($q) => $q->where('status', 'CANCELLED'),
                 fn ($q) => $q->where('status', '!=', 'CANCELLED'),
             )
-            ->with(['driver:id,name', 'rideType:id,name', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
+            ->with(['driver:id,name', 'rideType:id,name', 'route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture.route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng'])
             ->orderByDesc('created_at')
             ->limit(200)
             ->get()
@@ -463,7 +463,7 @@ class AdminCustomersController
                 fn ($q) => $q->where('status', 'CANCELLED'),
                 fn ($q) => $q->where('status', '!=', 'CANCELLED'),
             )
-            ->with(['route:id,mode,name', 'routeDeparture.route:id,mode,name', 'routeDeparture.driver:id,name'])
+            ->with(['route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture.route:id,mode,name,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'routeDeparture.driver:id,name', 'boardStop:id,name', 'dropStop:id,name'])
             ->orderByDesc('created_at')
             ->limit(200)
             ->get()

@@ -64,7 +64,7 @@ class DriversController extends Controller
                 ->where('mode', 'fixed')->where('is_active', true)->whereIn('scope', $driver->allowedScopes())
                 ->where(fn ($query) => $query->whereIn('city_id', $cityIds)
                     ->orWhereIn('origin_city_id', $cityIds)->orWhereIn('dest_city_id', $cityIds))
-                ->orderBy('name')->get(['id', 'name', 'origin_name', 'dest_name', 'scope']),
+                ->orderBy('name')->get(['id', 'mode', 'name', 'origin_name', 'dest_name', 'scope']),
         ]);
     }
 

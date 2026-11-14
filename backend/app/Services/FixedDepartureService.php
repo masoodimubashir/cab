@@ -82,7 +82,7 @@ class FixedDepartureService
             $departure = RouteDeparture::query()->create($this->departureAttributes($route, $data));
             if ($departure->vehicle_snapshot !== null) app(SeatMapService::class)->snapshotForDeparture($departure);
 
-            return $departure->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
+            return $departure->fresh(['route:id,city_id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'driver:id,name']);
         });
     }
 
@@ -96,7 +96,7 @@ class FixedDepartureService
         return DB::transaction(function () use ($departure, $data) {
             /** @var RouteDeparture $locked */
             $locked = RouteDeparture::query()
-                ->with('route:id,city_id,name,scope,mode')
+                ->with('route:id,city_id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng')
                 ->lockForUpdate()
                 ->findOrFail($departure->id);
 
@@ -104,7 +104,7 @@ class FixedDepartureService
             $this->assertAdminDepartureUpdateIsSafe($locked, $data);
             $locked->fill($this->departureAttributes($route, $data, $locked))->save();
 
-            return $locked->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
+            return $locked->fresh(['route:id,city_id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'driver:id,name']);
         });
     }
 
@@ -176,7 +176,7 @@ class FixedDepartureService
         return DB::transaction(function () use ($departure, $actor, $reason) {
             /** @var RouteDeparture $dep */
             $dep = RouteDeparture::query()
-                ->with(['route:id,city_id,name,scope,mode'])
+                ->with(['route:id,city_id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng'])
                 ->lockForUpdate()
                 ->findOrFail($departure->id);
 
@@ -204,7 +204,7 @@ class FixedDepartureService
                 $this->notifier->notifyUserId((int) $dep->driver_id, "fixed_bookings_closed", "Fixed bookings closed", "Admin closed new bookings for " . ($dep->route?->name ?: "this fixed vehicle") . ".", ["route_departure_id" => $dep->id, "route_id" => $dep->route_id], "lock");
             }
 
-            return $dep->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
+            return $dep->fresh(['route:id,city_id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'driver:id,name']);
         });
     }
 
@@ -263,7 +263,7 @@ class FixedDepartureService
                 }
             }
 
-            return $dep->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
+            return $dep->fresh(['route:id,city_id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'driver:id,name']);
         });
 
         if ($dep->driver_id) {
@@ -338,7 +338,7 @@ class FixedDepartureService
                 'boarding_closed_at' => $dep->boarding_closed_at ?: now(),
             ]);
 
-            return $dep->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
+            return $dep->fresh(['route:id,city_id,name,scope,mode,origin_name,dest_name,origin_lat,origin_lng,dest_lat,dest_lng', 'driver:id,name']);
         });
 
         return [
@@ -433,28 +433,8 @@ class FixedDepartureService
         $lastStop = $departure->route?->stops?->sortBy('seq')->last();
         $originRaw = trim((string) ($departure->route?->origin_name ?? ''));
         $destRaw = trim((string) ($departure->route?->dest_name ?? ''));
-        $routeName = trim((string) ($departure->route?->name ?? ''));
-
-        $originFromRoute = null;
-        $destFromRoute = null;
-        if ($routeName !== '') {
-            if (str_contains($routeName, '->')) {
-                $parts = explode('->', $routeName);
-                $originFromRoute = trim($parts[0]);
-                $destFromRoute = trim($parts[1] ?? '');
-            } elseif (str_contains($routeName, '→')) {
-                $parts = explode('→', $routeName);
-                $originFromRoute = trim($parts[0]);
-                $destFromRoute = trim($parts[1] ?? '');
-            } elseif (stripos($routeName, ' to ') !== false) {
-                $parts = preg_split('/ to /i', $routeName);
-                $originFromRoute = trim($parts[0]);
-                $destFromRoute = trim($parts[1] ?? '');
-            }
-        }
-
-        $originName = $originFromRoute ?: ($firstStop?->name ?: ($originRaw !== '' && strtolower($originRaw) !== 'origin' ? $originRaw : 'Origin'));
-        $destName = $destFromRoute ?: ($lastStop?->name ?: ($destRaw !== '' && strtolower($destRaw) !== 'destination' ? $destRaw : 'Destination'));
+        $originName = $originRaw !== '' ? $originRaw : ($firstStop?->name ?: 'Origin');
+        $destName = $destRaw !== '' ? $destRaw : ($lastStop?->name ?: 'Destination');
 
         $requestedPlatform = request()?->header('X-Platform', 'android') ?? 'android';
         $family = $identity['vehicle_name']

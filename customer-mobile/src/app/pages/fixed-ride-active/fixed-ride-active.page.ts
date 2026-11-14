@@ -43,6 +43,8 @@ interface StopItem {
 interface FixedBooking {
   id: number;
   route_name?: string | null;
+  origin_name?: string | null;
+  dest_name?: string | null;
   trip_id?: number | null;
   departure_status?: string | null;
   fixed_last_reached_stop_seq?: number | null;
@@ -414,6 +416,8 @@ export class FixedRideActivePage implements OnDestroy {
 
   // ── Smart Route Corridor Naming ───────────────────────────────────────────
   get routeOriginName(): string {
+    const displayName = this.booking?.origin_name?.trim();
+    if (displayName) return displayName;
     const name = this.booking?.route_name || '';
     if (!name) return this.booking?.board || 'Origin';
     if (name.includes('->')) return name.split('->')[0].trim();
@@ -423,6 +427,8 @@ export class FixedRideActivePage implements OnDestroy {
   }
 
   get routeDestName(): string {
+    const displayName = this.booking?.dest_name?.trim();
+    if (displayName) return displayName;
     const name = this.booking?.route_name || '';
     if (!name) return this.booking?.drop || 'Destination';
     if (name.includes('->')) return name.split('->')[1]?.trim() || '';
