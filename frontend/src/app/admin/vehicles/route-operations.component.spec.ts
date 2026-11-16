@@ -39,7 +39,8 @@ describe('Routes operations workspace', () => {
     fixture.destroy();
   });
   it('opens both copy actions from Browse routes and shows the created route independently', async () => {
-    const response = new Subject<any>(), api = { post: jasmine.createSpy().and.returnValue(response) };
+    const response = new Subject<any>(), api = { post: jasmine.createSpy().and.returnValue(response),
+      get: jasmine.createSpy().and.returnValue(of({ city: { id: 1, name: 'Sopore' } })) };
     TestBed.configureTestingModule({ imports: [RouteOperationsComponent], providers: [
       { provide: ApiService, useValue: api }, { provide: ToastService, useValue: { success: () => undefined } },
     ] });
@@ -62,6 +63,19 @@ describe('Routes operations workspace', () => {
     expect(component.copiedRouteIds.has(22)).toBeTrue();
     expect(component.routes[0].name).toBe('Market route'); fixture.destroy();
   });
+  it('records a cross-city reverse in City B without selecting it in City A', () => {
+    localStorage.removeItem('admin-copied-routes:v1:2');
+    const refresh = spyOn(page.refresh, 'emit');
+    page.routeCopied({ id: 900, name: 'B → A', city_id: 2 });
+    expect(page.copiedRouteIds.has(900)).toBeFalse();
+    expect(JSON.parse(localStorage.getItem('admin-copied-routes:v1:2')!)).toContain(900);
+    expect(refresh).toHaveBeenCalled();
+    page.cityId = 2;
+    page.ngOnChanges({ cityId: new SimpleChange(1, 2, false) });
+    expect(page.copiedRouteIds.has(900)).toBeTrue();
+    localStorage.removeItem('admin-copied-routes:v1:2');
+  });
+
   it('finds routes through shared groups for another vehicle without copying them', () => {
     page.vehicleId = 2;
     expect(page.filteredRoutes.map(route => route.id)).toEqual([20]);

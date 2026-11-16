@@ -163,6 +163,37 @@ class FixedRouteService
         return Route::query()->create($attrs);
     }
 
+    public function copyTargetCity(City $city, Route $route, bool $reverse): City
+    {
+        $this->availability->assertCityOwnsRoute($city, $route);
+        if (!$reverse) return $city;
+        if ($route->dest_city_id) return City::query()->findOrFail($route->dest_city_id);
+
+        // Older routes may have coordinates but no endpoint city IDs.
+        $cities = City::query()->where('country_code', $city->country_code)->orderBy('id')->get();
+        if ($route->dest_lat !== null && $route->dest_lng !== null) {
+            $matches = $cities->filter(fn (City $candidate) => app(DynamicPricingService::class)
+                ->pointInPolygon((float) $route->dest_lat, (float) $route->dest_lng, $candidate->boundary_polygon ?? []));
+            if ($matches->count() === 1) return $matches->first();
+            if ($matches->count() > 1) throw \Illuminate\Validation\ValidationException::withMessages([
+                'dest_city_id' => 'Destination overlaps multiple cities. Set its city on the original route before reversing.',
+            ]);
+            $nearby = $cities->filter(fn (City $candidate) => $candidate->center_lat !== null && $candidate->center_lng !== null
+                && $this->calculateDistanceMeters((float) $route->dest_lat, (float) $route->dest_lng,
+                    $candidate->center_lat, $candidate->center_lng) <= 8000)
+                ->sortBy(fn (City $candidate) => $this->calculateDistanceMeters((float) $route->dest_lat,
+                    (float) $route->dest_lng, $candidate->center_lat, $candidate->center_lng));
+            if ($nearby->isNotEmpty()) return $nearby->first();
+        }
+        // An exact endpoint label is safe; never guess from a corridor title.
+        $named = $cities->filter(fn (City $candidate) => mb_strtolower(trim($candidate->name)) === mb_strtolower(trim($route->dest_name)));
+        if ($named->count() === 1) return $named->first();
+        if ($route->scope === 'local') return $city;
+        throw \Illuminate\Validation\ValidationException::withMessages([
+            'dest_city_id' => 'Set the destination city on the original route before copying it as reverse.',
+        ]);
+    }
+
     public function copyAdminRoute(City $city, Route $route, string $name, bool $reverse, bool $isActive = false): Route
     {
         $this->availability->assertCityOwnsRoute($city, $route);
@@ -170,7 +201,11 @@ class FixedRouteService
         return DB::transaction(function () use ($city, $route, $name, $reverse, $isActive) {
             $source = Route::query()->whereKey($route->id)->lockForUpdate()->firstOrFail();
             $this->availability->assertCityOwnsRoute($city, $source);
+            $targetCity = $this->copyTargetCity($city, $source, $reverse);
+            ManagerScope::assertCityAllowed($targetCity->id);
             $copy = $source->replicate()->unsetRelations();
+            $copy->city_id = $targetCity->id;
+            if ($targetCity->id !== $city->id) $copy->city_vehicle_type_id = null;
             $copy->name = $name;
             $copy->is_active = $isActive;
             if ($reverse) {
@@ -179,6 +214,8 @@ class FixedRouteService
                     $copy->$destination = $source->$origin;
                 }
                 $copy->path_polyline = is_array($source->path_polyline) ? array_reverse($source->path_polyline) : null;
+                $copy->origin_city_id = $targetCity->id;
+                $copy->dest_city_id = $source->origin_city_id ?: $city->id;
             }
             $copy->save();
             // Removed stops are history for the original route, not part of its current plan.

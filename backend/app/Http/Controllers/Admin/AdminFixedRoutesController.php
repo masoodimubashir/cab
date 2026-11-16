@@ -141,17 +141,34 @@ class AdminFixedRoutesController
         ], 201);
     }
 
+    public function copyContext(Request $request, City $city, Route $route)
+    {
+        $request->validate(['reverse' => ['required', 'boolean']]);
+        $targetCity = $this->routes->copyTargetCity($city, $route, $request->boolean('reverse'));
+        \App\Services\ManagerScope::assertCityAllowed($targetCity->id);
+        return response()->json(['city' => ['id' => $targetCity->id, 'name' => $targetCity->name]]);
+    }
+
     public function copy(Request $request, City $city, Route $route)
     {
         $this->availability->assertCityOwnsRoute($city, $route);
+        $request->validate(['reverse' => ['required', 'boolean']]);
+        $targetCity = $this->routes->copyTargetCity($city, $route, $request->boolean('reverse'));
+        \App\Services\ManagerScope::assertCityAllowed($targetCity->id);
         $request->merge(['name' => is_string($request->input('name')) ? trim($request->input('name')) : $request->input('name')]);
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:120', function ($attribute, $value, $fail) use ($city) {
-                if (is_string($value) && $this->routes->findAdminRouteByName($city, $value)) {
+            'name' => ['required', 'string', 'max:120', function ($attribute, $value, $fail) use ($targetCity) {
+                if (is_string($value) && $this->routes->findAdminRouteByName($targetCity, $value)) {
                     $fail('A route with this name already exists in this city.');
                 }
             }],
             'reverse' => ['required', 'boolean'],
+            'origin_name' => ['prohibited'], 'dest_name' => ['prohibited'],
+            'origin_lat' => ['prohibited'], 'origin_lng' => ['prohibited'],
+            'dest_lat' => ['prohibited'], 'dest_lng' => ['prohibited'],
+            'origin_city_id' => ['prohibited'], 'dest_city_id' => ['prohibited'],
+            'city_id' => ['prohibited'], 'target_city_id' => ['prohibited'],
+            'stops' => ['prohibited'], 'path_polyline' => ['prohibited'],
             'is_active' => ['nullable', 'boolean'],
             'assigned_group_ids' => ['nullable', 'array'],
             'assigned_group_ids.*' => ['integer'],
@@ -162,15 +179,20 @@ class AdminFixedRoutesController
         ]);
         $isActive = array_key_exists('is_active', $data) ? (bool) $data['is_active'] : false;
 
-        $copy = DB::transaction(function () use ($city, $route, $data, $isActive) {
+        $copy = DB::transaction(function () use ($city, $targetCity, $route, $data, $isActive) {
             $copy = $this->routes->copyAdminRoute($city, $route, $data['name'], (bool) $data['reverse'], $isActive);
+            if ((int) $copy->city_id !== (int) $targetCity->id) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'route' => 'The source destination changed. Reopen the copy dialog and try again.',
+                ]);
+            }
 
             $driverIds = isset($data['driver_user_ids']) && is_array($data['driver_user_ids'])
                 ? array_values(array_unique(array_map('intval', $data['driver_user_ids'])))
                 : [];
 
             if ($driverIds) {
-                if (Driver::query()->forCity((int) $city->id)->whereIn('user_id', $driverIds)->count() !== count($driverIds)) {
+                if (Driver::query()->forCity((int) $targetCity->id)->whereIn('user_id', $driverIds)->count() !== count($driverIds)) {
                     abort(422, 'Some drivers are not registered in this city.');
                 }
             }
@@ -183,10 +205,15 @@ class AdminFixedRoutesController
                 $groupIds[] = (int) $data['assigned_group_id'];
             }
             $groupIds = array_values(array_unique($groupIds));
+            if (RouteGroup::query()->where('city_id', $targetCity->id)->whereIn('id', $groupIds)->count() !== count($groupIds)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'assigned_group_ids' => 'Choose stands belonging to the copied route’s city.',
+                ]);
+            }
 
             if ((($data['assigned_group_id'] ?? null) === 'new' || !empty($data['new_group_name'])) && !empty($data['new_group_name'])) {
                 $group = RouteGroup::query()->create([
-                    'city_id' => $city->id,
+                    'city_id' => $targetCity->id,
                     'city_vehicle_type_id' => $copy->city_vehicle_type_id,
                     'name' => trim($data['new_group_name']),
                     'is_active' => true,
@@ -198,7 +225,7 @@ class AdminFixedRoutesController
             }
 
             if ($groupIds) {
-                $groups = RouteGroup::query()->where('city_id', $city->id)->whereIn('id', $groupIds)->get();
+                $groups = RouteGroup::query()->where('city_id', $targetCity->id)->whereIn('id', $groupIds)->get();
                 foreach ($groups as $group) {
                     $group->routes()->syncWithoutDetaching([$copy->id]);
                     if (array_key_exists('driver_user_ids', $data) && $data['driver_user_ids'] !== null) {
@@ -210,8 +237,9 @@ class AdminFixedRoutesController
             return $copy;
         });
 
-        broadcast(new FixedRouteCatalogUpdated($city->id, $copy->id, 'route_created'))->toOthers();
-        return response()->json(['route' => $this->routes->shapeAdminRoute($copy), 'message' => $isActive ? 'Route copied and activated.' : 'Route copied. Review and activate it when ready.'], 201);
+        broadcast(new FixedRouteCatalogUpdated($copy->city_id, $copy->id, 'route_created'))->toOthers();
+        return response()->json(['route' => $this->routes->shapeAdminRoute($copy), 'allocations_applied' => true,
+            'message' => $isActive ? 'Route copied and activated.' : 'Route copied. Review and activate it when ready.'], 201);
     }
 
     public function update(Request $request, City $city, Route $route)
