@@ -185,6 +185,21 @@ class AdminFixedRouteCopyTest extends TestCase
         $this->getJson($this->url().'-context?reverse=1')->assertUnprocessable()->assertJsonValidationErrors('dest_city_id');
     }
 
+    public function test_wrong_default_destination_city_does_not_hide_actual_reverse_city_stands(): void
+    {
+        $wrongCity = \App\Models\City::create(['name' => 'Anantnag', 'country_code' => 'IN', 'center_lat' => 33.73, 'center_lng' => 75.15]);
+        \App\Models\City::findOrFail($this->destination)->update(['center_lat' => 34.5, 'center_lng' => 74.5]);
+        $this->route->update(['dest_city_id' => $wrongCity->id, 'dest_name' => 'Destination landmark']);
+        $group = RouteGroup::create(['city_id' => $this->destination, 'name' => 'Existing destination stand', 'is_active' => true]);
+        $this->getJson($this->url().'-context?reverse=1')->assertOk()->assertJsonPath('city.id', $this->destination);
+        $copy = $this->postJson($this->url(), ['name' => 'Correct reverse', 'reverse' => true,
+            'assigned_group_ids' => [$group->id]])->assertCreated()->json('route');
+        $this->assertEquals($this->destination, $copy['city_id']);
+        $this->assertEquals($this->destination, $copy['origin_city_id']);
+        $this->assertTrue($group->fresh()->routes->contains($copy['id']));
+        $this->assertEquals($wrongCity->id, $this->route->fresh()->dest_city_id);
+    }
+
     public function test_copy_with_is_active_and_stand_and_driver_allocation(): void
     {
         $group = RouteGroup::query()->create(['city_id' => $this->city, 'name' => 'Existing Stand', 'is_active' => true]);
