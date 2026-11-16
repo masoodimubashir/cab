@@ -4,6 +4,37 @@ Last updated: 2026-11-07 (Asia/Calcutta)
 
 ## Start here
 
+- Budgam missing service correction (2026-11-16): reproduced the user's
+  customer Home report. Home defaulted to Local, but its existing pickScope
+  handler had no visible control; live city 21 offered Fixed only in Outstation.
+  Restored Local/Outstation buttons using the existing scope handler, visible
+  in collapsed and expanded sheets. Added space only when both choices exist.
+  ChatGPT browser at Budgam verified Outstation reveals Book A Seat; all 12
+  targeted Home location/catalog tests passed in headless Chrome, including
+  the new mixed-scope regression. This is a local customer-app correction,
+  not proof the client has an updated APK or that Local routes are configured.
+  Next: ship an updated customer build and verify on the client's phone;
+  separately inspect intended Local route assignments if Local remains missing.
+
+- Budgam customer preview (2026-11-16): user requested switching the local
+  browser app to Budgam. Added an explicit development/browser/localhost-only
+  `?previewLocation=budgam` option in GeolocationService (34.0160788, 74.7353071).
+  Simulated fixes do not call the location-sync API. Angular dev compilation
+  passed; ChatGPT browser map linked to those coordinates and Home showed only
+  Private Ride and Shuttle, reproducing the client's missing Book A Seat.
+  Live Badgam city 21 products returned Fixed for Outstation, absent for Local.
+  No production settings changed. Next: investigate the city/scope route match
+  and Home's Local-only service selection; no service-visibility fix yet.
+
+- Customer development-server recovery (2026-11-14): user reported the missing
+  savedPlaces template error after the history merge. Current source had no such
+  binding and passed Angular template compilation. Restarted only the customer
+  server on port 8100 to discard its stale failed build. Browser verification at
+  /customer-tabs/go/private showed Choose your ride with no compiler overlay and
+  retained the journey selections. The separate fare request showed Unavailable;
+  no booking was submitted. Next: investigate that pricing response separately
+  if the user reports it; no UI feature change was needed for the compiler error.
+
 - Display-name recheck (2026-11-14): found and fixed the raw route-title subtitle
   in the driver full-screen map and import/duplicate matching against only stored
   titles. Lookup now recognizes both original and displayed titles within the

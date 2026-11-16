@@ -1,4 +1,8 @@
 <ion-app>
   <app-side-menu></app-side-menu>
   <ion-router-outlet id="main-content"></ion-router-outlet>
+  <button *ngIf="showPreviewCityButton" class="dev-city-button" type="button"
+    [disabled]="previewCitiesLoading" (click)="changePreviewCity()">
+    {{ previewCitiesLoading ? 'Loading cities…' : 'Dev: change city' }}
+  </button>
 </ion-app>

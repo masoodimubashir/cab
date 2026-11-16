@@ -65,9 +65,8 @@ class PricingController extends Controller
     /**
      * Public catalogue for a city as a two-step tree: scope (Local / Outstation)
      * → mode (Private / Fixed / Shuttle). The customer app shows the scopes first,
-     * then the modes within the chosen one. A scope is only returned if it's switched on and has at least one
-     * customer-visible mode. Inactive modes are dropped; active Fixed
-     * modes stay route-gated, while Shuttle can appear as quote-preview only.
+     * then the modes within the chosen one. Only enabled scopes/modes are
+     * returned. Route and vehicle availability never hides an enabled service.
      *
      * `data` is the flat list of active modes (compat for the current app, which
      * reads scope/mode/kind off a flat list); `scopes` is the grouped tree the
@@ -78,26 +77,9 @@ class PricingController extends Controller
         $requestedPlatform = $request->header('X-Platform') ?: $request->input('platform');
         $familyImagesMap = $imageService->loadMapForCity($city->id);
 
-        $activeSharedRouteKeys = Route::query()
-            ->where('city_id', $city->id)
-            ->where('is_active', true)
-            ->whereIn('mode', ['fixed', 'shuttle'])
-            ->get(['scope', 'mode'])
-            ->mapWithKeys(fn (Route $route) => [$route->scope . ':' . $route->mode => true]);
-
-        // The catalogue itself is global (ride_types); only the readiness gate
-        // below is per city — a Fixed mode stays hidden until this city has an
-        // active fixed route to book. Shuttle is always shown (quote preview).
-        $tree = collect(RideCatalog::tree(
-            onlyActive: true,
-            modeFilter: function (RideType $rt, string $scope) use ($activeSharedRouteKeys) {
-                if ($rt->resolvedMode() !== RideType::MODE_FIXED) {
-                    return true;
-                }
-
-                return $activeSharedRouteKeys->has($scope . ':fixed');
-            },
-        ))->map(function (array $s) use ($city, $requestedPlatform, $familyImagesMap, $imageService) {
+        // Enabled services remain visible regardless of routes or vehicles.
+        // Availability is checked by searches and booking validation instead.
+        $tree = collect(RideCatalog::tree(onlyActive: true))->map(function (array $s) use ($city, $requestedPlatform, $familyImagesMap, $imageService) {
             $modes = collect($s['modes'])->map(function (array $mode) use ($city, $requestedPlatform, $familyImagesMap, $imageService) {
                 $name = trim($mode['name'] ?? '');
                 $preloaded = $familyImagesMap->get(strtolower($name), collect());

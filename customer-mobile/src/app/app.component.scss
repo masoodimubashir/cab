@@ -1,0 +1,13 @@
+.dev-city-button {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 76px);
+  right: 12px;
+  z-index: 1000;
+  border: 1px solid #334155;
+  border-radius: 18px;
+  padding: 8px 12px;
+  background: #0f172a;
+  color: #fff;
+  font: 600 12px/1.2 system-ui, sans-serif;
+  box-shadow: 0 2px 8px #0003;
+}

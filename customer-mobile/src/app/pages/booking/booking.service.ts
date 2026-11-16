@@ -88,10 +88,20 @@ export class BookingService {
    * it on. `tilesFor(scope)` flattens the chosen scope into one row of tiles.
    */
   async catalog(cityId: number): Promise<RawScope[]> {
-    const res = await firstValueFrom(
-      this.api.get<{ scopes?: RawScope[] }>(`/pricing/cities/${cityId}/products`),
-    );
-    return res?.scopes ?? [];
+    // The shared global catalogue owns enabled services. Older pricing servers
+    // hide Fixed when no city route exists; use pricing only for city artwork.
+    const [enabled, artwork] = await Promise.all([
+      firstValueFrom(this.api.get<{ scopes?: RawScope[] }>(`/catalog/cities/${cityId}/driver-ride-products`)),
+      firstValueFrom(this.api.get<{ scopes?: RawScope[] }>(`/pricing/cities/${cityId}/products`)).catch(() => null),
+    ]);
+    return (enabled.scopes ?? []).map(scope => ({
+      ...scope,
+      modes: scope.modes.map(mode => {
+        const art = artwork?.scopes?.find(s => s.scope === scope.scope)?.modes.find(m => m.mode === mode.mode)
+          ?? artwork?.scopes?.reduce<RawScope['modes']>((all, s) => all.concat(s.modes), []).find(m => m.mode === mode.mode);
+        return { ...mode, image_url: art?.image_url ?? mode.image_url, tile_image_url: art?.tile_image_url ?? mode.tile_image_url };
+      }),
+    }));
   }
 }
 

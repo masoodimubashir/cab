@@ -1021,7 +1021,7 @@
   }
 
   .has-service-choices .bh-booking-sheet:not(.is-expanded) {
-    .bh-scope-row, .bh-home-scroll { display: none; }
+    .bh-home-scroll { display: none; }
     .bh-service-controls {
       display: flex;
       align-items: center;
@@ -1114,7 +1114,7 @@
       line-height: 14px;
     }
   }
-  .bh-scope-row { margin: 12px 0 0; }
+  .bh-scope-row { margin: 0 0 12px; width: 100%; }
   .bh-scope-row button { min-height: 32px; }
 }
 .bh-service-art {

@@ -76,6 +76,26 @@ describe('Home location gate and catalog continuity', () => {
     expect(root.querySelector('.loc-loader-overlay')).toBeNull();
     expect(root.querySelector('.bh-home-content')!.hasAttribute('inert')).toBeFalse();
   });
+  it('shows every enabled service across scopes without a Home journey switch', () => {
+    const { view, page, root } = setup();
+    page.located = true;
+    page.locationFetching = false;
+    page.scopes = ['local', 'outstation'];
+    page.scope = 'local';
+    page.catalog = [
+      { scope: 'local', modes: [{ mode: 'private' }, { mode: 'shuttle' }] },
+      { scope: 'outstation', modes: [{ mode: 'private' }, { mode: 'fixed', display_name: 'Book A Seat', ride_type_id: 5 }, { mode: 'shuttle' }] },
+    ];
+    page.booking.setScope = jasmine.createSpy();
+    spyOn(page, 'clearHomeMap').and.stub();
+    spyOn(page, 'syncHomeMap').and.stub();
+    spyOn(page, 'resumeHomeCamera').and.stub();
+    page.rebuildTiles();
+    view.detectChanges();
+    expect(root.querySelector('[aria-label="Journey type"]')).toBeNull();
+    expect(root.querySelectorAll('.bh-services button').length).toBe(3);
+    expect(root.querySelector('.bh-services')!.textContent).toContain('Book A Seat');
+  });
   it('recovers automatically when a late watch fix arrives after GPS failed', async () => {
     const { page } = setup();
     page.geo.getCurrentPosition.and.resolveTo(null);

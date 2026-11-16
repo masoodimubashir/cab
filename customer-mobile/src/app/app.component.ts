@@ -18,6 +18,7 @@ import { AuthService } from './core/auth.service';
 import { PushService } from './core/push.service';
 import { GeolocationService } from './core/geolocation.service';
 import { AppAssetService } from './core/app-asset.service';
+import { BookingService } from './pages/booking/booking.service';
 
 @Component({
   selector: 'app-root',
@@ -26,6 +27,39 @@ import { AppAssetService } from './core/app-asset.service';
   standalone: false,
 })
 export class AppComponent implements OnInit {
+  get showPreviewCityButton(): boolean { return this.geo.localPreviewEnabled; }
+  previewCitiesLoading = false;
+
+  async changePreviewCity(): Promise<void> {
+    if (!this.showPreviewCityButton || this.previewCitiesLoading) return;
+    this.previewCitiesLoading = true;
+    try {
+      const cities = (await this.booking.cities()).filter(city => city.center_lat != null && city.center_lng != null
+        && Number.isFinite(Number(city.center_lat)) && Number.isFinite(Number(city.center_lng)));
+      const alert = await this.alertCtrl.create({
+        header: 'Development city',
+        message: 'Select a test location. Home reloads with this location across the app.',
+        inputs: [
+          { type: 'radio', label: 'Use device GPS', value: 'gps' },
+          ...cities.map(city => ({ type: 'radio' as const, label: city.name, value: String(city.id) })),
+        ],
+        buttons: [
+          { text: 'Cancel', role: 'cancel' },
+          { text: 'Apply', handler: (id: string) => {
+            if (id === 'gps') { this.geo.setPreviewCity(null); return; }
+            const city = cities.find(item => String(item.id) === id);
+            if (!city) return false;
+            this.geo.setPreviewCity({ name: city.name, lat: Number(city.center_lat), lng: Number(city.center_lng) });
+            return;
+          } },
+        ],
+      });
+      await alert.present();
+    } catch {
+      const toast = await this.toastCtrl.create({ message: 'Could not load preview cities. Try again.', duration: 3000 });
+      await toast.present();
+    } finally { this.previewCitiesLoading = false; }
+  }
   @ViewChild(IonRouterOutlet, { static: false }) routerOutlet?: IonRouterOutlet;
 
   private lastBackPress = 0;
@@ -47,6 +81,7 @@ export class AppComponent implements OnInit {
     private popoverCtrl: PopoverController,
     private menuCtrl: MenuController,
     private appAssets: AppAssetService,
+    private booking: BookingService,
   ) {}
 
   ngOnInit(): void {

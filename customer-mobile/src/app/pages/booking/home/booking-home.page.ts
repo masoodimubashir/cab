@@ -948,6 +948,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.setBookingSheetExpanded(true);
     const changed = this.mode !== tile.mode;
     this.mode = tile.mode;
+    this.scope = this.catalog.find(s => s.scope === this.scope && s.modes.some(m => m.mode === tile.mode))?.scope
+      ?? this.catalog.find(s => s.modes.some(m => m.mode === tile.mode))?.scope ?? this.scope;
     this.booking.setMode(tile.mode, tile.rideTypeId);
     if (changed) {
       this.clearHomeMap();
@@ -985,7 +987,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
     switch (mode) {
       case 'private': this.booking.clearPlaces(); void this.router.navigate(['/customer-tabs/go/private']); break;
-      case 'fixed':   void this.router.navigate(['/customer-tabs/go/fixed'], { queryParams: { scope: this.scope } }); break;
+      case 'fixed':   void this.router.navigate(['/customer-tabs/go/fixed'], { queryParams: { scope: 'all' } }); break;
       case 'shuttle': void this.router.navigate(['/customer-tabs/go/shuttle']); break;
       default:        void this.router.navigate(['/customer-tabs/go/private']);
     }
@@ -995,9 +997,12 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   trackByHomeRoute = (_: number, route: HomeRoute): number => route.id;
 
   private rebuildTiles(): void {
-    this.tiles = tilesFor(this.catalog, this.scope);
+    this.tiles = this.catalog.reduce<ServiceTile[]>((all, s) => all.concat(tilesFor(this.catalog, s.scope)), [])
+      .filter((tile, index, all) => all.findIndex(other => other.mode === tile.mode) === index);
     const selected = this.tiles.find(tile => tile.mode === this.mode) ?? this.tiles[0];
     this.mode = selected?.mode ?? null;
+    if (selected) this.scope = this.catalog.find(s => s.scope === this.scope && s.modes.some(m => m.mode === selected.mode))?.scope
+      ?? this.catalog.find(s => s.modes.some(m => m.mode === selected.mode))?.scope ?? this.scope;
     if (selected) this.booking.setMode(selected.mode, selected.rideTypeId);
   }
 
@@ -1029,7 +1034,6 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     if (!this.city || !this.offersFixed || !this.currentCoords) return;
     const params = new URLSearchParams({
       city_id: String(this.city.id),
-      scope: this.scope,
       lat: String(this.currentCoords.lat),
       lng: String(this.currentCoords.lng),
       limit: '100',
@@ -1037,7 +1041,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.routesLoading = true;
     this.homeRoutesSub = this.api.get<{ data: HomeRoute[] }>('/fixed/routes?' + params).subscribe({
       next: res => {
-        this.homeRouteCatalog = (res.data ?? []).filter(route => route.scope === this.scope);
+        this.homeRouteCatalog = (res.data ?? []).filter(route =>
+          this.catalog.some(s => s.scope === route.scope && s.modes.some(m => m.mode === 'fixed')));
         this.updateNearbyRoutes();
         this.routesLoading = false;
         this.syncHomeMap();
@@ -1342,7 +1347,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     if (!fixed) return;
     this.pickMode(fixed);
     this.booking.setScope(this.scope);
-    void this.router.navigate(['/customer-tabs/go/fixed'], { queryParams: { routeId: route.id, scope: this.scope } });
+    void this.router.navigate(['/customer-tabs/go/fixed'], { queryParams: { routeId: route.id, scope: route.scope } });
   }
 
   browseFixedRoutes(): void {

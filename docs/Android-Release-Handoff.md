@@ -1,5 +1,30 @@
 # Android release handoff
 
+## 2026-11-14 — Updated customer and driver APKs
+
+- User requested new APK files for both apps. Built the current working tree
+  based on commit `6d1b9679`, with Android patch-version increments.
+- Customer: `release-apks/DreamCabs-Customer-5.7.3-release-2026-11-14.apk`,
+  package `product.customer.dreamcab`, version code 573, 11,559,056 bytes.
+  SHA-256 `08860ff324dd35d6454dd7b11eccacd4bb80304144d136a56a35efd7bd965f30`.
+- Driver: `release-apks/Cabbies-Driver-5.1.6-release-2026-11-14.apk`,
+  package `product.driver.dreamcab`, version code 516, 11,966,917 bytes.
+  SHA-256 `145e4c20ec3bf3add40f8cb3888de80f6f1644920584de25c483d6dce2d1dcf4`.
+- Local evidence: both production Angular builds, Capacitor syncs, Android
+  release lint and Gradle assembleRelease passed. Android aapt verified package
+  IDs/versions. apksigner verified v2 signatures; each certificate matches the
+  existing release certificate recorded below. Packaged main JavaScript hashes
+  match the fresh production web builds.
+- Build logs: `release-apks/customer-5.7.3-build.log` and
+  `release-apks/driver-5.1.6-build.log` (ignored build artifacts).
+- The referenced Google-Play-Release-Setup.md is absent in this checkout; used
+  the existing npm release scripts and configured signing setup without changes
+  to signing keys or credentials.
+- External status: no phone installation/runtime test, backend deployment,
+  Firebase Console verification or Play Store upload was performed in this build
+  task. APKs use the configured production API; building them does not deploy
+  backend changes. Files were prepared locally and not sent to the client.
+
 ## 2026-11-06 — Release APKs for client delivery
 
 - The user requested both Android apps for direct delivery to the client.

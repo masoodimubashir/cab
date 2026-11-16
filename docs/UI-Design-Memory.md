@@ -2,6 +2,14 @@
 
 Saved: 2026-10-17 (Asia/Calcutta).
 
+Customer Home functional correction (2026-11-16): user demonstrated missing
+Book A Seat in the Budgam customer preview. Restored the existing Local /
+Outstation choice on Home so an Outstation-only service remains accessible.
+This implements the existing journey-type behavior; it does not treat Outstation
+routes as Local or override backend readiness. Browser verified the service
+appears after selecting Outstation; 12 targeted Home tests passed. Customer
+release/device verification is pending. No production route settings changed.
+
 Display-name recheck (2026-11-14): removed the stale raw-title subtitle from the
 driver full-screen map, whose heading already uses display endpoints. Admin
 import/duplicate-name lookup now recognizes both stored and displayed route
