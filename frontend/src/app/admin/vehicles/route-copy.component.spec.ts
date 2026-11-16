@@ -1,15 +1,16 @@
 import { TestBed } from '@angular/core/testing';
-import { Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
 import { RouteCopyComponent } from './route-copy.component';
 
 describe('Route copy dialog', () => {
-  let api: { post: jasmine.Spy; patch?: jasmine.Spy; put?: jasmine.Spy };
+  let api: { get: jasmine.Spy; post: jasmine.Spy; patch?: jasmine.Spy; put?: jasmine.Spy };
   let response: Subject<any>;
   beforeEach(() => {
     response = new Subject();
     api = {
+      get: jasmine.createSpy().and.returnValue(of({ city: { id: 1, name: 'Srinagar' } })),
       post: jasmine.createSpy().and.returnValue(response),
       patch: jasmine.createSpy().and.returnValue(new Subject()),
       put: jasmine.createSpy().and.returnValue(new Subject()),
@@ -125,6 +126,34 @@ describe('Route copy dialog', () => {
       new_group_name: null,
       driver_user_ids: [101, 102, 103],
     });
+    fixture.destroy();
+  });
+
+  it('resolves City B and offers only City B stands/drivers with fixed B to A endpoints', () => {
+    api.get.and.callFake((url: string) => of(url.includes('copy-context')
+      ? { city: { id: 2, name: 'Kupwara' } }
+      : { data: url.endsWith('route-groups') ? [{ id: 90, name: 'Kupwara Stand', driver_user_ids: [900], route_ids: [], vehicle_set_ids: [], is_active: true }]
+        : [{ id: 9, user_id: 900, name: 'Kupwara Driver' }] }));
+    const fixture = dialog(true), page = fixture.componentInstance;
+    expect(page.targetCityId).toBe(2);
+    expect(page.originName).toBe('Kupwara'); expect(page.destName).toBe('Srinagar');
+    expect(page.groups.map(g => g.id)).toEqual([90]);
+    expect(page.drivers.map(d => d.user_id)).toEqual([900]);
+    expect(fixture.nativeElement.textContent).toContain('Save under city: Kupwara');
+    expect(fixture.nativeElement.querySelector('[name="destName"]')).toBeNull();
+    page.save();
+    response.next({ route: { id: 21, name: page.name, city_id: 2, is_active: true }, allocations_applied: true });
+    expect(api.post.calls.count()).toBe(1);
+    fixture.destroy();
+  });
+
+  it('blocks save if the destination city cannot be resolved or accessed', () => {
+    api.get.and.returnValue(throwError(() => ({ error: { message: 'Destination city required' } })));
+    const fixture = dialog(true), page = fixture.componentInstance;
+    expect(page.targetCityId).toBeNull();
+    page.save();
+    expect(api.post).not.toHaveBeenCalled();
+    expect(page.error).toBe('Destination city required');
     fixture.destroy();
   });
 

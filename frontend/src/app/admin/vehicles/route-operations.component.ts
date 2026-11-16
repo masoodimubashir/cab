@@ -67,7 +67,17 @@ export class RouteOperationsComponent implements OnChanges {
   copyRoute: MasterRoute | null = null;
   copyReverse = false;
   startRouteCopy(route: MasterRoute, reverse = false): void { this.copyRoute = route; this.copyReverse = reverse; }
-  routeCopied(result: { id: number; name: string }): void {
+  routeCopied(result: { id: number; name: string; city_id?: number }): void {
+    if (result.city_id && result.city_id !== this.cityId) {
+      try {
+        const key = `admin-copied-routes:v1:${result.city_id}`;
+        const existing = JSON.parse(localStorage.getItem(key) || '[]');
+        const ids = Array.isArray(existing) ? existing : [];
+        localStorage.setItem(key, JSON.stringify([...new Set([...ids, result.id])]));
+      } catch { /* Storage is optional. */ }
+      this.refresh.emit();
+      return;
+    }
     this.trackCopiedRoute(result.id);
     this.clearFilters(); this.search = result.name; this.grouping = 'routes';
     this.selectedRouteId = result.id; this.routeDetailTab = 'copied'; this.refresh.emit();

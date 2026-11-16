@@ -8,6 +8,8 @@ import { ToastService } from '../../core/toast.service';
 import { ButtonComponent, IconComponent, ModalComponent } from '../../ui';
 import { MasterDriver, MasterGroup, MasterRoute, MasterRouteStop, MasterVehicle } from './master-explorer.component';
 
+interface CopyResult { route: { id: number; name: string; city_id?: number; is_active?: boolean }; allocations_applied?: boolean; }
+
 @Component({
   selector: 'app-route-copy', standalone: true,
   imports: [CommonModule, FormsModule, ButtonComponent, ModalComponent, IconComponent],
@@ -25,6 +27,11 @@ import { MasterDriver, MasterGroup, MasterRoute, MasterRouteStop, MasterVehicle 
             <strong>{{ destName }}</strong>
           </div>
         </div>
+
+        <p *ngIf="reverse" role="status">
+          {{ resolvingCity ? 'Finding the reverse route’s origin city…' : ('Save under city: ' + (targetCityName || 'Unavailable')) }}
+          <span *ngIf="!resolvingCity && targetCityName">. Endpoints stay {{ originName }} → {{ destName }}.</span>
+        </p>
 
         <div class="form-field">
           <label for="copied-route-name">New route name</label>
@@ -73,7 +80,7 @@ import { MasterDriver, MasterGroup, MasterRoute, MasterRouteStop, MasterVehicle 
         </section>
 
         <!-- STAND ALLOCATION SECTION (CARD MULTISELECT) -->
-        <section class="allocation-section" aria-label="Stand and driver allocation">
+        <section class="allocation-section" aria-label="Stand and driver allocation" *ngIf="!resolvingCity && (!reverse || targetCityId)">
           <header class="allocation-header">
             <span class="allocation-icon"><tm-icon name="folder" [size]="14" /></span>
             <div class="allocation-title-wrap">
@@ -208,7 +215,7 @@ import { MasterDriver, MasterGroup, MasterRoute, MasterRouteStop, MasterVehicle 
 
       <div slot="footer" class="actions">
         <tm-button variant="ghost" [disabled]="saving" (clicked)="close()">Cancel</tm-button>
-        <tm-button variant="green" [disabled]="saving" (clicked)="save()">{{ saving ? 'Saving copy…' : 'Save copied route' }}</tm-button>
+        <tm-button variant="green" [disabled]="saving || resolvingCity || (reverse && !targetCityId)" (clicked)="save()">{{ saving ? 'Saving copy…' : 'Save copied route' }}</tm-button>
       </div>
     </tm-modal>
   `,
@@ -434,12 +441,15 @@ export class RouteCopyComponent implements OnInit {
   @Input() groups: MasterGroup[] = [];
   @Input() drivers: MasterDriver[] = [];
   @Output() closed = new EventEmitter<void>();
-  @Output() saved = new EventEmitter<{ id: number; name: string }>();
+  @Output() saved = new EventEmitter<{ id: number; name: string; city_id?: number }>();
 
   name = '';
   isActive = true;
   saving = false;
   error = '';
+  resolvingCity = false;
+  targetCityId: number | null = null;
+  targetCityName = '';
 
   // Stand and Driver allocations start unassigned by default
   selectedGroupIds = new Set<number>();
@@ -455,6 +465,30 @@ export class RouteCopyComponent implements OnInit {
     this.name = this.reverse
       ? `${this.route.dest_name.slice(0, 58)} → ${this.route.origin_name.slice(0, 58)}`
       : `${this.route.name.slice(0, 113)} (copy)`;
+    if (!this.reverse) { this.targetCityId = this.cityId; return; }
+    this.resolvingCity = true;
+    this.api.get<{ city: { id: number; name: string } }>(
+      `/admin/cities/${this.cityId}/fixed-routes/${this.route.id}/copy-context?reverse=1`,
+    ).pipe(
+      switchMap(context => {
+        this.targetCityId = context.city.id;
+        this.targetCityName = context.city.name;
+        if (this.targetCityId === this.cityId) return of({ groups: this.groups, drivers: this.drivers });
+        this.selectedGroupIds.clear(); this.assignedDriverUserIds = []; this.createNewStand = false; this.newGroupName = '';
+        this.groups = []; this.drivers = [];
+        return forkJoin({
+          groups: this.api.get<{ data: MasterGroup[] }>(`/admin/cities/${this.targetCityId}/route-groups`).pipe(map(res => res.data)),
+          drivers: this.api.get<{ data: MasterDriver[] }>(`/admin/cities/${this.targetCityId}/route-group-drivers`).pipe(map(res => res.data)),
+        });
+      }),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
+      next: result => { this.groups = result.groups; this.drivers = result.drivers; this.resolvingCity = false; },
+      error: err => {
+        this.resolvingCity = false; this.targetCityId = null;
+        this.error = err?.error?.message || 'Could not resolve the reverse route city. Check the original destination city and try again.';
+      },
+    });
   }
 
   get originName(): string {
@@ -466,6 +500,7 @@ export class RouteCopyComponent implements OnInit {
   }
 
   get vehicleName(): string {
+    if (this.targetCityId && this.targetCityId !== this.cityId) return 'Assign through the new city’s stands';
     if (!this.vehicles?.length || !this.route.city_vehicle_type_id) return 'Not bound to a vehicle';
     const vehicle = this.vehicles.find(v => (v.mode_row_ids ?? [v.id]).includes(this.route.city_vehicle_type_id ?? -1));
     return vehicle?.display_name || vehicle?.vehicle_type_name || 'Configured vehicle';
@@ -586,7 +621,7 @@ export class RouteCopyComponent implements OnInit {
   }
 
   save(): void {
-    if (this.saving) return;
+    if (this.saving || this.resolvingCity || (this.reverse && !this.targetCityId)) return;
     const name = this.name.trim();
     if (!name || name.length > 120) {
       this.error = 'Enter a route name, up to 120 characters.';
@@ -610,7 +645,7 @@ export class RouteCopyComponent implements OnInit {
       driver_user_ids: this.hasStandsSelected && this.assignedDriverUserIds.length ? this.assignedDriverUserIds : null,
     };
 
-    this.api.post<{ route: { id: number; name: string; is_active?: boolean } }>(
+    this.api.post<CopyResult>(
       `/admin/cities/${this.cityId}/fixed-routes/${this.route.id}/copy`,
       payload
     ).pipe(
@@ -618,16 +653,17 @@ export class RouteCopyComponent implements OnInit {
         // Fallback: If isActive requested but not set on the route, PATCH route
         if (this.isActive && !result.route.is_active && typeof this.api.patch === 'function') {
           return this.api.patch<{ route: { id: number; name: string; is_active: boolean } }>(
-            `/admin/cities/${this.cityId}/fixed-routes/${result.route.id}`,
+            `/admin/cities/${result.route.city_id ?? this.targetCityId ?? this.cityId}/fixed-routes/${result.route.id}`,
             { is_active: true }
           ).pipe(
-            map(() => ({ route: { ...result.route, is_active: true } })),
+            map(() => ({ ...result, route: { ...result.route, is_active: true } })),
             catchError(() => of(result))
           );
         }
         return of(result);
       }),
       switchMap(result => {
+        if (result.allocations_applied) return of(result);
         const routeId = result.route.id;
         const operations: Observable<any>[] = [];
 
@@ -635,10 +671,10 @@ export class RouteCopyComponent implements OnInit {
         if (this.createNewStand && this.newGroupName.trim()) {
           operations.push(
             this.api.post<{ route_group?: MasterGroup; data?: MasterGroup }>(
-              `/admin/cities/${this.cityId}/route-groups`,
+              `/admin/cities/${this.targetCityId ?? this.cityId}/route-groups`,
               {
                 name: this.newGroupName.trim(),
-                city_vehicle_type_id: this.route.city_vehicle_type_id,
+                city_vehicle_type_id: this.targetCityId === this.cityId ? this.route.city_vehicle_type_id : null,
                 route_ids: [routeId],
               }
             ).pipe(
@@ -646,7 +682,7 @@ export class RouteCopyComponent implements OnInit {
                 const newGroupId = groupRes?.route_group?.id ?? groupRes?.data?.id;
                 if (newGroupId && this.assignedDriverUserIds.length > 0) {
                   return this.api.put(
-                    `/admin/cities/${this.cityId}/route-groups/${newGroupId}/drivers`,
+                    `/admin/cities/${this.targetCityId ?? this.cityId}/route-groups/${newGroupId}/drivers`,
                     { driver_user_ids: this.assignedDriverUserIds }
                   ).pipe(catchError(() => of(null)));
                 }
@@ -667,7 +703,7 @@ export class RouteCopyComponent implements OnInit {
             const updatedRouteIds = Array.from(new Set([...(existingGroup.route_ids || []), routeId]));
             operations.push(
               this.api.patch(
-                `/admin/cities/${this.cityId}/route-groups/${existingGroup.id}`,
+                `/admin/cities/${this.targetCityId ?? this.cityId}/route-groups/${existingGroup.id}`,
                 {
                   name: existingGroup.name,
                   city_vehicle_type_id: existingGroup.city_vehicle_type_id ?? this.route.city_vehicle_type_id,
@@ -677,7 +713,7 @@ export class RouteCopyComponent implements OnInit {
                 switchMap(() => {
                   if (this.assignedDriverUserIds.length > 0) {
                     return this.api.put(
-                      `/admin/cities/${this.cityId}/route-groups/${existingGroup.id}/drivers`,
+                      `/admin/cities/${this.targetCityId ?? this.cityId}/route-groups/${existingGroup.id}/drivers`,
                       { driver_user_ids: this.assignedDriverUserIds }
                     ).pipe(catchError(() => of(null)));
                   }
@@ -705,6 +741,7 @@ export class RouteCopyComponent implements OnInit {
       next: result => {
         this.saving = false;
         let message = this.isActive ? 'Route copied and activated.' : 'Route copied. Review and activate it when ready.';
+        if (this.reverse && this.targetCityName) message += ` Saved under ${this.targetCityName}: ${this.originName} → ${this.destName}.`;
         const totalStands = groupIds.length + (this.createNewStand ? 1 : 0);
         if (totalStands > 0) {
           message += ` Added to ${totalStands} stand${totalStands > 1 ? 's' : ''} with drivers.`;

@@ -93,6 +93,10 @@ class AdminFixedRouteCopyTest extends TestCase
             $this->assertEquals($this->route->$a, $copy->$b); $this->assertEquals($this->route->$b, $copy->$a);
         }
         $this->assertEquals(array_reverse($this->route->path_polyline), $copy->path_polyline);
+        $this->assertEquals($this->destination, $copy->city_id);
+        $this->assertNull($copy->city_vehicle_type_id);
+        $this->assertNotContains($copy->id, array_column($this->getJson('/api/admin/cities/'.$this->city.'/fixed-routes')->assertOk()->json('data'), 'id'));
+        $this->assertContains($copy->id, array_column($this->getJson('/api/admin/cities/'.$this->destination.'/fixed-routes')->assertOk()->json('data'), 'id'));
         $this->assertSame(['Kupwara', 'Middle', 'Srinagar'], $copy->stops->pluck('name')->all());
         $this->assertSame([1, 2, 3], $copy->stops->pluck('seq')->all());
         $this->assertTrue($copy->stops[0]->is_pickup); $this->assertFalse($copy->stops[0]->is_drop);
@@ -112,6 +116,73 @@ class AdminFixedRouteCopyTest extends TestCase
         $this->route->update(['mode' => 'shuttle']);
         $this->postJson($this->url(), ['name' => 'Copy', 'reverse' => true])->assertNotFound();
         $this->assertDatabaseCount('routes', 1);
+    }
+
+    public function test_reverse_context_and_copy_cannot_change_b_to_a_into_b_to_c(): void
+    {
+        $this->getJson($this->url().'-context?reverse=1')->assertOk()
+            ->assertJsonPath('city.id', $this->destination)->assertJsonPath('city.name', 'Kupwara');
+        foreach (['dest_name' => 'City C', 'dest_city_id' => 999, 'target_city_id' => $this->city,
+            'origin_lat' => 30, 'stops' => [['name' => 'City C']]] as $field => $value) {
+            $this->postJson($this->url(), ['name' => 'Reverse', 'reverse' => true, $field => $value])
+                ->assertUnprocessable()->assertJsonValidationErrors($field);
+        }
+        $this->assertDatabaseCount('routes', 1);
+    }
+
+    public function test_reversing_b_to_a_creates_a_to_b_under_city_a(): void
+    {
+        $copy = $this->postJson($this->url(), ['name' => 'Return route', 'reverse' => true])->assertCreated()->json('route');
+        $again = $this->postJson('/api/admin/cities/'.$this->destination.'/fixed-routes/'.$copy['id'].'/copy',
+            ['name' => 'Outbound again', 'reverse' => true])->assertCreated()->json('route');
+        $this->assertEquals($this->city, $again['city_id']);
+        $this->assertSame('Srinagar', $again['origin_name']);
+        $this->assertSame('Kupwara', $again['dest_name']);
+    }
+
+    public function test_reverse_checks_duplicate_names_in_destination_city(): void
+    {
+        $existing = $this->route->replicate();
+        $existing->city_id = $this->destination; $existing->name = 'Taken in B'; $existing->save();
+        $this->postJson($this->url(), ['name' => 'Taken in B', 'reverse' => true])
+            ->assertUnprocessable()->assertJsonValidationErrors('name');
+        $this->postJson($this->url(), ['name' => 'Taken in B', 'reverse' => false])->assertCreated();
+    }
+
+    public function test_reverse_allocates_only_destination_city_stands_and_drivers(): void
+    {
+        $group = RouteGroup::create(['city_id' => $this->destination, 'name' => 'Kupwara stand', 'is_active' => true]);
+        $driver = User::factory()->create(); $driver->addRole('driver');
+        \App\Models\Driver::create(['user_id' => $driver->id, 'city_id' => $this->destination, 'approval_status' => 'approved']);
+        $copy = $this->postJson($this->url(), ['name' => 'Assigned reverse', 'reverse' => true,
+            'assigned_group_ids' => [$group->id], 'driver_user_ids' => [$driver->id]])->assertCreated()->json('route');
+        $this->assertTrue($group->fresh()->routes->contains($copy['id']));
+        $this->assertTrue($group->fresh()->drivers->contains($driver->id));
+        $sourceGroup = RouteGroup::where('city_id', $this->city)->firstOrFail();
+        $this->postJson($this->url(), ['name' => 'Wrong stand', 'reverse' => true, 'assigned_group_ids' => [$sourceGroup->id]])
+            ->assertUnprocessable()->assertJsonValidationErrors('assigned_group_ids');
+        $this->assertDatabaseCount('routes', 2);
+    }
+
+    public function test_reverse_requires_access_to_both_cities(): void
+    {
+        $admin = auth()->user();
+        $admin->managerRole->update(['slug' => 'city_copy_test']);
+        $admin->forceFill(['manager_all_cities' => false, 'manager_city_id' => $this->city])->save();
+        // Keep the permission middleware out of this focused city-scope check.
+        $this->withoutMiddleware(\App\Http\Middleware\EnsurePermission::class);
+        $this->getJson($this->url().'-context?reverse=1')->assertForbidden();
+        $this->postJson($this->url(), ['name' => 'Forbidden reverse', 'reverse' => true])->assertForbidden();
+        $this->assertDatabaseCount('routes', 1);
+    }
+
+    public function test_legacy_endpoint_coordinates_resolve_destination_city_without_label_guessing(): void
+    {
+        \App\Models\City::findOrFail($this->destination)->update(['center_lat' => 34.5, 'center_lng' => 74.5]);
+        $this->route->update(['dest_city_id' => null, 'dest_name' => 'Custom destination label']);
+        $this->getJson($this->url().'-context?reverse=1')->assertOk()->assertJsonPath('city.id', $this->destination);
+        $this->route->update(['dest_lat' => 20, 'dest_lng' => 20]);
+        $this->getJson($this->url().'-context?reverse=1')->assertUnprocessable()->assertJsonValidationErrors('dest_city_id');
     }
 
     public function test_copy_with_is_active_and_stand_and_driver_allocation(): void
