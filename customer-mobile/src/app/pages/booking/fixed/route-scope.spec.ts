@@ -1,5 +1,5 @@
 import { FixedBookPage } from './fixed.page';
-import { Subject } from 'rxjs';
+import { Subject, throwError } from 'rxjs';
 
 describe('Customer route category filters', () => {
   let page: FixedBookPage;
@@ -54,6 +54,7 @@ describe('Customer route category filters', () => {
 
   it('waits for route data and handles a removed Home route without selecting another', () => {
     const target = page as any;
+    target.api = { get: jasmine.createSpy().and.returnValue(throwError(() => ({ status: 404 }))) };
     target.activatedRoute = { snapshot: { queryParamMap: { get: () => '99' } } };
     target.loading = true;
     const pick = spyOn(page, 'pickRoute');

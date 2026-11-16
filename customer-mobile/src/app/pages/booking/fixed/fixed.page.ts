@@ -11,7 +11,7 @@ import { PaymentOptionsService } from '../../../core/payment-options.service';
 import { RealtimeService } from '../../../core/realtime.service';
 import { AudioAlertService } from '../../../core/audio-alert.service';
 import { PaymentChoice } from '../../../shared/payment-method-modal.component';
-import { BookingService, resolveCity } from '../booking.service';
+import { BookingService, distanceKm, resolveCity } from '../booking.service';
 import { City } from '../booking.models';
 
 import { SeatCell } from './seat-grid.component';
@@ -747,7 +747,57 @@ export class FixedBookPage implements OnInit, OnDestroy {
     return !!this.boardStopId && !!this.dropStopId;
   }
 
-  goToSeats(): void {
+  travelWarningOpen = false;
+
+  get pickupTravelWarning(): string | null {
+    const stops = this.route?.stops ?? [];
+    const selected = stops.find(stop => stop.id === this.boardStopId);
+    const pickups = stops.filter(stop => stop.is_pickup && stop.is_active && !stop.is_temporarily_unavailable);
+    const hasCoords = (stop: FixedStop) => stop.lat != null && stop.lng != null
+      && Number.isFinite(Number(stop.lat)) && Number.isFinite(Number(stop.lng));
+    const position = this.userCoords;
+    const closest = position ? pickups.filter(hasCoords).sort((a, b) =>
+      distanceKm(position.lat, position.lng, Number(a.lat), Number(a.lng))
+      - distanceKm(position.lat, position.lng, Number(b.lat), Number(b.lng)))[0] : pickups[0];
+    const pickup = selected ?? closest;
+    if (!pickup) return null;
+    if (!position) return `Your current location is unavailable. Make sure you can reach ${pickup.name} before departure.`;
+    if (!hasCoords(pickup)) return `Check the pickup location at ${pickup.name} and make sure you can reach it before departure.`;
+
+    // The browsing city is a filter, never evidence of the customer's location.
+    const currentCity = resolveCity(this.cities, position.lat, position.lng);
+    const pickupCity = resolveCity(this.cities, Number(pickup.lat), Number(pickup.lng));
+    const distance = distanceKm(position.lat, position.lng, Number(pickup.lat), Number(pickup.lng)) * 1000;
+    if (currentCity && pickupCity && currentCity.id !== pickupCity.id) {
+      const pickupPlace = pickup.name.trim().toLowerCase() === pickupCity.name.trim().toLowerCase()
+        ? `in ${pickupCity.name}` : `at ${pickup.name} in ${pickupCity.name}`;
+      return `You're in ${currentCity.name}, but your pickup is ${pickupPlace}. You can still book if you can reach the pickup point before departure.`;
+    }
+    if (distance > 3000) return `The pickup at ${pickup.name} is ${this.formatDistance(distance)} from your current location. You'll need to reach it before departure.`;
+    return null;
+  }
+
+  async goToSeats(): Promise<void> {
+    if (!this.detailsReady || this.travelWarningOpen) return;
+    const warning = this.pickupTravelWarning;
+    if (warning) {
+      this.travelWarningOpen = true;
+      const boardStopId = this.boardStopId;
+      const routeId = this.route?.id;
+      try {
+        const alert = await this.alertCtrl.create({
+          header: 'Check your pickup location',
+          message: warning.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+          buttons: [{ text: 'Go back', role: 'cancel' }, { text: 'I can reach the pickup', role: 'confirm' }],
+        });
+        await alert.present();
+        const result = await alert.onDidDismiss();
+        if (result.role !== 'confirm' || this.boardStopId !== boardStopId || this.route?.id !== routeId) return;
+      } finally {
+        this.travelWarningOpen = false;
+        this.cdr.markForCheck();
+      }
+    }
     this.step = 'seats';
     this.loadSeatMap();
     this.cdr.markForCheck();

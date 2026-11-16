@@ -1,5 +1,12 @@
 <ion-content [fullscreen]="true" [scrollY]="false" class="fb-booking-content">
 
+  <ng-template #travelNotice>
+    <aside class="fb-travel-warning" *ngIf="pickupTravelWarning as warning" aria-label="Pickup travel warning" role="note">
+      <strong>Check your pickup location</strong>
+      <p>{{ warning }}</p>
+    </aside>
+  </ng-template>
+
   <!-- Step 1 — route -->
   <app-step-shell [reference]="true" [fareLabel]="route != null ? ('₹' + route.flat_fare + ' / seat') : ''"
     *ngIf="step === 'route'"
@@ -179,6 +186,7 @@
     [barLabel]="route?.name || hold?.route_name || 'Share a seat'"
     [step]="2" [total]="total"
     (back)="back()">
+    <ng-container *ngTemplateOutlet="travelNotice"></ng-container>
     <!-- Skeleton Loading Cards (when loading departures) -->
     <div class="fb-route-skeletons" *ngIf="loading" aria-label="Loading departures">
       <div class="fb-route-skel-card" *ngFor="let s of [1, 2]">
@@ -253,10 +261,11 @@
     [barLabel]="route?.name || hold?.route_name || 'Share a seat'"
     [step]="3" [total]="total"
     cta="Next"
-    [disabled]="!detailsReady"
+    [disabled]="!detailsReady || travelWarningOpen"
     (back)="back()"
     (primary)="goToSeats()">
 
+    <ng-container *ngTemplateOutlet="travelNotice"></ng-container>
     <ng-container *ngTemplateOutlet="tripSummary"></ng-container>
 
     <!-- Nearest Pickup Point Recommendation Card -->
@@ -337,6 +346,7 @@
     (back)="back()"
     (primary)="bookSeats()">
 
+    <ng-container *ngTemplateOutlet="travelNotice"></ng-container>
     <ng-container *ngTemplateOutlet="tripSummary"></ng-container>
 
     <p class="bk-sub" *ngIf="loading">Loading seats…</p>
@@ -497,6 +507,7 @@
     (back)="back()"
     (primary)="pay()">
 
+    <ng-container *ngTemplateOutlet="travelNotice"></ng-container>
     <ng-container *ngTemplateOutlet="tripSummary"></ng-container>
 
     <div dock-bottom class="fb-payment-status">

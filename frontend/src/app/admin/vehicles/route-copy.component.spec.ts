@@ -157,6 +157,14 @@ describe('Route copy dialog', () => {
     fixture.destroy();
   });
 
+  it('names the resolved city when it has no existing stands', () => {
+    api.get.and.callFake((url: string) => of(url.includes('copy-context')
+      ? { city: { id: 2, name: 'Kupwara' } } : { data: [] }));
+    const fixture = dialog(true);
+    expect(fixture.nativeElement.textContent).toContain('No existing stands found in Kupwara.');
+    fixture.destroy();
+  });
+
   it('supports creating a new stand alongside existing stands', async () => {
     const fixture = dialog(), page = fixture.componentInstance;
     await fixture.whenStable();

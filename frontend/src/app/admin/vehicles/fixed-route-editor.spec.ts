@@ -37,6 +37,22 @@ describe('Existing route editor names and assignments', () => {
     expect(page.wizardStep).toBe(6); expect(page.formValid).toBeTrue();
     expect(page.form.origin_lat).toBe(34); expect(page.form.dest_lat).toBe(34.1);
   });
+
+  it('requires an explicit Outstation destination instead of silently choosing the first city', () => {
+    page.cities = [{ id: 24, name: 'Anantnag' }, { id: 1, name: 'Badgam' }, { id: 2, name: 'Srinagar' }];
+    page.openEdit(route());
+    spyOn(page, 'centerMapOnCity');
+    page.form.origin_city_id = 1; page.form.dest_city_id = 1;
+    page.setScope('outstation');
+    expect(page.form.dest_city_id).toBeNull();
+    expect(page.formValid).toBeFalse();
+    page.form.dest_city_id = 2;
+    page.setScope('outstation');
+    expect(page.form.dest_city_id).toBe(2);
+    page.form.origin_city_id = 2;
+    page.onOriginCityChange();
+    expect(page.form.dest_city_id).toBeNull();
+  });
   it('saves renamed endpoints and original stop IDs without submitting any assignment changes', async () => {
     page.openEdit(route());
     const loads = spyOn(page, 'loadGroupsAndDrivers');
