@@ -21,8 +21,8 @@ use Illuminate\Support\Facades\Storage;
  * off for every city. The routes still take a {city} so existing URLs keep
  * working, but the city no longer scopes the data.
  *
- * The customer product API still applies runtime readiness checks — a Fixed
- * mode needs a matching active route before riders see it. At least one
+ * The customer product API shows enabled services regardless of available
+ * routes or vehicles; availability is checked during booking. At least one
  * (scope × mode) cell must always stay on, or the booking screen would render
  * nothing.
  */

@@ -4,6 +4,8 @@ import { Geolocation, PermissionStatus } from '@capacitor/geolocation';
 import { ApiService } from './api.service';
 import { AuthService } from './auth.service';
 import { App } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
+import { environment } from '../../environments/environment';
 
 export type LatLng = { lat: number; lng: number };
 
@@ -28,6 +30,37 @@ interface WatchOptions {
  */
 @Injectable({ providedIn: 'root' })
 export class GeolocationService {
+  // Explicit localhost preview only; never replaces GPS in installed/release apps.
+  readonly localPreviewEnabled = !environment.production && !Capacitor.isNativePlatform()
+    && ['localhost', '127.0.0.1'].includes(location.hostname);
+  private readonly previewLocation = this.readPreviewLocation();
+
+  private readPreviewLocation(): LatLng | null {
+    if (!this.localPreviewEnabled) return null;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('dc.dev.preview-city') || 'null');
+      if (saved && Number.isFinite(saved.lat) && Number.isFinite(saved.lng)
+        && Math.abs(saved.lat) <= 90 && Math.abs(saved.lng) <= 180) return saved;
+    } catch { /* An invalid preview setting must not block real GPS. */ }
+    return new URLSearchParams(location.search).get('previewLocation') === 'budgam'
+      ? { lat: 34.0160788, lng: 74.7353071 } : null;
+  }
+
+  setPreviewCity(city: (LatLng & { name: string }) | null): void {
+    if (!this.localPreviewEnabled) return;
+    if (city) sessionStorage.setItem('dc.dev.preview-city', JSON.stringify(city));
+    else sessionStorage.removeItem('dc.dev.preview-city');
+    // Recreate location/catalogue/draft state together after changing cities.
+    location.assign('/customer-tabs/go');
+  }
+
+  private previewFix(): GeoFix | null {
+    if (!this.previewLocation) return null;
+    const fix = { ...this.previewLocation, accuracy: 10, speed: 0, bearing: null, timestamp: Date.now() };
+    this.rememberPosition(fix, fix.timestamp);
+    return fix;
+  }
+
   private lastFix: (LatLng & { timestamp: number }) | null = null;
   private lastLocationPingAt = 0;
   private active = document.visibilityState !== 'hidden';
@@ -86,6 +119,7 @@ export class GeolocationService {
   }
 
   async requestPermissions(): Promise<PermissionStatus | null> {
+    if (this.previewLocation) return { location: 'granted', coarseLocation: 'granted' };
     try {
       return await Geolocation.requestPermissions();
     } catch {
@@ -96,6 +130,7 @@ export class GeolocationService {
   /** Convenience used widely by the customer-book and trip-active screens. */
   async getCurrentPosition(maximumAge?: number): Promise<LatLng | null> {
     if (!this.active) return null;
+    if (this.previewLocation) return this.previewFix();
     try {
       const perm = await Geolocation.checkPermissions();
       if (perm.location !== 'granted') {
@@ -119,6 +154,7 @@ export class GeolocationService {
   /** Long-form fix (used by trip-active so it can render a heading-aware marker). */
   async getCurrentFix(): Promise<GeoFix | null> {
     if (!this.active) return null;
+    if (this.previewLocation) return this.previewFix();
     try {
       const pos = await Geolocation.getCurrentPosition({
         enableHighAccuracy: true,
@@ -151,6 +187,10 @@ export class GeolocationService {
     const watch = this.watches.get(id);
     if (!watch || !this.active) return;
     const { options, callback } = watch;
+    if (this.previewLocation) {
+      callback(this.previewFix(), null);
+      return;
+    }
     const revision = ++watch.revision;
     try {
     const nativeId = await locationWatchers.add('foreground', () => Geolocation.watchPosition(

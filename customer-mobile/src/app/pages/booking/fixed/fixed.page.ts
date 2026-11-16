@@ -226,7 +226,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   ionViewWillEnter(): void {
     const scope = this.activatedRoute.snapshot.queryParamMap.get('scope');
-    if (scope === 'local' || scope === 'outstation') this.routeScope = scope;
+    if (scope === 'all' || scope === 'local' || scope === 'outstation') this.routeScope = scope;
     const id = Number(this.activatedRoute.snapshot.queryParamMap.get('routeId'));
     this.requestedHomeRouteId = Number.isSafeInteger(id) && id > 0 ? id : null;
     if (!this.loading && this.routes.length) this.openRequestedHomeRoute();
