@@ -167,11 +167,21 @@ class FixedRouteService
     {
         $this->availability->assertCityOwnsRoute($city, $route);
         if (!$reverse) return $city;
-        if ($route->dest_city_id) return City::query()->findOrFail($route->dest_city_id);
+        $configuredCity = $route->dest_city_id ? City::query()->findOrFail($route->dest_city_id) : null;
 
         // Older routes may have coordinates but no endpoint city IDs.
         $cities = City::query()->where('country_code', $city->country_code)->orderBy('id')->get();
         if ($route->dest_lat !== null && $route->dest_lng !== null) {
+            // Older editors silently selected the first city for Outstation.
+            // Keep a configured city when it fits the point, or when it has
+            // no geography to verify. Otherwise use a clear map-based match.
+            if ($configuredCity && (
+                app(DynamicPricingService::class)->pointInPolygon((float) $route->dest_lat, (float) $route->dest_lng, $configuredCity->boundary_polygon ?? [])
+                || ($configuredCity->center_lat !== null && $configuredCity->center_lng !== null
+                    && $this->calculateDistanceMeters((float) $route->dest_lat, (float) $route->dest_lng,
+                        $configuredCity->center_lat, $configuredCity->center_lng) <= 8000)
+                || (!$configuredCity->boundary_polygon && ($configuredCity->center_lat === null || $configuredCity->center_lng === null))
+            )) return $configuredCity;
             $matches = $cities->filter(fn (City $candidate) => app(DynamicPricingService::class)
                 ->pointInPolygon((float) $route->dest_lat, (float) $route->dest_lng, $candidate->boundary_polygon ?? []));
             if ($matches->count() === 1) return $matches->first();
@@ -185,6 +195,7 @@ class FixedRouteService
                     (float) $route->dest_lng, $candidate->center_lat, $candidate->center_lng));
             if ($nearby->isNotEmpty()) return $nearby->first();
         }
+        if ($configuredCity) return $configuredCity;
         // An exact endpoint label is safe; never guess from a corridor title.
         $named = $cities->filter(fn (City $candidate) => mb_strtolower(trim($candidate->name)) === mb_strtolower(trim($route->dest_name)));
         if ($named->count() === 1) return $named->first();
