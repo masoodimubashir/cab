@@ -948,6 +948,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.setBookingSheetExpanded(true);
     const changed = this.mode !== tile.mode;
     this.mode = tile.mode;
+    this.scope = this.catalog.find(s => s.scope === this.scope && s.modes.some(m => m.mode === tile.mode))?.scope
+      ?? this.catalog.find(s => s.modes.some(m => m.mode === tile.mode))?.scope ?? this.scope;
     this.booking.setMode(tile.mode, tile.rideTypeId);
     if (changed) {
       this.clearHomeMap();
@@ -999,6 +1001,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
       .filter((tile, index, all) => all.findIndex(other => other.mode === tile.mode) === index);
     const selected = this.tiles.find(tile => tile.mode === this.mode) ?? this.tiles[0];
     this.mode = selected?.mode ?? null;
+    if (selected) this.scope = this.catalog.find(s => s.scope === this.scope && s.modes.some(m => m.mode === selected.mode))?.scope
+      ?? this.catalog.find(s => s.modes.some(m => m.mode === selected.mode))?.scope ?? this.scope;
     if (selected) this.booking.setMode(selected.mode, selected.rideTypeId);
   }
 
