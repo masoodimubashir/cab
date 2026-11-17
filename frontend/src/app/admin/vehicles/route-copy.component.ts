@@ -85,7 +85,7 @@ interface CopyResult { route: { id: number; name: string; city_id?: number; is_a
             <span class="allocation-icon"><tm-icon name="folder" [size]="14" /></span>
             <div class="allocation-title-wrap">
               <h3>Stand &amp; driver allocation</h3>
-              <p>Select stands to add this route to multiple stands. Starts unassigned by default.</p>
+              <p>{{ reverse ? 'Select stands in ' + targetCityName + ' for this return route.' : 'Select stands to add this route to multiple stands.' }} Starts unassigned by default.</p>
             </div>
             <span class="count-pill" *ngIf="selectedGroupIds.size > 0">
               {{ selectedGroupIds.size }} stand{{ selectedGroupIds.size > 1 ? 's' : '' }} selected
@@ -145,6 +145,7 @@ interface CopyResult { route: { id: number; name: string; city_id?: number; is_a
               </button>
             </div>
 
+            <p class="no-stands-hint" *ngIf="!groups.length">No existing stands found{{ targetCityName ? ' in ' + targetCityName : ' in this city' }}.</p>
             <p class="no-stands-hint" *ngIf="!filteredGroups.length && groups.length">
               No stands matching "{{ standSearch }}"
             </p>

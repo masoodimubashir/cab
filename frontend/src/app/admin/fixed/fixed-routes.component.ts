@@ -1937,8 +1937,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
         this.form.origin_city_id = this.cityId;
       }
       if (this.form.dest_city_id == null || this.form.dest_city_id === this.form.origin_city_id) {
-        const other = this.cities.find((c) => c.id !== this.form.origin_city_id);
-        this.form.dest_city_id = other ? other.id : null;
+        this.form.dest_city_id = null;
       }
     }
     if (this.form.origin_city_id != null) {
@@ -1947,6 +1946,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   }
 
   onOriginCityChange(): void {
+    if (this.form.scope === 'outstation' && this.form.dest_city_id === this.form.origin_city_id) {
+      this.form.dest_city_id = null;
+    }
     if (this.form.origin_city_id != null) {
       this.centerMapOnCity(this.form.origin_city_id);
     }

@@ -1458,3 +1458,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid #087f50; outline-
   button { min-height: 40px; flex: 1; padding: 8px 12px; border: 1px solid #dce4ed; border-radius: 12px; background: white; color: #52657d; font: inherit; font-size: 13px; }
   button[aria-pressed='true'] { border-color: #087f50; color: #087f50; background: #eaf6ef; font-weight: 700; }
 }
+.fb-travel-warning {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid #efcd8d;
+  border-radius: 12px;
+  background: #fff8e9;
+  color: #714812;
+  strong { font-size: 13px; }
+  p { margin: 5px 0 0; font-size: 12px; line-height: 1.5; }
+}
