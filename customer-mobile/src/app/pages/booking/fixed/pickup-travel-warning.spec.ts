@@ -25,9 +25,7 @@ describe('Fixed pickup travel warning', () => {
   });
 
   it('uses GPS rather than the selected browsing city to warn about a Sopore pickup', () => {
-    expect(page.pickupTravelWarning).toContain('pickup is at Sopore stand in Sopore');
-    expect(page.pickupTravelWarning).toContain("You're in Badgam");
-    expect(page.pickupTravelWarning).toContain('You can still book if you can reach the pickup point before departure');
+    expect(page.pickupTravelWarning).toBe('You’re not currently near this pickup location. You can still book, but please make sure you can reach the pickup point before departure.');
   });
 
   it('allows a local intermediate pickup even when the route starts in another city', () => {
@@ -38,7 +36,7 @@ describe('Fixed pickup travel warning', () => {
     page.boardStopId = 3;
     expect(page.pickupTravelWarning).toBeNull();
     page.boardStopId = 1;
-    expect(page.pickupTravelWarning).toContain('Sopore stand');
+    expect(page.pickupTravelWarning).toContain('You’re not currently near this pickup location');
   });
 
   it('keeps the customer at the stop-selection step when they cancel the warning', async () => {

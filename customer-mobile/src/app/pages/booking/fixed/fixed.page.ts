@@ -769,11 +769,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
     const pickupCity = resolveCity(this.cities, Number(pickup.lat), Number(pickup.lng));
     const distance = distanceKm(position.lat, position.lng, Number(pickup.lat), Number(pickup.lng)) * 1000;
     if (currentCity && pickupCity && currentCity.id !== pickupCity.id) {
-      const pickupPlace = pickup.name.trim().toLowerCase() === pickupCity.name.trim().toLowerCase()
-        ? `in ${pickupCity.name}` : `at ${pickup.name} in ${pickupCity.name}`;
-      return `You're in ${currentCity.name}, but your pickup is ${pickupPlace}. You can still book if you can reach the pickup point before departure.`;
+      return 'You’re not currently near this pickup location. You can still book, but please make sure you can reach the pickup point before departure.';
     }
-    if (distance > 3000) return `The pickup at ${pickup.name} is ${this.formatDistance(distance)} from your current location. You'll need to reach it before departure.`;
+    if (distance > 3000) return 'You’re not currently near this pickup location. You can still book, but please make sure you can reach the pickup point before departure.';
     return null;
   }
 
@@ -786,7 +784,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
       const routeId = this.route?.id;
       try {
         const alert = await this.alertCtrl.create({
-          header: 'Check your pickup location',
+          header: 'You’re outside the pickup area',
           message: warning.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
           buttons: [{ text: 'Go back', role: 'cancel' }, { text: 'I can reach the pickup', role: 'confirm' }],
         });
