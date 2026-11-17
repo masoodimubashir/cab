@@ -17,6 +17,22 @@ class OperatorServiceImagesTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_driver_artwork_includes_disabled_services_without_enabling_them(): void
+    {
+        Storage::fake('public');
+        $city = City::create(['name' => 'Artwork test', 'country_code' => 'IN', 'is_active' => true]);
+        RideType::create(['mode' => 'private', 'name' => 'Private', 'is_active_local' => false, 'is_active_outstation' => false]);
+        $settings = OperatorSetting::instance();
+        $settings->private_service_image_path = 'service_images/private.png';
+        $settings->save();
+        $this->actingAs(User::factory()->create());
+
+        $response = $this->getJson("/api/catalog/cities/{$city->id}/driver-ride-products")->assertOk();
+        $this->assertEmpty(collect($response->json('scopes'))->flatMap(fn ($scope) => $scope['modes'])->where('mode', 'private'));
+        $artwork = collect($response->json('service_artwork'))->firstWhere('mode', 'private');
+        $this->assertSame(Storage::disk('public')->url('service_images/private.png'), $artwork['image_url']);
+    }
+
     public function test_customer_catalog_serves_a_cutout_for_existing_service_artwork(): void
     {
         Storage::fake('public');

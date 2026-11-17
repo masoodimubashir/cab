@@ -78,7 +78,16 @@ class CatalogController extends Controller
     {
         // The catalogue is global now (it lives in ride_types). The {city} stays
         // in the URL so the shipped driver app keeps working unchanged.
-        return response()->json(['scopes' => RideCatalog::tree(onlyActive: true)]);
+        return response()->json([
+            'scopes' => RideCatalog::tree(onlyActive: true),
+            // Presentation metadata also covers approved services currently switched off.
+            // Keep the bookable scopes above filtered exactly as before.
+            'service_artwork' => collect(RideCatalog::tree(onlyActive: false))
+                ->flatMap(fn (array $scope) => $scope['modes'])
+                ->unique('mode')
+                ->map(fn (array $mode) => collect($mode)->only(['mode', 'name', 'display_name', 'image_url'])->all())
+                ->values()->all(),
+        ]);
     }
 
 
