@@ -75,6 +75,7 @@ class AdminDispatchController
             ->keyBy('driver_id');
 
         $drivers = Driver::query()
+            ->commercial()
             ->with(['user', 'vehicleTypeRef', 'cityVehicleType:id,display_name'])
             ->whereNull('deactivated_at')
             ->where('approval_status', 'approved')

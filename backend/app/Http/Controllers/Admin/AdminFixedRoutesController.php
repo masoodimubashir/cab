@@ -192,7 +192,7 @@ class AdminFixedRoutesController
                 : [];
 
             if ($driverIds) {
-                if (Driver::query()->forCity((int) $targetCity->id)->whereIn('user_id', $driverIds)->count() !== count($driverIds)) {
+                if (Driver::query()->commercial()->forCity((int) $targetCity->id)->whereIn('user_id', $driverIds)->count() !== count($driverIds)) {
                     abort(422, 'Some drivers are not registered in this city.');
                 }
             }

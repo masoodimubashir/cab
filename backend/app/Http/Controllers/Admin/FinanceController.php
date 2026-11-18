@@ -204,6 +204,7 @@ class FinanceController extends Controller
         $maxLimit = (float) (OperatorSetting::instance()->wallet_cash_max_capping ?? 0);
 
         $drivers = Driver::query()
+            ->commercial()
             ->with(['user:id,name,phone,email', 'vehicleType:id,name', 'vehicleTypeRef:id,name', 'cityVehicleType:id,display_name', 'rideType:id,name'])
             ->get();
 

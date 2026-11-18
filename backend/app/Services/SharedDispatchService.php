@@ -69,7 +69,7 @@ class SharedDispatchService
             if ($driverId === null) {
                 return null; // no driver available — retry on the next cycle
             }
-            $driver = Driver::query()->where('user_id', $driverId)->lockForUpdate()->first();
+            $driver = Driver::query()->commercial()->where('user_id', $driverId)->lockForUpdate()->first();
             if (!$driver || !$driver->is_online || $driver->approval_status !== 'approved'
                 || $driver->active_service_mode !== $route->mode
                 || !in_array($driver->active_service_scope, [$route->scope ?: Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_BOTH], true)
@@ -275,6 +275,7 @@ class SharedDispatchService
             ->pluck('driver_id');
 
         $eligible = Driver::query()
+            ->commercial()
             ->where('approval_status', 'approved')
             ->where('is_online', true)
             ->whereIn('active_service_scope', [$route->scope ?: Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_BOTH])

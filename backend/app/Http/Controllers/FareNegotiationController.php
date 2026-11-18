@@ -42,6 +42,7 @@ class FareNegotiationController extends Controller
             $openToDrivers = $trip->driver_id === null
                 && $trip->status === 'NEGOTIATION'
                 && Driver::query()
+                    ->commercial()
                     ->where('user_id', $user->id)
                     ->where('approval_status', 'approved')
                     ->exists();

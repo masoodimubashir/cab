@@ -121,7 +121,8 @@ class AdminDriversController
     {
         $fleets = ManagerScope::fleetIds($request->user());
 
-        return Driver::query()->when($fleets !== null, fn ($query) => $query->whereIn('drivers.fleet_id', $fleets));
+        // Commercial only until the driver type filter arrives (Carpool.md section 10).
+        return Driver::query()->commercial()->when($fleets !== null, fn ($query) => $query->whereIn('drivers.fleet_id', $fleets));
     }
 
     /**
@@ -1362,6 +1363,7 @@ class AdminDriversController
         $rows = DB::table('trips')
             ->join('drivers', 'drivers.user_id', '=', 'trips.driver_id')
             ->join('users', 'users.id', '=', 'drivers.user_id')
+            ->where('drivers.driver_type', Driver::TYPE_COMMERCIAL)
             ->where('trips.status', 'COMPLETED')
             ->where('trips.completed_at', '>=', $since)
             ->select(
@@ -1412,6 +1414,7 @@ class AdminDriversController
         $rows = DB::table('trips')
             ->join('drivers', 'drivers.user_id', '=', 'trips.driver_id')
             ->join('users', 'users.id', '=', 'drivers.user_id')
+            ->where('drivers.driver_type', Driver::TYPE_COMMERCIAL)
             ->whereBetween('trips.created_at', [$from, $to])
             ->select(
                 'drivers.id as driver_id',
@@ -1465,7 +1468,7 @@ class AdminDriversController
         $filters = $request->validate([
             'stand_id' => ['sometimes', 'integer', Rule::exists('route_groups', 'id')->where('city_id', $cityId)],
         ]);
-        $query = ($cityId ? $this->locationDrivers($request)->forCity($cityId) : Driver::query())
+        $query = ($cityId ? $this->locationDrivers($request)->forCity($cityId) : Driver::query()->commercial())
             ->with(['user', 'documents', 'vehicleTypeRef:id,name']);
 
         if ($state === 'deactivated') {

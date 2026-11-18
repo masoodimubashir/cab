@@ -278,7 +278,7 @@ class TripsController extends Controller
     {
         $user = $request->user();
 
-        $driverProfile = Driver::query()->where('user_id', $user->id)->first();
+        $driverProfile = Driver::query()->commercial()->where('user_id', $user->id)->first();
         if (!$driverProfile) {
             return response()->json(['message' => 'Driver profile not found.'], 404);
         }
@@ -1107,6 +1107,7 @@ class TripsController extends Controller
             ->pluck('driver_id');
 
         $candidates = Driver::query()
+            ->commercial()
             ->where('approval_status', 'approved')
             ->where('is_online', true)
             ->whereIn('active_service_scope', [$trip->scope ?: Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_BOTH])
@@ -1275,7 +1276,7 @@ class TripsController extends Controller
             ? Driver::SERVICE_MODE_SHUTTLE
             : Driver::SERVICE_MODE_PRIVATE;
 
-        $driverProfile = Driver::query()->where('user_id', $driverUserId)->first();
+        $driverProfile = Driver::query()->commercial()->where('user_id', $driverUserId)->first();
         if (!$driverProfile || $driverProfile->approval_status !== 'approved' || !$driverProfile->is_online) {
             return response()->json(['message' => 'Driver is no longer available.'], 409);
         }
@@ -1302,7 +1303,7 @@ class TripsController extends Controller
         // Atomic pre-claim. Reject if trip already has a driver assigned by
         // someone else, or it's no longer in a claimable state.
         $claimed = DB::transaction(function () use ($trip, $driverUserId, $serviceMode, $tripScope) {
-            $driver = Driver::query()->where('user_id', $driverUserId)->lockForUpdate()->first();
+            $driver = Driver::query()->commercial()->where('user_id', $driverUserId)->lockForUpdate()->first();
             if (!$driver || !$driver->is_online || $driver->approval_status !== 'approved'
                 || $driver->active_service_mode !== $serviceMode
                 || !in_array($driver->active_service_scope, [$tripScope, Driver::SERVICE_SCOPE_BOTH], true)) {

@@ -142,6 +142,7 @@ class DispatchHopJob implements ShouldQueue
         $excludedUserIds = $busyDriverIds->concat($rejectedDriverIds)->unique();
 
         $eligible = Driver::query()
+            ->commercial()
             ->where('approval_status', 'approved')
             ->where('is_online', true)
             ->whereIn('active_service_scope', [$trip->scope ?: Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_BOTH])

@@ -22,7 +22,7 @@ class RideAssignmentController extends Controller
             return response()->json(['message' => 'Trip is not ready for assignment.'], 409);
         }
 
-        $driverProfile = Driver::query()->where('user_id', $user->id)->first();
+        $driverProfile = Driver::query()->commercial()->where('user_id', $user->id)->first();
         if (!$driverProfile) {
             return response()->json(['message' => 'Driver profile not found.'], 404);
         }
@@ -78,7 +78,7 @@ class RideAssignmentController extends Controller
         // pre-assigned shared trip). This is the backstop that makes a
         // double-booking impossible regardless of which feed surfaced it.
         $conflict = DB::transaction(function () use ($user, $trip, $serviceMode, $tripScope, $tripStateMachineService) {
-            $driver = Driver::query()->where('user_id', $user->id)->lockForUpdate()->first();
+            $driver = Driver::query()->commercial()->where('user_id', $user->id)->lockForUpdate()->first();
             if (!$driver || !$driver->is_online || $driver->approval_status !== 'approved'
                 || ($serviceMode !== null && ($driver->active_service_mode !== $serviceMode
                     || !in_array($driver->active_service_scope, [$tripScope, Driver::SERVICE_SCOPE_BOTH], true)))) {
@@ -137,7 +137,7 @@ class RideAssignmentController extends Controller
             return response()->json(['message' => 'Trip is not in an assignable state.'], 409);
         }
 
-        $driverProfile = Driver::query()->where('user_id', $user->id)->first();
+        $driverProfile = Driver::query()->commercial()->where('user_id', $user->id)->first();
         if (!$driverProfile) {
             return response()->json(['message' => 'Driver profile not found.'], 404);
         }

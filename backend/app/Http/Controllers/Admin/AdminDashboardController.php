@@ -20,10 +20,11 @@ class AdminDashboardController
         $completedTrips = Trip::query()->where('status', 'COMPLETED')->count();
         $cancelledTrips = Trip::query()->where('status', 'CANCELLED')->count();
 
-        $driversTotal = Driver::query()->count();
-        $driversApproved = Driver::query()->where('approval_status', 'approved')->count();
-        $driversPending = Driver::query()->where('approval_status', 'pending')->count();
-        $driversRejected = Driver::query()->where('approval_status', 'rejected')->count();
+        // Driver counts stay commercial only (Carpool.md A29).
+        $driversTotal = Driver::query()->commercial()->count();
+        $driversApproved = Driver::query()->commercial()->where('approval_status', 'approved')->count();
+        $driversPending = Driver::query()->commercial()->where('approval_status', 'pending')->count();
+        $driversRejected = Driver::query()->commercial()->where('approval_status', 'rejected')->count();
 
         $earnings = Payment::query()
             ->where('status', 'SUCCESS')

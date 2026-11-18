@@ -1,6 +1,7 @@
 import { NgModule } from '@angular/core';
 import { PreloadAllModules, RouterModule, Routes } from '@angular/router';
 import { AuthGuard } from './core/auth.guard';
+import { CarpoolEnabledGuard } from './pages/carpool/carpool-enabled.guard';
 import { GuestGuard } from './core/guest.guard';
 import { ApprovedDriverGuard } from './core/approved-driver.guard';
 
@@ -98,6 +99,11 @@ const routes: Routes = [
   {
     path: 'privacy',
     loadChildren: () => import('./pages/privacy/privacy.module').then((m) => m.PrivacyPageModule),
+  },
+  {
+    path: 'carpool',
+    loadChildren: () => import('./pages/carpool/carpool.module').then((m) => m.CarpoolModule),
+    canActivate: [AuthGuard, CarpoolEnabledGuard],
   },
   {
     path: '',

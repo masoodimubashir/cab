@@ -13,6 +13,11 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__.'/../routes/api.php',
         apiPrefix: env('APP_API_PREFIX', 'api'),
         health: '/up',
+        then: function () {
+            \Illuminate\Support\Facades\Route::middleware(['api', 'auth:sanctum'])
+                ->prefix(env('APP_API_PREFIX', 'api') . '/carpool')
+                ->group(__DIR__.'/../routes/carpool.php');
+        },
     )
     // Register the /broadcasting/auth route under Sanctum so the mobile apps
     // (which authenticate via bearer tokens, not session cookies) can subscribe
@@ -32,6 +37,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => \App\Http\Middleware\EnsurePermission::class,
             'idempotent' => \App\Http\Middleware\IdempotencyKey::class,
             'manager.city' => \App\Http\Middleware\EnforceManagerCity::class,
+            'carpool.enabled' => \App\Http\Middleware\EnsureCarpoolEnabled::class,
         ]);
 
         // For API requests, tell the Authenticate middleware NOT to compute a

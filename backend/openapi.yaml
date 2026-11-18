@@ -14,6 +14,7 @@ tags:
   - name: Safety
   - name: Ratings
   - name: Admin
+  - name: Carpool
 paths:
   /health:
     get:
@@ -760,6 +761,33 @@ paths:
       responses:
         "200":
           description: OK
+  /carpool/config:
+    get:
+      tags: [Carpool]
+      summary: Whether carpool is on, and the values the apps need
+      description: >
+        Answers even when the kill switch is on (then `enabled` is false and
+        nothing else is sent). Apps show no carpool entry point unless this
+        says enabled. Every other /carpool route returns 404 while the kill
+        switch is on.
+      operationId: carpool_config
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled]
+                properties:
+                  enabled: { type: boolean }
+                  search_distance_m: { type: integer, example: 2000 }
+                  publish_horizon_days: { type: integer, example: 30 }
+                  seats_max: { type: integer, example: 6 }
+                  message_max_chars: { type: integer, example: 1000 }
+                  timezone: { type: string, example: Asia/Kolkata }
+        "401":
+          description: Not logged in
 components:
   securitySchemes:
     bearerAuth:

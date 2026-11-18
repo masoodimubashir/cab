@@ -53,7 +53,7 @@ class AdminRouteGroupsController
         ]);
         $routeIds = $this->validRouteIds($city, $data['route_ids'] ?? []);
         $driverIds = array_values(array_unique($sharing['driver_user_ids']));
-        if ($driverIds && Driver::query()->forCity((int) $city->id)->whereIn('user_id', $driverIds)->count() !== count($driverIds)) {
+        if ($driverIds && Driver::query()->commercial()->forCity((int) $city->id)->whereIn('user_id', $driverIds)->count() !== count($driverIds)) {
             abort(422, 'Some drivers are not registered in this city.');
         }
         $isNew = $routeGroup === null;
@@ -179,7 +179,7 @@ class AdminRouteGroupsController
 
         $ids = array_values(array_unique(array_map('intval', $data['driver_user_ids'])));
         if ($ids) {
-            $validCount = Driver::query()->whereIn('user_id', $ids)->forCity((int) $city->id)->count();
+            $validCount = Driver::query()->commercial()->whereIn('user_id', $ids)->forCity((int) $city->id)->count();
             if ($validCount !== count($ids)) {
                 abort(422, 'Some drivers are not registered in this city.');
             }
@@ -197,6 +197,7 @@ class AdminRouteGroupsController
     public function cityDrivers(City $city)
     {
         $drivers = Driver::query()
+            ->commercial()
             ->forCity((int) $city->id)
             ->with(['user:id,name,phone,avatar_path', 'cities:id,name'])
             ->get()

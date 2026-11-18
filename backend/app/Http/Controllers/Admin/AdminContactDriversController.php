@@ -99,6 +99,7 @@ class AdminContactDriversController
         }
 
         $rows = Driver::query()
+            ->commercial()
             ->with(['user'])
             ->whereIn('id', $ids)
             ->get()
@@ -180,7 +181,8 @@ class AdminContactDriversController
         $to = strtolower((string) $request->input('to', $request->query('to', 'active')));
         $vehicleType = $request->input('vehicle_type', $request->query('vehicle_type'));
 
-        $query = Driver::query();
+        // Commercial only until the audience filter arrives (Carpool.md section 10).
+        $query = Driver::query()->commercial();
 
         switch ($to) {
             case 'active':

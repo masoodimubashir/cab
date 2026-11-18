@@ -310,10 +310,17 @@ class PayoutLedgerService
         }
 
         $drivers = \App\Models\Driver::query()
+            ->commercial()
             ->whereIn('user_id', $stats->pluck('driver_user_id'))
             ->with('user:id,name,phone,email')
             ->get()
             ->keyBy('user_id');
+        $carpoolUserIds = \App\Models\Driver::query()
+            ->carpool()
+            ->whereIn('user_id', $stats->pluck('driver_user_id'))
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
 
         $rows = [];
         $totalPending = 0.0;
@@ -324,6 +331,9 @@ class PayoutLedgerService
                 continue;
             }
             $driver = $drivers->get($row->driver_user_id);
+            if (!$driver && in_array((int) $row->driver_user_id, $carpoolUserIds, true)) {
+                continue; // Carpool drivers are never in payouts (Carpool.md section 3).
+            }
             $totalPending += $pending;
 
             $rows[] = [

@@ -509,7 +509,7 @@ class FixedDepartureService
     {
         $prepared = [];
         if (!$existing && !empty($data['driver_id'])) {
-            $driver = Driver::where('user_id', $data['driver_id'])->firstOrFail();
+            $driver = Driver::query()->commercial()->where('user_id', $data['driver_id'])->firstOrFail();
             $prepared = app(FixedDepartureVehicleService::class)->prepare($route, $driver);
         }
         $serviceDate = $data['service_date'] ?? now()->toDateString();

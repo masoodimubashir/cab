@@ -210,18 +210,19 @@ class AdminAnalyticsController
         // tapping Go Offline), so we also require a heartbeat inside the
         // staleness window. The comparison-period read returns the current
         // value too — comparing against itself yields a 0% delta, which is fine.
-        $liveDrivers = Driver::query()->onlineFresh()->count();
+        $liveDrivers = Driver::query()->commercial()->onlineFresh()->count();
 
         $usersRegistered = User::query()
             ->whereBetween('created_at', [$start, $end])
             ->count();
 
         $driversVerified = Driver::query()
+            ->commercial()
             ->whereBetween('created_at', [$start, $end])
             ->where('approval_status', 'approved')
             ->count();
 
-        $totalDrivers = Driver::query()->count();
+        $totalDrivers = Driver::query()->commercial()->count();
 
         $fulfilment = $requests > 0 ? round(($accepted / $requests) * 100, 2) : 0.0;
 

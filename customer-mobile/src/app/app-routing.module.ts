@@ -1,6 +1,7 @@
 import { NgModule } from '@angular/core';
 import { PreloadAllModules, RouterModule, Routes } from '@angular/router';
 import { AuthGuard } from './core/auth.guard';
+import { CarpoolEnabledGuard } from './pages/carpool/carpool-enabled.guard';
 import { GuestGuard } from './core/guest.guard';
 
 const routes: Routes = [
@@ -67,6 +68,11 @@ const routes: Routes = [
   {
     path: 'splash',
     loadChildren: () => import('./pages/splash/splash.module').then( m => m.SplashPageModule)
+  },
+  {
+    path: 'carpool',
+    loadChildren: () => import('./pages/carpool/carpool.module').then((m) => m.CarpoolModule),
+    canActivate: [AuthGuard, CarpoolEnabledGuard],
   },
   {
     path: '',

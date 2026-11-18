@@ -786,6 +786,7 @@ class DriversController extends Controller
             ->pluck('driver_id');
 
         $eligibleIds = Driver::query()
+            ->commercial()
             ->where('approval_status', 'approved')
             ->where('is_online', true)
             ->when(isset($data['service_mode']), fn ($q) => $q->where('active_service_mode', $data['service_mode']))

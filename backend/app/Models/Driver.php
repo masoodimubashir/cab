@@ -118,6 +118,30 @@ class Driver extends Model
         return $this->last_online_at->getTimestamp() >= now()->getTimestamp() - self::STALE_AFTER_SECONDS;
     }
 
+    // Driver types (Carpool.md section 3). Every existing row is commercial.
+    public const TYPE_COMMERCIAL = 'commercial';
+    public const TYPE_CARPOOL = 'carpool';
+
+    /**
+     * The carpool fence: use on every query where only commercial drivers
+     * belong (lists, counts, dispatch, payouts, stands, Fixed pickers).
+     * Carpool.md section 7 lists the places.
+     */
+    public function scopeCommercial($q)
+    {
+        return $q->where($q->qualifyColumn('driver_type'), self::TYPE_COMMERCIAL);
+    }
+
+    public function scopeCarpool($q)
+    {
+        return $q->where($q->qualifyColumn('driver_type'), self::TYPE_CARPOOL);
+    }
+
+    public function isCarpool(): bool
+    {
+        return $this->driver_type === self::TYPE_CARPOOL;
+    }
+
     public function scopeOnlineFresh($q)
     {
         return $q->where('is_online', true)
