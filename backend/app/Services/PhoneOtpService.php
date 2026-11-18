@@ -8,6 +8,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -28,11 +29,14 @@ class PhoneOtpService
      *   ['sent' => false, 'cooldown' => <seconds>]              when asked again too soon
      *   ['sent' => false]                                     when a change SMS cannot be sent
      *
-     * A working SMS gateway is required for login and phone changes.
+     * A working SMS gateway is required for login and phone changes, except on
+     * a local laptop with no MSG91 key, where the code is written to the log.
      */
     public function start(string $phone, ?string $platform = null, ?int $changeUserId = null): array
     {
-        if (!$this->msg91->isLive()) {
+        $live = $this->msg91->isLive();
+        $logOnly = !$live && app()->environment('local');
+        if (!$live && !$logOnly) {
             return ['sent' => false];
         }
         $phone = $this->normalize($phone);
@@ -62,7 +66,12 @@ class PhoneOtpService
         );
 
         $message = $this->buildMessage($code, $platform, $ttlMin);
-        $sent = $this->msg91->sendOtp($phone, $code, $message);
+        if ($logOnly) {
+            Log::info('[otp:local] SMS not sent (no MSG91 key). Login code for ' . $phone . ': ' . $code);
+            $sent = true;
+        } else {
+            $sent = $this->msg91->sendOtp($phone, $code, $message);
+        }
 
         if (!$sent) {
             PhoneOtp::query()->where('phone', $phone)->where('change_user_id', $changeUserId)->delete();
