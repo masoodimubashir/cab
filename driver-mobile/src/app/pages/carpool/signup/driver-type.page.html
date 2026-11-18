@@ -1,0 +1,35 @@
+<ion-content [fullscreen]="true" class="dc-content cps">
+  <div class="cps__wrap">
+    <p class="cps__step">Step 1 of 5</p>
+    <h1 class="cps__title">How will you drive with Dream Cabs?</h1>
+    <p class="cps__sub">You can't switch later without a new review.</p>
+
+    <div class="cps__choices" role="radiogroup" aria-label="Driver type">
+      <button type="button" class="cps-choice" role="radio"
+              [attr.aria-checked]="choice === 'commercial'" [class.is-on]="choice === 'commercial'"
+              (click)="pick('commercial')">
+        <ion-icon name="car-sport-outline" aria-hidden="true"></ion-icon>
+        <span class="cps-choice__text">
+          <strong>Commercial driver</strong>
+          <span>Private, Fixed and Shuttle rides. You earn per ride.</span>
+        </span>
+      </button>
+      <button type="button" class="cps-choice" role="radio"
+              [attr.aria-checked]="choice === 'carpool'" [class.is-on]="choice === 'carpool'"
+              (click)="pick('carpool')">
+        <ion-icon name="people-outline" aria-hidden="true"></ion-icon>
+        <span class="cps-choice__text">
+          <strong>Private car owner</strong>
+          <span>Offer empty seats on trips you're already making.</span>
+        </span>
+      </button>
+    </div>
+
+    <p class="cps__note" *ngIf="choice === 'carpool'">
+      Next: your photo, city, car and documents. Every carpool driver is checked by hand.
+    </p>
+
+    <ion-button expand="block" class="cps__cta" [disabled]="!choice" (click)="continue()">Continue</ion-button>
+    <ion-button expand="block" fill="clear" class="cps__secondary" (click)="logout()">Log out</ion-button>
+  </div>
+</ion-content>

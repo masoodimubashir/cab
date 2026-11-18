@@ -31,6 +31,7 @@ class DriverSubscriptionsController
         }
 
         $rows = SubscriptionPlan::query()
+            ->commercial()
             ->where('city_id', $driver->city_id)
             ->where('is_active', true)
             ->where(function ($q) use ($driver) {
@@ -87,7 +88,8 @@ class DriverSubscriptionsController
 
         $plan = SubscriptionPlan::query()->findOrFail($data['plan_id']);
 
-        if ($plan->city_id !== (int) $driver->city_id
+        if ($plan->audience !== SubscriptionPlan::AUDIENCE_COMMERCIAL
+            || $plan->city_id !== (int) $driver->city_id
             || ($plan->vehicle_type_id !== null && $plan->vehicle_type_id !== (int) $driver->vehicle_type_id)
             || ! $plan->isAvailableNow()) {
             return response()->json(['message' => 'This plan is not available for you.'], 422);
@@ -138,7 +140,8 @@ class DriverSubscriptionsController
 
         $plan = SubscriptionPlan::query()->findOrFail($data['plan_id']);
 
-        if ($plan->city_id !== (int) $driver->city_id
+        if ($plan->audience !== SubscriptionPlan::AUDIENCE_COMMERCIAL
+            || $plan->city_id !== (int) $driver->city_id
             || ($plan->vehicle_type_id !== null && $plan->vehicle_type_id !== (int) $driver->vehicle_type_id)
             || ! $plan->isAvailableNow()) {
             return response()->json(['message' => 'This plan is not available for you.'], 422);
@@ -165,7 +168,7 @@ class DriverSubscriptionsController
             return response()->json(['message' => 'Complete your driver profile before subscribing.'], 422);
         }
 
-        $plan = SubscriptionPlan::query()->findOrFail($data['plan_id']);
+        $plan = SubscriptionPlan::query()->commercial()->findOrFail($data['plan_id']);
         $vehicleTypeId = $driver->vehicle_type_id ? (int) $driver->vehicle_type_id : null;
 
         try {

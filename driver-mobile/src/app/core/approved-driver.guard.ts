@@ -8,7 +8,8 @@ import { AuthService } from './auth.service';
 const CACHE_KEY = 'dreamcabs_driver_state';
 const CACHE_TTL_MS = 60_000; // 1 minute — keeps tab nav snappy without going stale.
 
-type DriverState = 'approved' | 'pending' | 'registering';
+// 'carpool': a private car owner. They never use the commercial tabs (Carpool.md section 10).
+type DriverState = 'approved' | 'pending' | 'registering' | 'carpool';
 
 interface CachedState {
   state: DriverState;
@@ -45,7 +46,7 @@ export class ApprovedDriverGuard implements CanActivate {
     }
 
     return this.api
-      .get<{ driver: { approval_status?: string; city_id?: number; vehicle_type_id?: number } | null; documents: { status: string }[] }>('/drivers/me')
+      .get<{ driver: { approval_status?: string; city_id?: number; vehicle_type_id?: number; driver_type?: string } | null; documents: { status: string }[] }>('/drivers/me')
       .pipe(
         map((res) => {
           const driver = res.driver;
@@ -53,7 +54,9 @@ export class ApprovedDriverGuard implements CanActivate {
           const hasRegistered = !!driver && (!!driver.city_id || !!driver.vehicle_type_id);
           const hasDocs = (res.documents ?? []).length > 0;
           let state: DriverState = 'registering';
-          if (status === 'approved') {
+          if (driver?.driver_type === 'carpool') {
+            state = 'carpool';
+          } else if (status === 'approved') {
             state = 'approved';
           } else if (hasRegistered || hasDocs) {
             state = 'pending';
@@ -76,6 +79,7 @@ export class ApprovedDriverGuard implements CanActivate {
     // gated separately on the dashboard until documents AND payout are approved.
     // Only a driver who hasn't registered/uploaded yet is sent back to finish.
     if (state === 'approved' || state === 'pending') return true;
+    if (state === 'carpool') return this.router.parseUrl('/carpool-signup/status');
     return this.router.parseUrl('/profile');
   }
 

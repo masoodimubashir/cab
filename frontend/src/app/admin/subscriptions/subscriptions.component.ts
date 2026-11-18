@@ -21,8 +21,11 @@ import {
 type MeterType = 'rides' | 'days' | 'daily' | 'earnings';
 type PricingModel = 'subscription' | 'commission' | 'hybrid';
 
+type Audience = 'commercial' | 'carpool';
+
 interface SubscriptionPlan {
   id: number;
+  audience?: Audience;
   city_id: number;
   city_name: string | null;
   vehicle_type_id: number | null;
@@ -112,6 +115,14 @@ const PRICING_MODEL_OPTIONS: {
         />
 
         <div class="filter-selects">
+          <tm-filter-select
+            icon="users"
+            ariaLabel="Audience filter"
+            allLabel="Commercial"
+            [options]="audienceFilterOptions"
+            [value]="audienceFilter"
+            (valueChange)="onAudienceFilterChange($event)"
+          />
           <tm-filter-select
             icon="map-marker"
             ariaLabel="Location filter"
@@ -261,8 +272,22 @@ const PRICING_MODEL_OPTIONS: {
       (closed)="open = false"
     >
       <div slot="body" class="form">
+        <!-- Audience: carpool plans are day-based, no commission, UPI only -->
+        <div class="model-pick" role="radiogroup" aria-label="Audience" style="grid-template-columns: 1fr 1fr">
+          <button type="button" class="model-card" [class.is-on]="!isCarpool" role="radio" [attr.aria-checked]="!isCarpool"
+                  [disabled]="!!editingId" (click)="setAudience('commercial')">
+            <span class="model-card__label">Commercial drivers</span>
+            <span class="model-card__desc">Taxi plans, wallet or UPI</span>
+          </button>
+          <button type="button" class="model-card" [class.is-on]="isCarpool" role="radio" [attr.aria-checked]="isCarpool"
+                  [disabled]="!!editingId" (click)="setAudience('carpool')">
+            <span class="model-card__label">Carpool drivers</span>
+            <span class="model-card__desc">Days, no commission. UPI only. No auto-renew.</span>
+          </button>
+        </div>
+
         <!-- Pricing model selector -->
-        <div class="model-pick" role="radiogroup" aria-label="Pricing model">
+        <div class="model-pick" role="radiogroup" aria-label="Pricing model" *ngIf="!isCarpool">
           <button
             *ngFor="let m of pricingModelOptions"
             type="button"
@@ -310,7 +335,7 @@ const PRICING_MODEL_OPTIONS: {
         </div>
 
         <!-- Vehicle Types Multi-Select -->
-        <div class="field">
+        <div class="field" *ngIf="!isCarpool">
           <span class="field__lbl">Vehicle Types</span>
           <div class="multi-box">
             <button
@@ -348,7 +373,7 @@ const PRICING_MODEL_OPTIONS: {
                    [placeholder]="amountLocked ? 'No upfront payment' : 'e.g. 49'" />
             <span class="field__err" *ngIf="!amountLocked && touched.amount && (form.amount == null || form.amount <= 0)">Enter an amount greater than 0.</span>
           </label>
-          <label class="field" [class.is-locked]="commissionLocked">
+          <label class="field" [class.is-locked]="commissionLocked" *ngIf="!isCarpool">
             <span class="field__lbl">
               Commission (%) <i *ngIf="!commissionLocked">*</i>
               <span class="field__tag" *ngIf="commissionLocked">Not used</span>
@@ -373,7 +398,7 @@ const PRICING_MODEL_OPTIONS: {
         </label>
 
         <div class="grid2">
-          <label class="field">
+          <label class="field" *ngIf="!isCarpool">
             <span class="field__lbl">Type <i>*</i></span>
             <select [(ngModel)]="form.meter_type">
               <option *ngFor="let m of meterOptions" [value]="m.value">{{ m.label }}</option>
@@ -577,6 +602,8 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
   status: StatusFilter = 'all';
   meter: MeterType | 'all' = 'all';
   model: PricingModel | 'all' = 'all';
+  /** 'all' means Commercial (the default list); carpool plans are a separate list. */
+  audienceFilter: 'all' | 'carpool' = 'all';
 
   meterOptions = METER_OPTIONS;
   pricingModelOptions = PRICING_MODEL_OPTIONS;
@@ -600,6 +627,29 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
   get meterFilterOptions(): { label: string; value: string }[] {
     return METER_OPTIONS.map((m) => ({ label: m.label, value: m.value }));
   }
+  get audienceFilterOptions(): { label: string; value: string }[] {
+    return [{ label: 'Carpool', value: 'carpool' }];
+  }
+
+  get isCarpool(): boolean {
+    return this.form.audience === 'carpool';
+  }
+
+  onAudienceFilterChange(value: string): void {
+    this.audienceFilter = value === 'carpool' ? 'carpool' : 'all';
+    this.fetchPlans();
+  }
+
+  setAudience(a: Audience): void {
+    if (this.editingId) return;
+    this.form.audience = a;
+    if (a === 'carpool') {
+      this.form.pricing_model = 'subscription';
+      this.form.commission_percent = 0;
+      this.form.meter_type = 'days';
+    }
+  }
+
   get modelFilterOptions(): { label: string; value: string }[] {
     return PRICING_MODEL_OPTIONS.map((m) => ({ label: m.short, value: m.value }));
   }
@@ -677,6 +727,7 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
 
   fetchPlans(): void {
     const params = new URLSearchParams();
+    params.set('audience', this.audienceFilter === 'carpool' ? 'carpool' : 'commercial');
     if (this.vehicleFilter !== 'all') params.set('vehicle_type_id', this.vehicleFilter);
     if (this.status !== 'all') params.set('is_active', this.status === 'active' ? '1' : '0');
     if (this.meter !== 'all') params.set('meter_type', this.meter);
@@ -844,6 +895,7 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
   // ── Drawer / form ───────────────────────────────────────────────
   blankForm() {
     return {
+      audience: (this.audienceFilter === 'carpool' ? 'carpool' : 'commercial') as Audience,
       title: '',
       subtitle: '',
       amount: null as number | null,
@@ -879,6 +931,7 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
     this.isAllVehiclesSelected = p.vehicle_type_id == null;
     this.selectedVehicleTypeIds = p.vehicle_type_id != null ? [p.vehicle_type_id] : [];
     this.form = {
+      audience: (p.audience ?? 'commercial') as Audience,
       title: p.title,
       subtitle: p.subtitle || '',
       amount: p.amount,
@@ -912,6 +965,7 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
 
     const f = this.form;
     const body: Record<string, unknown> = {
+      audience: f.audience,
       title: f.title.trim(),
       subtitle: f.subtitle?.trim() || null,
       amount: this.amountLocked ? 0 : f.amount,

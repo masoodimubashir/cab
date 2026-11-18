@@ -24,6 +24,12 @@ class AdminSubscriptionsController
                 $w->where('status', DriverSubscription::STATUS_ACTIVE)->where('is_queued', false);
             }]);
 
+        // Default Commercial so existing screens never see carpool plans (?audience=carpool|all).
+        $audience = $request->query('audience', SubscriptionPlan::AUDIENCE_COMMERCIAL);
+        if ($audience !== 'all') {
+            $q->where('audience', $audience === SubscriptionPlan::AUDIENCE_CARPOOL ? $audience : SubscriptionPlan::AUDIENCE_COMMERCIAL);
+        }
+
         if ($cityId = $request->query('city_id')) {
             if ($cityId !== 'all') {
                 $q->where('city_id', (int) $cityId);
@@ -200,11 +206,25 @@ class AdminSubscriptionsController
             'days_count' => ['nullable', 'integer', 'min:1', 'max:3650'],
             'earnings_threshold' => ['nullable', 'numeric', 'min:1', 'max:100000000'],
             'vehicle_type_id' => ['nullable'],
+            'audience' => ['sometimes', Rule::in([SubscriptionPlan::AUDIENCE_COMMERCIAL, SubscriptionPlan::AUDIENCE_CARPOOL])],
             'terms' => ['nullable', 'string', 'max:5000'],
             'available_from' => ['nullable', 'date'],
             'available_to' => ['nullable', 'date', 'after_or_equal:available_from'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
+
+        $audience = $data['audience'] ?? $plan?->audience ?? SubscriptionPlan::AUDIENCE_COMMERCIAL;
+        if ($audience === SubscriptionPlan::AUDIENCE_CARPOOL) {
+            // Carpool: one-time amount, days, no commission, no vehicle type.
+            $data['pricing_model'] = SubscriptionPlan::MODEL_SUBSCRIPTION;
+            $data['meter_type'] = SubscriptionPlan::METER_DAYS;
+            $data['commission_percent'] = 0;
+            $data['vehicle_type_id'] = null;
+            $request->merge(['vehicle_type_id' => null, 'vehicle_type_ids' => [null]]);
+            if (empty($data['days_count']) && ! $plan?->days_count) {
+                abort(422, 'Number of days is required for a carpool plan.');
+            }
+        }
 
         $model = $data['pricing_model']
             ?? $plan?->pricing_model
@@ -263,6 +283,7 @@ class AdminSubscriptionsController
             'id' => $p->id,
             'city_id' => $p->city_id,
             'city_name' => $p->city?->name ?? 'All cities',
+            'audience' => $p->audience,
             'vehicle_type_id' => $p->vehicle_type_id,
             'vehicle_type_name' => $p->vehicleType?->name,
             'title' => $p->title,

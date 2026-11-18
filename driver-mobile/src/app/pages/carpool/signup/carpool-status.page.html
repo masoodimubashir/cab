@@ -1,0 +1,52 @@
+<ion-content [fullscreen]="true" class="dc-content cps">
+  <ion-refresher slot="fixed" (ionRefresh)="load(); $any($event).target.complete()">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+
+  <div class="cps__wrap">
+    <div class="cps__loading" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
+    <p class="cps__error" role="alert" *ngIf="error">{{ error }}</p>
+
+    <ng-container *ngIf="!loading && approval">
+      <div class="cps-status" [class.is-approved]="approval === 'approved'" [class.is-rejected]="docsNeedingWork.length">
+        <ion-icon [name]="approval === 'approved' ? 'checkmark-circle' : docsNeedingWork.length ? 'alert-circle' : 'hourglass-outline'" aria-hidden="true"></ion-icon>
+        <ng-container *ngIf="approval === 'approved'">
+          <h1 class="cps__title">You're approved{{ firstName ? ', ' + firstName : '' }}</h1>
+          <p class="cps__sub">Publishing carpools opens in the next app update. We'll let you know.</p>
+        </ng-container>
+        <ng-container *ngIf="approval !== 'approved' && docsNeedingWork.length">
+          <h1 class="cps__title">A few things need your attention</h1>
+          <p class="cps__sub">Send the documents below, then we'll check your sign-up.</p>
+        </ng-container>
+        <ng-container *ngIf="approval !== 'approved' && !docsNeedingWork.length">
+          <h1 class="cps__title">We're checking your sign-up</h1>
+          <p class="cps__sub">Every carpool driver is checked by hand. This page updates by itself.</p>
+        </ng-container>
+      </div>
+
+      <div class="cps-card" *ngIf="car">
+        <h2 class="cps-card__title">Your car</h2>
+        <p class="cps-card__line">{{ car.colour }} {{ car.make }} {{ car.model }}</p>
+        <p class="cps-card__line cps-card__plate">{{ car.plate }} · {{ car.seats }} seats</p>
+      </div>
+
+      <div class="cps-card" *ngIf="docs.length">
+        <h2 class="cps-card__title">Documents</h2>
+        <div class="cps-card__row" *ngFor="let d of docs">
+          <span>{{ d.name }}</span>
+          <span class="cps-chip" [class.is-ok]="d.status === 'approved'" [class.is-bad]="d.status === 'rejected' || d.status === 'missing'">{{ docLabel(d) }}</span>
+        </div>
+      </div>
+
+      <ion-button *ngIf="approval === 'approved'" expand="block" class="cps__cta" routerLink="/carpool-signup/plans">
+        Plans
+      </ion-button>
+
+      <ion-button *ngIf="approval !== 'approved' && docsNeedingWork.length" expand="block" class="cps__cta" (click)="fix()">
+        Send documents
+      </ion-button>
+    </ng-container>
+
+    <ion-button expand="block" fill="clear" class="cps__secondary" (click)="logout()">Log out</ion-button>
+  </div>
+</ion-content>

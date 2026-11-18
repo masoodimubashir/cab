@@ -142,6 +142,12 @@ class Driver extends Model
         return $this->driver_type === self::TYPE_CARPOOL;
     }
 
+    /** The car of a carpool driver (commercial drivers keep theirs on this row). */
+    public function carpoolVehicle(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(\App\Models\Carpool\CarpoolVehicle::class);
+    }
+
     public function scopeOnlineFresh($q)
     {
         return $q->where('is_online', true)

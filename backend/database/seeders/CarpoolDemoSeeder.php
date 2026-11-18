@@ -64,6 +64,59 @@ class CarpoolDemoSeeder extends Seeder
             $driver->save();
         }
 
-        $this->command?->info('Carpool demo: ' . count(self::DRIVERS) . " carpool drivers in {$city->name}.");
+        $this->seedDocuments();
+        $this->seedVehicles();
+
+        $this->command?->info('Carpool demo: ' . count(self::DRIVERS) . " carpool drivers with cars in {$city->name}, and the carpool documents.");
+    }
+
+    /**
+     * The four carpool sign-up documents (Carpool.md section 2). On live these
+     * are created by an admin in Documents Catalog with Applies to = Carpool.
+     */
+    private function seedDocuments(): void
+    {
+        $docs = [
+            ['Driving licence (carpool)', 2, 'Front and back of your driving licence.', []],
+            ['Vehicle RC (carpool)', 2, 'Front and back. It shows the car is registered as private, not commercial.', []],
+            ['Insurance (carpool)', 1, 'The current insurance certificate for this car.', [['Expiry date', 'date']]],
+            ['Government ID (carpool)', 2, 'One ID: Aadhaar (masked, only the last 4 digits visible), passport, voter ID or PAN.', []],
+        ];
+
+        foreach ($docs as [$name, $images, $instructions, $labels]) {
+            $doc = \App\Models\Document::query()->firstOrCreate(['name' => $name], [
+                'no_of_images' => $images,
+                'category' => 'driver_document',
+                'required' => 'mandatory_register',
+                'document_type' => 'normal',
+                'gallery_restricted' => false,
+                'instructions' => $instructions,
+                'status' => 'mandatory_register',
+                'applies_to' => 'carpool',
+            ]);
+            foreach ($labels as $i => [$label, $type]) {
+                $doc->labels()->firstOrCreate(['label' => $label], ['label_type' => $type, 'mandatory' => true, 'sort_order' => $i]);
+            }
+        }
+    }
+
+    private function seedVehicles(): void
+    {
+        $cars = [['Maruti', 'Swift', 'White', 4], ['Hyundai', 'i20', 'Grey', 4], ['Mahindra', 'XUV300', 'Red', 6]];
+
+        foreach (self::DRIVERS as $i => [$key]) {
+            $driver = Driver::query()->whereHas('user', fn ($q) => $q->where('email', "demo-carpool-{$key}@dreamcabs.test"))->first();
+            if (! $driver) {
+                continue;
+            }
+            [$make, $model, $colour, $seats] = $cars[$i % count($cars)];
+            $vehicle = $driver->carpoolVehicle ?? new \App\Models\Carpool\CarpoolVehicle();
+            $vehicle->driver_id = $driver->id;
+            $vehicle->fill([
+                'make' => $make, 'model' => $model, 'colour' => $colour, 'seats' => $seats,
+                'plate' => $driver->vehicle_reg_no,
+            ])->save();
+            $driver->forceFill(['vehicle_brand' => $make, 'vehicle_color' => $colour])->save();
+        }
     }
 }

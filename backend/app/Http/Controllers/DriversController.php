@@ -71,6 +71,10 @@ class DriversController extends Controller
     private function saveRegistration(Request $request, User $user)
     {
         $existing = Driver::query()->where('user_id', $user->id)->first();
+        if ($existing?->isCarpool()) {
+            // Carpool drivers sign up through /api/carpool/driver/register.
+            return response()->json(['message' => 'You are registered as a private car owner. Contact support to change this.'], 422);
+        }
 
         if ($request->has('service_scope') || $request->has('service_scopes')) {
             $rawScope = $request->input('service_scope') ?? $request->input('service_scopes');
@@ -372,6 +376,20 @@ class DriversController extends Controller
                 'image_url' => $imagePayload['image_url'],
                 'map_marker_url' => $imagePayload['map_marker_url'],
             ]);
+            if ($driver->isCarpool()) {
+                $car = $driver->carpoolVehicle;
+                $driver->setAttribute('carpool_vehicle', $car ? (new \App\Http\Resources\Carpool\CarpoolVehicleResource($car))->resolve() : null);
+                $driver->setAttribute('vehicle', $car ? [
+                    'type' => null,
+                    'brand' => $car->make,
+                    'model' => $car->model,
+                    'color' => $car->colour,
+                    'reg_no' => $car->plate,
+                    'image_url' => $car->photoUrl($car->front_photo_path),
+                    'map_marker_url' => null,
+                ] : null);
+                $driver->unsetRelation('carpoolVehicle');
+            }
         }
 
         $documents = [];
@@ -908,6 +926,9 @@ class DriversController extends Controller
         }
 
         $catalogDoc = !empty($data['document_id']) ? Document::find($data['document_id']) : null;
+        if ($catalogDoc && !in_array($catalogDoc->applies_to, [$driver->driver_type, 'all'], true)) {
+            return response()->json(['message' => 'This document is not part of your sign-up.'], 422);
+        }
         $maxImages = $catalogDoc ? max(1, (int) $catalogDoc->no_of_images) : 1;
 
         if (isset($data['image_index'])) {

@@ -15,14 +15,19 @@ class ConfigController extends Controller
 {
     public function show(): JsonResponse
     {
+        // Driver sign-up is open whenever the kill switch is off, so private car
+        // owners can be approved before carpool opens to riders (A38).
+        $signup = ! CarpoolSwitch::killed();
+
         if (! CarpoolSwitch::enabled()) {
-            return response()->json(['enabled' => false]);
+            return response()->json(['enabled' => false, 'driver_signup' => $signup]);
         }
 
         $settings = CarpoolSetting::current();
 
         return response()->json([
             'enabled' => true,
+            'driver_signup' => $signup,
             'search_distance_m' => $settings->search_distance_m,
             'publish_horizon_days' => (int) config('carpool.publish_horizon_days'),
             'seats_max' => (int) config('carpool.seats_max'),

@@ -25,6 +25,8 @@ type Category = 'driver_document' | 'car_rental_document';
 type RequiredMode = 'mandatory_register' | 'optional';
 type DocumentTypeKey = 'normal' | 'gallery_restricted' | 'gallery_with_label';
 type LabelType = 'text' | 'number' | 'date' | 'url';
+/** Which driver type must provide the document (Carpool.md section 10). */
+type AppliesTo = 'commercial' | 'carpool' | 'all';
 
 interface DocumentLabel {
   id?: number;
@@ -44,11 +46,13 @@ interface DocumentRow {
   gallery_restricted: boolean;
   instructions: string | null;
   status: string | null;
+  applies_to?: AppliesTo;
   labels: DocumentLabel[];
 }
 
 interface CreateForm {
   name: string;
+  applies_to: AppliesTo;
   no_of_images: number;
   category: Category;
   required: RequiredMode;
@@ -66,6 +70,11 @@ const CATEGORY_OPTIONS: SelectOption<Category>[] = [
 const REQUIRED_OPTIONS: SelectOption<RequiredMode>[] = [
   { label: 'Mandatory Register', value: 'mandatory_register' },
   { label: 'Optional', value: 'optional' },
+];
+const APPLIES_TO_OPTIONS: SelectOption<AppliesTo>[] = [
+  { label: 'Commercial drivers', value: 'commercial' },
+  { label: 'Carpool drivers', value: 'carpool' },
+  { label: 'All drivers', value: 'all' },
 ];
 const DOC_TYPE_OPTIONS: SelectOption<DocumentTypeKey>[] = [
   { label: 'Normal', value: 'normal' },
@@ -152,6 +161,12 @@ const STATUS_OPTIONS: SelectOption<string>[] = [
           </ng-template>
         </tm-column>
 
+        <tm-column key="applies_to" label="Applies to" width="130">
+          <ng-template let-row>
+            <span class="small">{{ appliesToLabel(row.applies_to) }}</span>
+          </ng-template>
+        </tm-column>
+
         <tm-column key="status" label="Status" width="180">
           <ng-template let-row>
             <span *ngIf="row.status" class="status-pill is-on">{{ statusLabel(row.status) }}</span>
@@ -211,6 +226,9 @@ const STATUS_OPTIONS: SelectOption<string>[] = [
 
             <label class="lbl">Required *</label>
             <tm-select [options]="requiredOptions" [(ngModel)]="form.required" />
+
+            <label class="lbl">Applies to *</label>
+            <tm-select [options]="appliesToOptions" [(ngModel)]="form.applies_to" />
 
             <div class="switch-row">
               <span class="lbl no-mt">Gallery Restricted</span>
@@ -598,6 +616,7 @@ export class DocumentsCatalogTabComponent implements OnInit, OnDestroy {
 
   readonly categoryOptions   = CATEGORY_OPTIONS;
   readonly requiredOptions   = REQUIRED_OPTIONS;
+  readonly appliesToOptions  = APPLIES_TO_OPTIONS;
   readonly documentTypeOptions = DOC_TYPE_OPTIONS;
   readonly labelTypeOptions  = LABEL_TYPE_OPTIONS;
   readonly statusOptions     = STATUS_OPTIONS;
@@ -697,11 +716,15 @@ export class DocumentsCatalogTabComponent implements OnInit, OnDestroy {
   statusLabel(s: string): string {
     return STATUS_OPTIONS.find((x) => x.value === s)?.label ?? s;
   }
+  appliesToLabel(a: AppliesTo | undefined): string {
+    return a === 'carpool' ? 'Carpool' : a === 'all' ? 'All' : 'Commercial';
+  }
 
   // ------------ Form open / edit ------------
   blankForm(): CreateForm {
     return {
       name: '',
+      applies_to: 'commercial',
       no_of_images: 1,
       category: 'driver_document',
       required: 'mandatory_register',
@@ -725,6 +748,7 @@ export class DocumentsCatalogTabComponent implements OnInit, OnDestroy {
     this.editingId = d.id;
     this.form = {
       name: d.name,
+      applies_to: d.applies_to ?? 'commercial',
       no_of_images: d.no_of_images,
       category: d.category,
       required: (d.required as RequiredMode) || 'mandatory_register',
@@ -776,6 +800,7 @@ export class DocumentsCatalogTabComponent implements OnInit, OnDestroy {
 
     const payload = {
       name: f.name.trim(),
+      applies_to: f.applies_to,
       no_of_images: f.no_of_images,
       category: f.category,
       required: f.required,

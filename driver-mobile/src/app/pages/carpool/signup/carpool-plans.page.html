@@ -1,0 +1,53 @@
+<ion-header class="ion-no-border">
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/carpool-signup/status" text=""></ion-back-button>
+    </ion-buttons>
+    <ion-title>Plans</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content [fullscreen]="true" class="dc-content cps">
+  <ion-refresher slot="fixed" (ionRefresh)="load(); $any($event).target.complete()">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+
+  <div class="cps__wrap">
+    <div class="cps__loading" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
+    <p class="cps__error" role="alert" *ngIf="error">{{ error }}</p>
+
+    <ng-container *ngIf="!loading">
+      <h1 class="cps__title">Your plan</h1>
+
+      <div class="cps-card" *ngIf="state?.plan as p; else noPlan">
+        <h2 class="cps-card__title">{{ p.title }}</h2>
+        <p class="cps-card__line">Active until {{ fmt(p.expires_at) }}</p>
+        <p class="cps-card__line" *ngIf="state?.next_plan as n">Next: {{ n.title }}, starts {{ fmt(n.starts_at) }}</p>
+        <p class="cps-card__line" *ngIf="state?.ending_soon">Your plan ends soon. Carpools after it ends are cancelled. Buy a plan to keep them.</p>
+      </div>
+      <ng-template #noPlan>
+        <div class="cps-card">
+          <h2 class="cps-card__title">No active plan</h2>
+          <p class="cps-card__line">You need an active plan to publish carpools.</p>
+        </div>
+      </ng-template>
+
+      <h2 class="cps__title" style="font-size: 18px; margin-top: 20px">Buy a plan</h2>
+      <p class="cps__sub">Pay once by UPI. No commission, and it doesn't renew by itself.</p>
+
+      <p class="cps__empty" *ngIf="!plans.length">No plans are available in your city yet. Check back soon.</p>
+
+      <div class="cps-card" *ngFor="let plan of plans">
+        <h2 class="cps-card__title">{{ plan.title }}</h2>
+        <p class="cps-card__line" *ngIf="plan.subtitle">{{ plan.subtitle }}</p>
+        <p class="cps-card__line">₹{{ plan.amount | number: '1.0-2' }} for {{ daysLabel(plan.days_count) }}</p>
+        <p class="cps-card__line" *ngIf="plan.terms">{{ plan.terms }}</p>
+        <ion-button expand="block" class="cps__cta" [disabled]="!canBuy || buyingId !== null" (click)="buy(plan)">
+          <ion-spinner name="dots" *ngIf="buyingId === plan.id"></ion-spinner>
+          <ng-container *ngIf="buyingId !== plan.id">{{ state?.plan ? 'Buy next plan' : 'Buy with UPI' }}</ng-container>
+        </ion-button>
+      </div>
+      <p class="cps__note" *ngIf="!canBuy">A plan is already waiting to start. You can buy another once it begins.</p>
+    </ng-container>
+  </div>
+</ion-content>

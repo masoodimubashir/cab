@@ -788,6 +788,46 @@ paths:
                   timezone: { type: string, example: Asia/Kolkata }
         "401":
           description: Not logged in
+  /carpool/driver/register:
+    post:
+      tags: [Carpool]
+      summary: A private car owner signs up as a carpool driver (M1)
+      description: >
+        Creates (or, before approval, updates) a carpool driver: a drivers row
+        with driver_type=carpool and the car in carpool_vehicles. Status is
+        pending until an admin approves. Open whenever the kill switch is off,
+        even while carpool is off for riders. Documents are then uploaded with
+        POST /drivers/documents; GET /catalog/documents lists only carpool and
+        all-driver documents for a carpool driver.
+      operationId: carpool_driver_register
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, city_id, make, model, colour, plate, seats]
+              properties:
+                name: { type: string, maxLength: 120 }
+                photo: { type: string, format: binary, description: Required unless a profile photo is already on file }
+                email: { type: string, format: email }
+                dob: { type: string, format: date, description: At least 18 years ago }
+                address: { type: string }
+                city_id: { type: integer }
+                make: { type: string, maxLength: 60 }
+                model: { type: string, maxLength: 60 }
+                colour: { type: string, maxLength: 40 }
+                plate: { type: string, example: JK01 AB 4521, description: Normalised to JK01AB4521; unique across commercial and carpool drivers }
+                seats: { type: integer, minimum: 1, maximum: 6 }
+                front_photo: { type: string, format: binary, description: Front of the car with the plate visible; required unless already on file }
+                interior_photo: { type: string, format: binary }
+      responses:
+        "201":
+          description: Saved; waiting for review
+        "404":
+          description: Kill switch is on
+        "422":
+          description: Invalid, plate taken, already a commercial driver, or already approved
 components:
   securitySchemes:
     bearerAuth:

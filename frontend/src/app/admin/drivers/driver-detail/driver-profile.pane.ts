@@ -53,7 +53,36 @@ import { DriverProfile, VehicleForm } from './driver-detail.types';
       </div>
     </header>
 
-    <section class="card" *ngIf="driver">
+    <!-- Carpool drivers: the car they registered, read only (Carpool.md section 10, Approvals). -->
+    <section class="card" *ngIf="driver?.driver_type === 'carpool'">
+      <header class="card__head">
+        <h3 class="card__title">
+          <tm-icon name="car" [size]="16" />
+          Car <span class="type-badge">Carpool</span>
+        </h3>
+        <p class="card__hint">Private car. Check the plate in the photo matches the number below.</p>
+      </header>
+      <ng-container *ngIf="driver?.carpool_vehicle as car; else noCar">
+        <div class="car-photos">
+          <a *ngIf="car.front_photo_url" [href]="car.front_photo_url" target="_blank" rel="noopener">
+            <img [src]="car.front_photo_url" alt="Front of the car with the number plate" />
+          </a>
+          <a *ngIf="car.interior_photo_url" [href]="car.interior_photo_url" target="_blank" rel="noopener">
+            <img [src]="car.interior_photo_url" alt="Inside of the car" />
+          </a>
+        </div>
+        <div class="grid two">
+          <div class="field"><label class="lbl">Number plate</label><div class="ro-value mono">{{ car.plate }}</div></div>
+          <div class="field"><label class="lbl">Seats offered</label><div class="ro-value">{{ car.seats }}</div></div>
+          <div class="field"><label class="lbl">Make</label><div class="ro-value">{{ car.make }}</div></div>
+          <div class="field"><label class="lbl">Model</label><div class="ro-value">{{ car.model }}</div></div>
+          <div class="field"><label class="lbl">Colour</label><div class="ro-value">{{ car.colour }}</div></div>
+        </div>
+      </ng-container>
+      <ng-template #noCar><p class="card__hint">No car details yet.</p></ng-template>
+    </section>
+
+    <section class="card" *ngIf="driver && driver.driver_type !== 'carpool'">
       <header class="card__head">
         <h3 class="card__title">
           <tm-icon name="car" [size]="16" />
@@ -111,6 +140,22 @@ import { DriverProfile, VehicleForm } from './driver-detail.types';
   `,
   styles: [`
     :host { display: block; }
+
+    .type-badge {
+      margin-left: 6px;
+      padding: 1px 6px;
+      border-radius: var(--tm-radius-pill);
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--tm-green-tint);
+      color: var(--tm-green-deep);
+    }
+    .car-photos { display: flex; gap: 8px; margin-bottom: var(--tm-space-3, 12px); flex-wrap: wrap; }
+    .car-photos img {
+      width: 160px; height: 110px; object-fit: cover;
+      border-radius: 8px; border: 1px solid var(--tm-line-2);
+    }
+    .mono { font-family: var(--tm-font-mono); }
 
     .head {
       display: flex;

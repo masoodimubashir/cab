@@ -21,8 +21,12 @@ import {
 
 type DocsFilter = 'all' | 'uploaded' | 'not_uploaded';
 
+type DriverTypeFilter = 'commercial' | 'carpool' | 'all';
+
 interface DriverRow {
   id: number;
+  driver_type?: 'commercial' | 'carpool';
+  carpool_vehicle?: { make: string; model: string; colour: string; plate: string; seats: number } | null;
   approval_status: 'pending' | 'approved' | 'rejected';
   vehicle_type: string | null;
   vehicle_reg_no: string | null;
@@ -41,6 +45,13 @@ const FILTER_OPTIONS: { value: DocsFilter; label: string }[] = [
   { value: 'all',          label: 'All' },
   { value: 'uploaded',     label: 'Docs uploaded' },
   { value: 'not_uploaded', label: 'No docs yet' },
+];
+
+/** Driver type (Carpool.md section 10). Commercial by default, so today's list doesn't change. */
+const TYPE_OPTIONS: { value: DriverTypeFilter; label: string }[] = [
+  { value: 'commercial', label: 'Commercial' },
+  { value: 'carpool',    label: 'Carpool' },
+  { value: 'all',        label: 'All types' },
 ];
 
 /**
@@ -95,6 +106,15 @@ const FILTER_OPTIONS: { value: DocsFilter; label: string }[] = [
         />
 
         <ng-container slot="filters">
+          <div class="segmented" role="group" aria-label="Driver type">
+            <button
+              *ngFor="let opt of typeOptions"
+              type="button"
+              class="segmented__btn"
+              [class.is-active]="driverType === opt.value"
+              (click)="setDriverType(opt.value)"
+            >{{ opt.label }}</button>
+          </div>
           <div class="segmented" role="group" aria-label="Document filter">
             <button
               *ngFor="let opt of filterOptions"
@@ -123,8 +143,12 @@ const FILTER_OPTIONS: { value: DocsFilter; label: string }[] = [
                 <ng-container *ngIf="!(row.user?.avatar_url || row.user?.avatar_path)">{{ initials(row.user?.name) }}</ng-container>
               </span>
               <div class="cell-user__meta">
-                <span class="cell-user__name">{{ row.user?.name || 'Unnamed' }}</span>
-                <span class="cell-user__sub" *ngIf="row.vehicle_type || row.vehicle_reg_no">
+                <span class="cell-user__name">{{ row.user?.name || 'Unnamed' }}<span class="type-badge" *ngIf="row.driver_type === 'carpool'">Carpool</span></span>
+                <span class="cell-user__sub" *ngIf="row.carpool_vehicle as car">
+                  {{ car.colour }} {{ car.make }} {{ car.model }} · {{ car.seats }} seats
+                  <span class="mono"> · {{ car.plate }}</span>
+                </span>
+                <span class="cell-user__sub" *ngIf="!row.carpool_vehicle && (row.vehicle_type || row.vehicle_reg_no)">
                   {{ row.vehicle_type || '—' }}
                   <span *ngIf="row.vehicle_reg_no" class="mono"> · {{ row.vehicle_reg_no }}</span>
                 </span>
@@ -325,6 +349,18 @@ const FILTER_OPTIONS: { value: DocsFilter; label: string }[] = [
 
     .mono { font-family: var(--tm-font-mono); font-weight: 600; font-size: 12px; }
 
+    .type-badge {
+      margin-left: 6px;
+      padding: 1px 6px;
+      border-radius: var(--tm-radius-pill);
+      font-size: 11px;
+      font-weight: 700;
+      vertical-align: middle;
+      background: var(--tm-green-tint);
+      color: var(--tm-green-deep);
+    }
+    .segmented + .segmented { margin-left: 8px; }
+
     /* Search input matches the height of the segmented control */
     :host ::ng-deep tm-data-table .tm-dt__toolbar tm-input .field {
       background: transparent;
@@ -350,6 +386,8 @@ export class DriversApprovalsTabComponent implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
 
   readonly filterOptions = FILTER_OPTIONS;
+  readonly typeOptions = TYPE_OPTIONS;
+  driverType: DriverTypeFilter = 'commercial';
 
   rows: DriverRow[] = [];
   total = 0;
@@ -389,6 +427,7 @@ export class DriversApprovalsTabComponent implements OnInit, OnDestroy {
     const params = new URLSearchParams({
       page: String(this.page),
       per_page: String(this.pageSize),
+      type: this.driverType,
     });
     if (this.docsFilter === 'uploaded') params.set('has_documents', '1');
     else if (this.docsFilter === 'not_uploaded') params.set('has_documents', '0');
@@ -419,6 +458,13 @@ export class DriversApprovalsTabComponent implements OnInit, OnDestroy {
       this.page = 1;
       this.reload();
     }, 300);
+  }
+
+  setDriverType(t: DriverTypeFilter): void {
+    if (this.driverType === t) return;
+    this.driverType = t;
+    this.page = 1;
+    this.reload();
   }
 
   setDocsFilter(f: DocsFilter): void {

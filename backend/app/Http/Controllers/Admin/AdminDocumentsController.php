@@ -23,6 +23,10 @@ class AdminDocumentsController
         if ($category = $request->query('category')) {
             $q->where('category', $category);
         }
+        // Applies to filter (Carpool.md section 10). No filter lists every document.
+        if (in_array($appliesTo = $request->query('applies_to'), Document::APPLIES_TO, true)) {
+            $q->where('applies_to', $appliesTo);
+        }
         if ($status = $request->query('status')) {
             $q->where('status', $status);
         }
@@ -131,6 +135,8 @@ class AdminDocumentsController
             'gallery_restricted' => ['nullable', 'boolean'],
             'instructions' => ['nullable', 'string', 'max:2000'],
             'status' => ['nullable', 'string', 'max:40'],
+            // Which driver type must provide it; defaults to commercial in the database.
+            'applies_to' => ['nullable', Rule::in(Document::APPLIES_TO)],
 
             'labels' => ['nullable', 'array'],
             'labels.*.label' => ['required_with:labels', 'string', 'max:120'],
@@ -139,7 +145,12 @@ class AdminDocumentsController
             'labels.*.sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
         ];
 
-        return $request->validate($rules);
+        $data = $request->validate($rules);
+        if (array_key_exists('applies_to', $data) && $data['applies_to'] === null) {
+            unset($data['applies_to']); // keep the stored value (default commercial)
+        }
+
+        return $data;
     }
 
     /**
@@ -174,6 +185,7 @@ class AdminDocumentsController
             'gallery_restricted' => (bool) $d->gallery_restricted,
             'instructions' => $d->instructions,
             'status' => $d->status,
+            'applies_to' => $d->applies_to ?? 'commercial',
             'labels' => $d->labels->map(fn (DocumentLabel $l) => [
                 'id' => $l->id,
                 'label' => $l->label,

@@ -2,6 +2,7 @@ import { NgModule } from '@angular/core';
 import { PreloadAllModules, RouterModule, Routes } from '@angular/router';
 import { AuthGuard } from './core/auth.guard';
 import { CarpoolEnabledGuard } from './pages/carpool/carpool-enabled.guard';
+import { DriverTypeGuard } from './pages/carpool/signup/driver-type.guard';
 import { GuestGuard } from './core/guest.guard';
 import { ApprovedDriverGuard } from './core/approved-driver.guard';
 
@@ -33,6 +34,11 @@ const routes: Routes = [
   {
     path: 'profile',
     loadChildren: () => import('./pages/profile/profile.module').then((m) => m.ProfilePageModule),
+    canActivate: [AuthGuard, DriverTypeGuard],
+  },
+  {
+    path: 'carpool-signup',
+    loadChildren: () => import('./pages/carpool/signup/carpool-signup.module').then((m) => m.CarpoolSignupModule),
     canActivate: [AuthGuard],
   },
   {

@@ -426,6 +426,7 @@ class PayoutMonitorService
 
                 // Include driver subscriptions (both wallet deductions and direct online purchases)
                 $subsQuery = \App\Models\DriverSubscription::query()
+                    ->ofCommercialPlans()
                     ->where('status', \App\Models\DriverSubscription::STATUS_ACTIVE)
                     ->where('is_queued', false)
                     ->with(['driver', 'plan:id,title'])

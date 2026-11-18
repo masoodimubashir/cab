@@ -121,8 +121,23 @@ class AdminDriversController
     {
         $fleets = ManagerScope::fleetIds($request->user());
 
-        // Commercial only until the driver type filter arrives (Carpool.md section 10).
-        return Driver::query()->commercial()->when($fleets !== null, fn ($query) => $query->whereIn('drivers.fleet_id', $fleets));
+        return $this->ofDriverType(Driver::query(), $request)
+            ->when($fleets !== null, fn ($query) => $query->whereIn('drivers.fleet_id', $fleets));
+    }
+
+    /**
+     * Driver type filter on the Drivers and Approvals lists (Carpool.md section 10):
+     * ?type=commercial (default, so today's numbers don't move), carpool or all.
+     */
+    private function ofDriverType(\Illuminate\Database\Eloquent\Builder $query, Request $request): \Illuminate\Database\Eloquent\Builder
+    {
+        $type = $request->validate(['type' => ['sometimes', 'nullable', 'in:commercial,carpool,all']])['type'] ?? 'commercial';
+
+        return match ($type) {
+            'carpool' => $query->carpool(),
+            'all' => $query,
+            default => $query->commercial(),
+        };
     }
 
     /**
@@ -187,6 +202,7 @@ class AdminDriversController
             // to approved.
             $mandatoryDocs = \App\Models\Document::query()
                 ->forDrivers()
+                ->forDriverType($driver->driver_type)
                 ->where('required', 'mandatory_register')
                 ->get(['id', 'name', 'no_of_images']);
 
@@ -375,6 +391,10 @@ class AdminDriversController
                 'email' => $driver->user?->email,
                 'avatar_path' => $driver->user?->avatar_path,
                 'avatar_url' => $this->avatarUrl($driver->user?->avatar_path),
+                'driver_type' => $driver->driver_type,
+                'carpool_vehicle' => $driver->isCarpool() && $driver->carpoolVehicle
+                    ? (new \App\Http\Resources\Carpool\CarpoolVehicleResource($driver->carpoolVehicle))->resolve()
+                    : null,
                 'ride_type_id' => $driver->ride_type_id,
                 'ride_type_name' => $driver->rideType?->name,
                 'vehicle_type_id' => $driver->vehicle_type_id,
@@ -1468,8 +1488,8 @@ class AdminDriversController
         $filters = $request->validate([
             'stand_id' => ['sometimes', 'integer', Rule::exists('route_groups', 'id')->where('city_id', $cityId)],
         ]);
-        $query = ($cityId ? $this->locationDrivers($request)->forCity($cityId) : Driver::query()->commercial())
-            ->with(['user', 'documents', 'vehicleTypeRef:id,name']);
+        $query = ($cityId ? $this->locationDrivers($request)->forCity($cityId) : $this->ofDriverType(Driver::query(), $request))
+            ->with(['user', 'documents', 'vehicleTypeRef:id,name', 'carpoolVehicle']);
 
         if ($state === 'deactivated') {
             $query->whereNotNull('deactivated_at');
@@ -1614,8 +1634,16 @@ class AdminDriversController
             ->orderByDesc('completed_at')
             ->value('completed_at');
 
+        $car = $driver->isCarpool() ? $driver->carpoolVehicle : null;
+
         return [
             'id' => $driver->id,
+            'driver_type' => $driver->driver_type,
+            'carpool_vehicle' => $car ? [
+                'make' => $car->make, 'model' => $car->model, 'colour' => $car->colour,
+                'plate' => $car->plate, 'seats' => $car->seats,
+                'front_photo_url' => $car->photoUrl($car->front_photo_path),
+            ] : null,
             'approval_status' => $driver->approval_status,
             // The linked catalog category is authoritative. The legacy text
             // field can drift (for example SUV MAXI vs SUMO MAXI).

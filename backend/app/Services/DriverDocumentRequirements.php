@@ -14,7 +14,7 @@ class DriverDocumentRequirements
             ->where(fn ($q) => $q->whereNull('vehicle_type_id')->orWhere('vehicle_type_id', $driver->vehicle_type_id))
             ->orderByDesc('id')->get();
 
-        $requirements = Document::query()->forDrivers()
+        $requirements = Document::query()->forDrivers()->forDriverType($driver->driver_type)
             ->whereIn('required', ['mandatory_register', 'mandatory_drive'])
             ->orderBy('id')->get()->map(function (Document $doc) use ($uploads) {
                 $rows = $uploads->where('document_id', $doc->id);

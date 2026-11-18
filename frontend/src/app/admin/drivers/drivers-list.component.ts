@@ -40,6 +40,8 @@ type ApprovalFilter = 'all' | 'approved' | 'not_approved' | 'pending' | 'rejecte
 
 interface DriverRow {
   id: number;
+  driver_type?: 'commercial' | 'carpool';
+  carpool_vehicle?: { make: string; model: string; colour: string; plate: string; seats: number; front_photo_url: string | null } | null;
   cities?: { id: number; name: string }[];
   route_groups?: { id: number; name: string; city_name: string | null; is_active: boolean }[];
   allocated_route_count?: number;
@@ -378,6 +380,10 @@ interface AllocationVehicle {
 
         <!-- Toolbar: filters on the RIGHT -->
         <ng-container slot="filters">
+          <!-- Driver type (Carpool.md section 10). Commercial by default, so today's list doesn't change. -->
+          <tm-filter-select icon="user" ariaLabel="Driver type" allLabel="All types"
+            [options]="driverTypeOptions" [value]="driverType"
+            (valueChange)="onDriverTypeChange($event)" (focusin)="onDocumentClick()" />
           <tm-filter-select *ngIf="allocationFiltersSupported || cityCounts" icon="map-marker"
             ariaLabel="Driver city" allLabel="All cities" searchPlaceholder="Search cities"
             [options]="cityOptions" [value]="cityFilterValue"
@@ -599,7 +605,8 @@ interface AllocationVehicle {
                 <ng-container *ngIf="!(row.user?.avatar_url || row.user?.avatar_path)">{{ initials(row.user?.name) }}</ng-container>
               </span>
               <div class="cell-user__meta">
-                <span class="cell-user__name">{{ row.user?.name || 'Unnamed' }}</span>
+                <span class="cell-user__name">{{ row.user?.name || 'Unnamed' }}<span class="type-badge" *ngIf="row.driver_type === 'carpool'">Carpool</span></span>
+                <span class="cell-user__sub" *ngIf="row.carpool_vehicle as car">{{ car.colour }} {{ car.make }} {{ car.model }} · {{ car.seats }} seats</span>
                 <span class="cell-user__sub" *ngIf="row.vehicle_type">{{ row.vehicle_type }}</span>
                 <span class="cell-user__sub mono" *ngIf="row.vehicle_reg_no">{{ row.vehicle_reg_no }}</span>
               </div>
@@ -1528,6 +1535,17 @@ interface AllocationVehicle {
       color: var(--tm-text-muted);
     }
 
+    .type-badge {
+      margin-left: 6px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      vertical-align: middle;
+      background: var(--tm-primary-soft, #e7f6ee);
+      color: var(--tm-primary, #0f7a45);
+    }
+
     /* ----- Status column ----- */
     .status-pill {
       display: inline-flex;
@@ -2071,6 +2089,30 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
   catalogCities: CityOption[] = [];
   cityCounts: DriverLocationCount[] | null = null;
   standCounts: DriverStandCount[] = [];
+
+  /** Driver type filter (Carpool.md section 10); 'all' shows both types. */
+  driverType: 'commercial' | 'carpool' | 'all' = 'commercial';
+  readonly driverTypeOptions = [
+    { value: 'commercial', label: 'Commercial' },
+    { value: 'carpool', label: 'Carpool' },
+  ];
+
+  onDriverTypeChange(value: string): void {
+    this.driverType = value === 'carpool' || value === 'commercial' ? value : 'all';
+    this.page = 1;
+    this.reload();
+    this.loadCityCounts();
+  }
+
+  private loadCityCounts(): void {
+    this.allocationReads.add(this.api.get<{ data: DriverLocationCount[] }>(`/admin/drivers/city-counts?type=${this.driverType}`).subscribe({
+      next: ({ data }) => {
+        this.cityCounts = data;
+        this.loadStandCounts();
+      },
+      error: () => { this.cityCounts = null; },
+    }));
+  }
   standCountsLoading = false;
   standCountsFailed = false;
   selectedStandId: number | null = null;
@@ -2226,13 +2268,7 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnInit(): void {
     this.reload();
     this.startLiveRefresh();
-    this.allocationReads.add(this.api.get<{ data: DriverLocationCount[] }>('/admin/drivers/city-counts').subscribe({
-      next: ({ data }) => {
-        this.cityCounts = data;
-        this.loadStandCounts();
-      },
-      error: () => { this.cityCounts = null; },
-    }));
+    this.loadCityCounts();
     this.allocationReads.add(this.cityCtx.cities$.subscribe(cities => { this.catalogCities = cities; }));
     this.allocationReads.add(this.cityCtx.ensureCitiesLoaded().subscribe());
     this.allocationCitySub = this.cityCtx.cityId$.subscribe(cityId => {
@@ -2325,6 +2361,7 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
       page: String(this.page),
       per_page: String(this.pageSize),
       state: this.state,
+      type: this.driverType,
     });
     if (this.search.trim()) params.set('q', this.search.trim());
     if (this.dateFrom) params.set('date_from', this.dateFrom);

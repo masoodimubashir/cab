@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'city_id',
     'vehicle_type_id',
+    'audience',
     'title',
     'subtitle',
     'amount',
@@ -41,6 +42,9 @@ class SubscriptionPlan extends Model
         self::METER_EARNINGS,
     ];
 
+    public const AUDIENCE_COMMERCIAL = 'commercial';
+    public const AUDIENCE_CARPOOL = 'carpool';
+
     // Pricing model — how the driver is charged for the plan.
     public const MODEL_SUBSCRIPTION = 'subscription'; // one-time amount, no commission
     public const MODEL_COMMISSION = 'commission';     // no upfront amount, commission per ride
@@ -56,6 +60,7 @@ class SubscriptionPlan extends Model
     // value) still reports a pricing model rather than null.
     protected $attributes = [
         'pricing_model' => self::MODEL_SUBSCRIPTION,
+        'audience' => self::AUDIENCE_COMMERCIAL,
     ];
 
     protected $casts = [
@@ -68,6 +73,17 @@ class SubscriptionPlan extends Model
         'available_to' => 'date',
         'is_active' => 'boolean',
     ];
+
+    /** Plans sold to commercial drivers (the fence: plans never cross types). */
+    public function scopeCommercial($q)
+    {
+        return $q->where('audience', self::AUDIENCE_COMMERCIAL);
+    }
+
+    public function scopeCarpool($q)
+    {
+        return $q->where('audience', self::AUDIENCE_CARPOOL);
+    }
 
     public function city(): BelongsTo
     {

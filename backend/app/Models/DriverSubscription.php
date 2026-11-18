@@ -68,6 +68,12 @@ class DriverSubscription extends Model
         'notified_expiry_at' => 'datetime',
     ];
 
+    /** Keeps carpool plan purchases out of commercial money screens. */
+    public function scopeOfCommercialPlans($q)
+    {
+        return $q->whereHas('plan', fn ($p) => $p->where('audience', SubscriptionPlan::AUDIENCE_COMMERCIAL));
+    }
+
     public function plan(): BelongsTo
     {
         return $this->belongsTo(SubscriptionPlan::class, 'subscription_plan_id');

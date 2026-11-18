@@ -154,9 +154,17 @@ class CatalogController extends Controller
     {
         // Default to the driver-document slice — the driver app shouldn't see
         // car-rental-only catalog rows. Caller can override with ?category=…
+        // A registered driver gets their own type's documents. Before
+        // registering, the app says which sign-up it is (?driver_type=carpool).
+        $type = $request->user()
+            ? \App\Models\Driver::query()->where('user_id', $request->user()->id)->value('driver_type')
+            : null;
+        $type ??= $request->query('driver_type') === 'carpool' ? 'carpool' : 'commercial';
+
         $rows = Document::query()
             ->with('labels')
             ->forDrivers()
+            ->forDriverType($type)
             ->orderBy('id')
             ->get()
             ->map(fn (Document $d) => [

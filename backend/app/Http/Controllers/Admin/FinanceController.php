@@ -152,6 +152,7 @@ class FinanceController extends Controller
 
         if ($source === null || $source === 'subscription') {
             $subs = DriverSubscription::query()
+                ->ofCommercialPlans() // carpool plan payments join the ledger in M7
                 ->where('status', DriverSubscription::STATUS_ACTIVE)
                 ->where('is_queued', false)
                 ->whereBetween('created_at', [$from, $to])

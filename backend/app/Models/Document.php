@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'gallery_restricted',
     'instructions',
     'status',
+    'applies_to',
 ])]
 class Document extends Model
 {
@@ -42,5 +43,13 @@ class Document extends Model
         // Unassigned (null) and legacy active entries remain available.
         return $query->where('category', 'driver_document')
             ->where(fn (Builder $q) => $q->whereNull('status')->orWhere('status', '!=', 'inactive'));
+    }
+
+    public const APPLIES_TO = ['commercial', 'carpool', 'all'];
+
+    /** Documents a driver of this type must provide (Carpool.md P3). */
+    public function scopeForDriverType(Builder $query, ?string $driverType): Builder
+    {
+        return $query->whereIn('applies_to', [$driverType ?: 'commercial', 'all']);
     }
 }

@@ -1,3 +1,15 @@
+/** A carpool driver's car (Carpool.md section 2, driver sign-up). */
+export interface CarpoolVehicle {
+  id: number;
+  make: string;
+  model: string;
+  colour: string;
+  plate: string;
+  seats: number;
+  front_photo_url: string | null;
+  interior_photo_url: string | null;
+}
+
 export interface DriverProfile {
   id: number;
   user_id: number;
@@ -6,6 +18,8 @@ export interface DriverProfile {
   email: string | null;
   avatar_path?: string | null;
   avatar_url?: string | null;
+  driver_type?: 'commercial' | 'carpool';
+  carpool_vehicle?: CarpoolVehicle | null;
   ride_type_id: number | null;
   ride_type_name: string | null;
   vehicle_type_id: number | null;

@@ -42,7 +42,7 @@ class CarpoolSwitchTest extends TestCase
 
     public function test_config_says_off_by_default(): void
     {
-        $this->getJson('/api/carpool/config')->assertOk()->assertExactJson(['enabled' => false]);
+        $this->getJson('/api/carpool/config')->assertOk()->assertExactJson(['enabled' => false, 'driver_signup' => true]);
     }
 
     public function test_config_reports_settings_when_enabled(): void
@@ -62,7 +62,7 @@ class CarpoolSwitchTest extends TestCase
         $this->getJson('/api/carpool/config')->assertJsonPath('enabled', true);
 
         $this->enable(false);
-        $this->getJson('/api/carpool/config')->assertExactJson(['enabled' => false]);
+        $this->getJson('/api/carpool/config')->assertExactJson(['enabled' => false, 'driver_signup' => true]);
     }
 
     public function test_kill_switch_overrides_the_admin_setting(): void
@@ -70,7 +70,7 @@ class CarpoolSwitchTest extends TestCase
         $this->enable(true);
         config(['carpool.kill_switch' => true]);
 
-        $this->getJson('/api/carpool/config')->assertOk()->assertExactJson(['enabled' => false]);
+        $this->getJson('/api/carpool/config')->assertOk()->assertExactJson(['enabled' => false, 'driver_signup' => false]);
         $this->getJson('/api/carpool/_probe')->assertNotFound();
     }
 

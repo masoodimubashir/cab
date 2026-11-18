@@ -1,0 +1,151 @@
+<ion-header class="ion-no-border">
+  <ion-toolbar class="dc-toolbar">
+    <ion-buttons slot="start">
+      <ion-button (click)="back()" aria-label="Back"><ion-icon slot="icon-only" name="chevron-back"></ion-icon></ion-button>
+    </ion-buttons>
+    <ion-title>Carpool sign-up</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content [fullscreen]="true" class="dc-content cps">
+  <div class="cps__wrap">
+    <div class="cps__loading" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
+
+    <ng-container *ngIf="!loading">
+      <p class="cps__step">Step {{ step }} of 5</p>
+
+      <!-- Step 2: profile -->
+      <section *ngIf="step === 2">
+        <h1 class="cps__title">Your profile</h1>
+        <p class="cps__sub">Riders see your photo and first name. Use a clear photo of your face.</p>
+
+        <label class="cps-photo cps-photo--round" [class.has-photo]="photoPreview">
+          <img *ngIf="photoPreview" [src]="photoPreview" alt="Your profile photo" />
+          <span *ngIf="!photoPreview"><ion-icon name="camera-outline"></ion-icon> Add photo</span>
+          <input type="file" accept="image/*" hidden (change)="onPhoto($event, 'photo')" />
+        </label>
+
+        <label class="cps-field">
+          <span class="cps-field__label">Full name</span>
+          <input class="cps-field__input" type="text" [(ngModel)]="name" maxlength="120" autocomplete="name" placeholder="Imran Bhat" />
+        </label>
+      </section>
+
+      <!-- Step 3: city -->
+      <section *ngIf="step === 3">
+        <h1 class="cps__title">Your city</h1>
+        <p class="cps__sub">Where you'll offer carpools.</p>
+        <label class="cps-field">
+          <span class="cps-field__label">Search</span>
+          <input class="cps-field__input" type="search" [(ngModel)]="citySearch" placeholder="Type your city" autocomplete="off" />
+        </label>
+        <div class="cps-list" role="radiogroup" aria-label="City">
+          <button type="button" class="cps-list__row" role="radio" *ngFor="let c of filteredCities"
+                  [attr.aria-checked]="cityId === c.id" [class.is-on]="cityId === c.id" (click)="cityId = c.id">
+            {{ c.name }}
+            <ion-icon *ngIf="cityId === c.id" name="checkmark-circle" aria-hidden="true"></ion-icon>
+          </button>
+          <p class="cps__empty" *ngIf="!cities.length">No cities to choose from. Check your connection and go back.</p>
+          <p class="cps__empty" *ngIf="cities.length && !filteredCities.length">No city matches "{{ citySearch }}".</p>
+        </div>
+      </section>
+
+      <!-- Step 4: car -->
+      <section *ngIf="step === 4">
+        <h1 class="cps__title">Your car</h1>
+        <p class="cps__sub">The car you'll drive. It must be registered as private, not commercial.</p>
+
+        <div class="cps-grid">
+          <label class="cps-field">
+            <span class="cps-field__label">Make</span>
+            <input class="cps-field__input" type="text" [(ngModel)]="make" maxlength="60" placeholder="Maruti" />
+          </label>
+          <label class="cps-field">
+            <span class="cps-field__label">Model</span>
+            <input class="cps-field__input" type="text" [(ngModel)]="model" maxlength="60" placeholder="Swift" />
+          </label>
+          <label class="cps-field">
+            <span class="cps-field__label">Colour</span>
+            <input class="cps-field__input" type="text" [(ngModel)]="colour" maxlength="40" placeholder="White" />
+          </label>
+          <label class="cps-field">
+            <span class="cps-field__label">Number plate</span>
+            <input class="cps-field__input cps-field__input--plate" type="text" [(ngModel)]="plate" maxlength="20"
+                   placeholder="JK01 AB 4521" autocapitalize="characters" />
+            <span class="cps-field__hint is-error" *ngIf="plate && !plateValid">Write it as on the plate, for example JK01 AB 4521.</span>
+          </label>
+        </div>
+
+        <div class="cps-seats">
+          <span class="cps-field__label">Seats you can offer</span>
+          <div class="cps-seats__stepper">
+            <button type="button" (click)="changeSeats(-1)" [disabled]="seats <= seatsMin" aria-label="Fewer seats">−</button>
+            <span aria-live="polite">{{ seats }}</span>
+            <button type="button" (click)="changeSeats(1)" [disabled]="seats >= seatsMax" aria-label="More seats">+</button>
+          </div>
+          <span class="cps-field__hint">When you publish a carpool you can offer fewer, never more.</span>
+        </div>
+
+        <div class="cps-photos">
+          <label class="cps-photo" [class.has-photo]="frontPreview">
+            <img *ngIf="frontPreview" [src]="frontPreview" alt="Front of your car" />
+            <span *ngIf="!frontPreview"><ion-icon name="camera-outline"></ion-icon> Front, plate visible</span>
+            <input type="file" accept="image/*" hidden (change)="onPhoto($event, 'front')" />
+          </label>
+          <label class="cps-photo" [class.has-photo]="interiorPreview">
+            <img *ngIf="interiorPreview" [src]="interiorPreview" alt="Inside your car" />
+            <span *ngIf="!interiorPreview"><ion-icon name="camera-outline"></ion-icon> Inside (optional)</span>
+            <input type="file" accept="image/*" hidden (change)="onPhoto($event, 'interior')" />
+          </label>
+        </div>
+      </section>
+
+      <!-- Step 5: documents -->
+      <section *ngIf="step === 5">
+        <h1 class="cps__title">Your documents</h1>
+        <p class="cps__sub">We check every document by hand before you can publish.</p>
+
+        <div class="cps-doc" *ngFor="let doc of docs">
+          <h2 class="cps-doc__name">{{ doc.name }}</h2>
+          <p class="cps-doc__hint" *ngIf="doc.instructions">{{ doc.instructions }}</p>
+
+          <label class="cps-field" *ngFor="let l of doc.labels">
+            <span class="cps-field__label">{{ l.label }}{{ l.mandatory ? '' : ' (optional)' }}</span>
+            <input class="cps-field__input" [type]="l.label_type === 'date' ? 'date' : l.label_type === 'number' ? 'number' : 'text'"
+                   [(ngModel)]="doc.labelValues[l.label]" />
+          </label>
+
+          <div class="cps-doc__slots">
+            <label class="cps-slot" *ngFor="let s of doc.slots" [class.is-done]="slotDone(s)" [class.is-rejected]="s.status === 'rejected'">
+              <ion-spinner *ngIf="s.uploading" name="crescent"></ion-spinner>
+              <ion-icon *ngIf="!s.uploading" [name]="slotDone(s) ? 'checkmark-circle' : 'cloud-upload-outline'" aria-hidden="true"></ion-icon>
+              <span>
+                {{ doc.slots.length > 1 ? 'Image ' + s.index : 'Upload' }}
+                <ng-container *ngIf="slotDone(s)"> · sent</ng-container>
+                <ng-container *ngIf="s.status === 'rejected'"> · rejected, upload again</ng-container>
+              </span>
+              <input type="file" accept="image/*,application/pdf" hidden [disabled]="s.uploading || s.status === 'approved'"
+                     (change)="onDocFile(doc, s, $event)" />
+            </label>
+          </div>
+          <ng-container *ngFor="let s of doc.slots">
+            <p class="cps-field__hint is-error" *ngIf="s.error">{{ s.error }}</p>
+            <p class="cps-field__hint is-error" *ngIf="s.rejection_reason">{{ s.rejection_reason }}</p>
+          </ng-container>
+        </div>
+
+        <p class="cps__empty" *ngIf="!docs.length">Loading the document list…</p>
+      </section>
+
+      <p class="cps__error" role="alert" *ngIf="error">{{ error }}</p>
+
+      <ion-button *ngIf="step < 5" expand="block" class="cps__cta" [disabled]="busy" (click)="next()">
+        <ion-spinner *ngIf="busy" name="crescent"></ion-spinner>
+        <span *ngIf="!busy">{{ step === 4 ? 'Save car and continue' : 'Continue' }}</span>
+      </ion-button>
+      <ion-button *ngIf="step === 5" expand="block" class="cps__cta" [disabled]="!allDocsUploaded" (click)="finish()">
+        Send for review
+      </ion-button>
+    </ng-container>
+  </div>
+</ion-content>
