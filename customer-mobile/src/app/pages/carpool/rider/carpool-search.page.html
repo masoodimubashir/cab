@@ -1,0 +1,87 @@
+<ion-content class="cr">
+  <div class="cr-wrap">
+    <div class="c-bar">
+      <button class="icon-btn ring" aria-label="Back" (click)="back()"><ion-icon name="chevron-back-outline"></ion-icon></button>
+      <h1 class="grow">Find a carpool</h1>
+    </div>
+
+    <div class="pair" style="margin-top: 8px">
+      <button class="fld" [class.on]="active === 'from'" (click)="openPicker('from')">
+        <span class="fld-dot"></span>
+        <span class="grow">
+          <span class="label">Pickup</span>
+          <span class="v ell" [class.ph]="!from">
+            <ng-container *ngIf="from; else noFrom">{{ from.name }}<span class="t12 muted" style="font-weight: 400" *ngIf="from.mine"> · your location</span></ng-container>
+            <ng-template #noFrom>{{ locating ? 'Finding you…' : 'Where from?' }}</ng-template>
+          </span>
+        </span>
+      </button>
+      <button class="fld" [class.on]="active === 'to'" (click)="openPicker('to')">
+        <span class="fld-dot end"></span>
+        <span class="grow">
+          <span class="label">Drop</span>
+          <span class="v ell" [class.ph]="!to">{{ to?.name || 'Where are you going?' }}</span>
+        </span>
+      </button>
+      <button class="swap" aria-label="Swap pickup and drop" [disabled]="!from && !to" (click)="swap()"><ion-icon name="swap-vertical-outline"></ion-icon></button>
+    </div>
+
+    <div class="glist" style="margin-top: 12px">
+      <div class="datebar">
+        <button aria-label="Previous day" [disabled]="date <= today" (click)="moveDay(-1)"><ion-icon name="chevron-back-outline"></ion-icon></button>
+        <span class="db-l"><b>{{ dateTitle }}</b><small>{{ dateSub }}</small></span>
+        <button aria-label="Next day" [disabled]="date >= lastDay" (click)="moveDay(1)"><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        <label class="db-cal" aria-label="Pick a date from the calendar">
+          <ion-icon name="calendar-outline"></ion-icon>
+          <input type="date" [min]="today" [max]="lastDay" [value]="date" (change)="pickDate($any($event.target).value)">
+        </label>
+      </div>
+      <div class="gl-row">
+        <span class="k">Seats<small>For you and anyone with you</small></span>
+        <div class="stepper">
+          <button aria-label="Fewer seats" [disabled]="seats <= 1" (click)="setSeats(seats - 1)"><ion-icon name="remove-outline"></ion-icon></button>
+          <output aria-live="polite">{{ seats }}</output>
+          <button aria-label="More seats" [disabled]="seats >= 6" (click)="setSeats(seats + 1)"><ion-icon name="add-outline"></ion-icon></button>
+        </div>
+      </div>
+    </div>
+
+    <ng-container *ngIf="recent.length">
+      <p class="sec-l">Recent</p>
+      <button class="recent" *ngFor="let r of recent; trackBy: trackRecent" (click)="useRecent(r)">
+        <ion-icon name="time-outline"></ion-icon>
+        <span class="grow"><span class="t14 b">{{ r.from.name }} to {{ r.to.name }}</span><br><span class="t12 muted">{{ seatWord(r.seats) }}</span></span>
+      </button>
+    </ng-container>
+
+    <p class="t12 muted note">We show carpools whose route passes within {{ distanceKm }} km of both places. You choose the exact pickup spot when you ask to join.</p>
+  </div>
+
+  <div class="picker" *ngIf="picking" role="dialog" [attr.aria-label]="picking === 'from' ? 'Choose your pickup' : 'Choose your drop'">
+    <div class="cr-wrap">
+      <div class="c-bar">
+        <button class="icon-btn ring" aria-label="Back" (click)="closePicker()"><ion-icon name="chevron-back-outline"></ion-icon></button>
+        <h1 class="grow">{{ picking === 'from' ? 'Pickup' : 'Drop' }}</h1>
+      </div>
+      <label class="fld on">
+        <ion-icon name="search-outline"></ion-icon>
+        <input #pickInput type="search" autocomplete="off" [placeholder]="picking === 'from' ? 'Where from?' : 'Where are you going?'"
+               [value]="query" (input)="onQuery($any($event.target).value)">
+      </label>
+      <button class="opt" *ngIf="picking === 'from' && query.length < 2" [disabled]="locating" (click)="useMyLocation()">
+        <ion-icon name="locate-outline"></ion-icon>
+        <span class="grow"><b>{{ locating ? 'Finding you…' : 'Use my current location' }}</b></span>
+      </button>
+      <p class="t13 muted" style="margin-top: 12px" *ngIf="searching">Looking…</p>
+      <button class="opt" *ngFor="let s of suggestions; trackBy: trackSuggestion" (click)="choose(s)">
+        <ion-icon name="location-outline"></ion-icon>
+        <span class="grow"><b class="ell">{{ s.main_text }}</b><small class="ell">{{ s.secondary_text }}</small></span>
+      </button>
+      <p class="sheet-err" *ngIf="pickError" role="alert">{{ pickError }}</p>
+    </div>
+  </div>
+</ion-content>
+
+<ion-footer class="ion-no-border" *ngIf="!picking">
+  <div class="c-dock"><button class="c-go tall" [disabled]="!from || !to" (click)="go()">Search</button></div>
+</ion-footer>

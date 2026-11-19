@@ -53,6 +53,7 @@ class User extends Authenticatable
         'accepted_payment_methods' => 'array',
         'last_login_at' => 'datetime',
         'suspended_at' => 'datetime',
+        'carpool_banned_at' => 'datetime',
         'current_location_updated_at' => 'datetime',
         'manager_all_cities' => 'boolean',
         'is_suspended' => 'boolean',

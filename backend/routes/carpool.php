@@ -1,8 +1,12 @@
 <?php
 
+use App\Http\Controllers\Carpool\ChatController;
 use App\Http\Controllers\Carpool\ConfigController;
+use App\Http\Controllers\Carpool\DriverListingController;
 use App\Http\Controllers\Carpool\DriverRegistrationController;
+use App\Http\Controllers\Carpool\DriverRequestController;
 use App\Http\Controllers\Carpool\PlanController;
+use App\Http\Controllers\Carpool\RiderController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -23,4 +27,47 @@ Route::middleware('carpool.enabled')->group(function () {
     Route::get('/plan', [PlanController::class, 'current']);
     Route::post('/plan/upi/order', [PlanController::class, 'createOrder']);
     Route::post('/plan/upi/verify', [PlanController::class, 'verify']);
+
+    // M3: publishing. Publish needs carpool enabled and an active plan; edits
+    // and cancels of existing carpools keep working when either is off (A36).
+    Route::prefix('/driver')->group(function () {
+        Route::get('/home', [DriverListingController::class, 'home']);
+        Route::post('/requests', [DriverListingController::class, 'requests']);
+        Route::get('/listings', [DriverListingController::class, 'index']);
+        Route::post('/listings', [DriverListingController::class, 'store']);
+        Route::get('/listings/{listing}', [DriverListingController::class, 'show']);
+        Route::patch('/listings/{listing}', [DriverListingController::class, 'update']);
+        Route::post('/listings/{listing}/delay', [DriverListingController::class, 'delay']);
+        Route::post('/listings/{listing}/cancel', [DriverListingController::class, 'cancel']);
+
+        // M4: join requests on the driver's side.
+        Route::get('/inbox', [DriverRequestController::class, 'inbox']);
+        Route::get('/inbox/count', [DriverRequestController::class, 'count']);
+        Route::get('/join-requests/{carpoolRequest}', [DriverRequestController::class, 'show']);
+        Route::post('/join-requests/{carpoolRequest}/accept', [DriverRequestController::class, 'accept']);
+        Route::post('/join-requests/{carpoolRequest}/decline', [DriverRequestController::class, 'decline']);
+        Route::post('/join-requests/{carpoolRequest}/remove', [DriverRequestController::class, 'remove']);
+        Route::post('/join-requests/{carpoolRequest}/paid', [DriverRequestController::class, 'paid']);
+    });
+
+    // M4: riders. Search and asking to join need carpool enabled (A36); the
+    // carpool page, My trips, cancel and leave keep working when it's off.
+    Route::get('/search', [RiderController::class, 'search']);
+    Route::get('/rides/{listing}', [RiderController::class, 'show']);
+    Route::post('/rides/{listing}/join', [RiderController::class, 'join']);
+    Route::post('/join-requests/{carpoolRequest}/withdraw', [RiderController::class, 'withdraw']);
+    Route::post('/join-requests/{carpoolRequest}/leave', [RiderController::class, 'leave']);
+    Route::get('/trips', [RiderController::class, 'trips']);
+    Route::post('/rider/photo', [RiderController::class, 'photo']);
+
+    // M5: chat. Works for both roles; chats of finished carpools stay readable.
+    Route::get('/chats', [ChatController::class, 'inbox']);
+    Route::get('/chats/unread', [ChatController::class, 'unread']);
+    Route::get('/chats/{conversation}', [ChatController::class, 'show']);
+    Route::post('/chats/{conversation}/messages', [ChatController::class, 'send']);
+    Route::post('/chats/{conversation}/read', [ChatController::class, 'read']);
+    Route::post('/chats/{conversation}/pickup', [ChatController::class, 'proposePickup']);
+    Route::post('/pickup-proposals/{proposal}/accept', [ChatController::class, 'acceptPickup']);
+    Route::post('/pickup-proposals/{proposal}/decline', [ChatController::class, 'declinePickup']);
+    Route::post('/reports', [ChatController::class, 'report']);
 });

@@ -1,0 +1,95 @@
+<ion-content class="cr">
+  <ion-refresher slot="fixed" (ionRefresh)="load(); $any($event).target.complete()">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+
+  <div class="cr-wrap" *ngIf="search">
+    <div class="c-bar">
+      <button class="icon-btn ring" aria-label="Back" (click)="edit()"><ion-icon name="chevron-back-outline"></ion-icon></button>
+      <button class="c-search bar grow" aria-label="Change the search" (click)="edit()">
+        <span class="grow ell">{{ title }}</span><ion-icon name="search-outline"></ion-icon>
+      </button>
+    </div>
+
+    <div class="glist" style="margin: 0 0 14px">
+      <div class="datebar">
+        <button aria-label="Previous day" [disabled]="search.date <= today || loading" (click)="moveDay(-1)"><ion-icon name="chevron-back-outline"></ion-icon></button>
+        <span class="db-l"><b>{{ dateTitle }}</b><small>{{ dateSub }}</small></span>
+        <button aria-label="Next day" [disabled]="search.date >= lastDay || loading" (click)="moveDay(1)"><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        <label class="db-cal" aria-label="Pick a date from the calendar">
+          <ion-icon name="calendar-outline"></ion-icon>
+          <input type="date" [min]="today" [max]="lastDay" [value]="search.date" (change)="pickDate($any($event.target).value)">
+        </label>
+      </div>
+      <div class="gl-row">
+        <span class="k">Seats<small>For you and anyone with you</small></span>
+        <div class="stepper">
+          <button aria-label="Fewer seats" [disabled]="search.seats <= 1" (click)="setSeats(search.seats - 1)"><ion-icon name="remove-outline"></ion-icon></button>
+          <output aria-live="polite">{{ search.seats }}</output>
+          <button aria-label="More seats" [disabled]="search.seats >= 6" (click)="setSeats(search.seats + 1)"><ion-icon name="add-outline"></ion-icon></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading results: placeholders in the shape of the cards -->
+    <ng-container *ngIf="loading">
+      <p class="t12 muted count-line" role="status">Looking along drivers' routes…</p>
+      <div class="c-card" *ngFor="let w of [60, 55, 62]" aria-hidden="true">
+        <div class="split"><div class="sk" style="width: 90px; height: 20px"></div><div class="sk" style="width: 44px; height: 20px"></div></div>
+        <div class="row" style="margin-top: 14px"><div class="sk" style="width: 44px; height: 44px; border-radius: 50%"></div>
+          <div class="grow"><div class="sk" [style.width.%]="w" style="height: 14px"></div><div class="sk" style="width: 40%; height: 12px; margin-top: 8px"></div></div></div>
+        <div class="sk" style="width: 50%; height: 12px; margin-top: 14px"></div>
+      </div>
+    </ng-container>
+
+    <ng-container *ngIf="!loading && answer">
+      <ng-container *ngIf="results.length; else none">
+        <p class="t12 muted count-line">{{ countLine }}</p>
+        <ng-container *ngFor="let r of results; trackBy: trackResult">
+          <button class="c-card" *ngIf="r.can_request || r.my_request; else dim" (click)="open(r)">
+            <span class="split">
+              <span class="h3">{{ clock(r.departs_at) }}</span>
+              <span class="h3" *ngIf="!r.is_free">₹{{ r.price_per_seat }} <span class="per">/seat</span></span>
+              <span class="h3 free" *ngIf="r.is_free">Free</span>
+            </span>
+            <span class="t13 muted line2">{{ pickupLine(r) }}</span>
+            <span class="row who">
+              <span class="av">{{ r.driver.initials }}</span>
+              <span class="grow"><span class="t14 b">{{ r.driver.name }}</span><br><span class="t12 muted">{{ r.car?.label }}</span></span>
+              <span class="status muted-s" *ngIf="r.my_request; else left">{{ myLabel(r) }}</span>
+              <ng-template #left><span class="t13 b">{{ leftLabel(r) }}</span></ng-template>
+            </span>
+          </button>
+          <ng-template #dim>
+            <div class="c-card dimmed">
+              <span class="split"><span class="h3">{{ clock(r.departs_at) }}</span><span class="t13 b">{{ leftLabel(r) }}</span></span>
+              <span class="t13 muted line2">{{ blockedLine(r) }}</span>
+            </div>
+          </ng-template>
+        </ng-container>
+      </ng-container>
+
+      <!-- 3b. No results -->
+      <ng-template #none>
+        <div class="empty-plain">
+          <div class="ec-i"><ion-icon name="search-outline"></ion-icon></div>
+          <h2>{{ emptyTitle }}</h2>
+          <p>{{ emptyText }}</p>
+        </div>
+        <ng-container *ngIf="answer.other_days.length">
+          <p class="sec-l">Other days</p>
+          <button class="c-card slim" *ngFor="let d of answer.other_days" (click)="goDay(d.date)">
+            <span class="grow"><span class="t14 b">{{ otherDayTitle(d) }}</span><br><span class="t12 muted">{{ otherDaySub(d) }}</span></span>
+            <ion-icon name="chevron-forward-outline"></ion-icon>
+          </button>
+        </ng-container>
+      </ng-template>
+    </ng-container>
+  </div>
+
+  <div slot="fixed" class="errbar float" role="alert" *ngIf="error">
+    <ion-icon name="alert-circle-outline"></ion-icon>
+    <span class="grow"><b>Couldn't load carpools</b><small>Check your connection.</small></span>
+    <button class="c-go line mini" (click)="load()">Try again</button>
+  </div>
+</ion-content>

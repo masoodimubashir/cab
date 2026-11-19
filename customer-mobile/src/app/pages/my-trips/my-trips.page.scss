@@ -2,6 +2,9 @@
 .my-trips-content { --background: #f5f6f8; color: var(--trips-ink); }
 .trips-page { max-width: 680px; margin: 0 auto; padding: calc(24px + env(safe-area-inset-top, 0px)) 20px 28px; animation: trips-enter 260ms ease-out; }
 .trips-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; h1 { margin: 0; font-size: 27px; font-weight: 800; letter-spacing: -.6px; } button { width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid var(--trips-line); border-radius: 50%; background: white; font-size: 20px; color: var(--trips-muted); } }
+.head-btns { display: flex; gap: 8px; }
+.chat-btn { position: relative; }
+.chat-count { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; display: grid; place-items: center; border-radius: 10px; background: #087f50; color: #fff; font-size: 11px; font-weight: 700; line-height: 1; }
 .trips-tabs { display: flex; gap: 6px; margin-bottom: 20px; button { flex: 1; min-width: 0; white-space: nowrap; border: 1px solid var(--trips-line); border-radius: 24px; background: white; color: var(--trips-ink); padding: 11px 8px; font-size: 12px; font-weight: 700; transition: background-color 180ms, color 180ms; } .selected { background: var(--trips-ink); border-color: var(--trips-ink); color: white; } }
 .trips-list { display: grid; gap: 12px; > h2 { font-size: 17px; font-weight: 750; margin: 0 0 2px; } }
 .trip-card { min-width: 0; padding: 17px; background: white; border: 1px solid var(--trips-line); border-radius: 17px; box-shadow: 0 2px 4px #101a2c04; }
@@ -12,6 +15,13 @@
 .primary-action { display: flex; align-items: center; justify-content: center; min-height: 44px; margin-top: 13px; padding: 10px 14px; border-radius: 11px; background: var(--trips-green); color: white; font-size: 14px; font-weight: 700; text-decoration: none; }
 .details-action { display: inline-flex; gap: 5px; align-items: center; margin-top: 13px; padding: 8px 12px; border: 1px solid var(--trips-line); border-radius: 10px; color: var(--trips-ink); text-decoration: none; font-size: 12px; font-weight: 700; }
 .refund { margin: 8px 0 0; font-size: 12px; color: #925700; text-transform: capitalize; }
+// Carpool cards (customer mockup 8, 8l)
+.carpool-card { display: block; color: var(--trips-ink); text-decoration: none; }
+.carpool-card--sent { background: #fafbfc; }
+.carpool-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 7px 0 0; font-size: 13px; line-height: 1.5; color: var(--trips-muted); }
+.carpool-type { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border-radius: 7px; background: #e9f0f8; color: #3d5a80; font-size: 12px; font-weight: 700; line-height: 1.4; ion-icon { font-size: 12px; } }
+.carpool-navy { color: var(--trips-ink); }
+.carpool-code { display: flex; justify-content: space-between; align-items: center; margin-top: 13px; padding: 10px 14px; border-radius: 12px; background: #edf7f1; font-size: 13px; b { font-size: 21px; font-weight: 800; letter-spacing: .18em; color: var(--trips-green); } }
 .trips-loading { padding: 18px 0; display: flex; justify-content: center; align-items: center; gap: 10px; color: var(--trips-muted); font-size: 13px; ion-spinner { width: 20px; height: 20px; } }
 .feed-error { padding: 12px; margin-bottom: 10px; border-radius: 12px; background: #fff1df; display: flex; align-items: center; gap: 12px; font-size: 12px; line-height: 1.5; button { margin-left: auto; background: white; color: var(--trips-ink); border: 1px solid #ead9bf; border-radius: 8px; padding: 8px 12px; } }
 .empty-state { padding: 40px 18px; text-align: center; color: var(--trips-muted); > ion-icon { font-size: 40px; } h2 { color: var(--trips-ink); font-size: 19px; } p { font-size: 13px; line-height: 1.6; } .primary-action { max-width: 220px; margin: 20px auto 0; } }

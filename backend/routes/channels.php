@@ -79,3 +79,9 @@ Broadcast::channel('fixed-hold.{holdId}', function ($user, int $holdId) {
     return (int) $user->id === (int) $hold->customer_id
         || ((int) $hold->routeDeparture?->driver_id === (int) $user->id);
 });
+
+/* Carpool chat: only the members of the conversation (M5). */
+Broadcast::channel('carpool.conversation.{conversationId}', function ($user, int $conversationId) {
+    return \App\Models\Carpool\CarpoolConversationMember::query()
+        ->where('conversation_id', $conversationId)->where('user_id', $user->id)->whereNull('left_at')->exists();
+});

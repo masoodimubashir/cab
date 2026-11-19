@@ -1,0 +1,222 @@
+<ion-content class="cr">
+  <div class="map ride-map">
+    <div class="gm" #mapEl></div>
+    <p class="map-msg" *ngIf="mapFailed">The map couldn't load.</p>
+    <button class="icon-btn float" aria-label="Back" (click)="back()"><ion-icon name="chevron-back-outline"></ion-icon></button>
+  </div>
+
+  <div class="center" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
+
+  <div class="cr-wrap below-map" *ngIf="gone">
+    <div class="empty-plain">
+      <div class="ec-i"><ion-icon name="car-outline"></ion-icon></div>
+      <h2>This carpool isn't available</h2>
+      <p>It may have been cancelled or finished. Find another carpool for your trip.</p>
+    </div>
+  </div>
+
+  <div class="cr-wrap below-map" *ngIf="ride && !loading">
+    <div class="split title">
+      <div><h1>{{ title }}</h1><p class="t13 muted">{{ subtitle }}</p></div>
+      <span class="price-tag" [class.free]="ride.is_free" *ngIf="view === 'open'">
+        <ng-container *ngIf="!ride.is_free; else freeTag">₹{{ ride.price_per_seat }} <small>/seat</small></ng-container>
+        <ng-template #freeTag>Free</ng-template>
+      </span>
+    </div>
+
+    <div class="statehead" [ngClass]="head.cls || ''" *ngIf="head as head">
+      <span class="live" *ngIf="head.live"></span>
+      <ion-icon *ngIf="head.icon" [name]="head.icon"></ion-icon>
+      <span>{{ head.text }}<small *ngIf="head.small">{{ head.small }}</small></span>
+    </div>
+
+    <!-- 8i: the driver changed the time or route -->
+    <div class="statehead warn" *ngIf="changeLine as c">
+      <ion-icon name="time-outline"></ion-icon>
+      <span>{{ c.text }}<small *ngIf="c.small">{{ c.small }}</small></span>
+    </div>
+
+    <!-- 4, 4b: seats left -->
+    <div class="seat-box" *ngIf="view === 'open'">
+      <ion-icon name="people-outline"></ion-icon>
+      <span class="grow">
+        <span class="sb-n"><b>{{ ride.seats_free }} of {{ ride.seats_total }}</b> seats left</span>
+        <small *ngIf="ride.status === 'published'">{{ first }}'s route: {{ ride.start.name }} to {{ ride.end.name }}</small>
+      </span>
+    </div>
+
+    <!-- pickup and drop -->
+    <div class="c-card trip-card" *ngIf="points">
+      <div class="code-row" *ngIf="mine?.code && (view === 'accepted' || view === 'started')">
+        <span class="grow"><span class="t13">Your code for {{ first }}</span><small *ngIf="view === 'accepted'">{{ first }} checks it and your photo at pickup.</small></span>
+        <b>{{ mine?.code }}</b>
+      </div>
+      <div class="rt">
+        <span class="rail"><i></i><b></b><i class="end"></i></span>
+        <span><span class="label">{{ pickupLabel }}</span>{{ pickupName }}</span>
+        <span><span class="label">{{ dropLabel }}</span>{{ dropName }}</span>
+      </div>
+      <p class="t12 muted hint" *ngIf="view === 'open'">The closest points on {{ first }}'s route to your search. You can move the pickup when you ask to join.</p>
+      <p class="meta" *ngIf="view !== 'open' && mine"><span><strong>{{ seatWord(mine.seats) }}</strong></span><span>{{ moneyLine }}</span></p>
+    </div>
+
+    <!-- A shared link without a search: the driver's route only -->
+    <div class="c-card trip-card" *ngIf="!points && view === 'open'">
+      <div class="rt">
+        <span class="rail"><i></i><b></b><i class="end"></i></span>
+        <span><span class="label">From</span>{{ ride.start.name }}</span>
+        <span><span class="label">To</span>{{ ride.end.name }}</span>
+      </div>
+      <p class="t12 muted hint">Search with your own pickup and drop to ask to join.</p>
+    </div>
+
+    <button class="c-card drv-card" (click)="openDriver()">
+      <span class="av">{{ ride.driver.initials }}</span>
+      <span class="grow">
+        <span class="d-name">{{ ride.driver.name }}</span>
+        <span class="d-rate" *ngIf="ride.driver.rating !== null"><ion-icon name="star"></ion-icon><b>{{ ride.driver.rating }}</b>{{ ride.driver.rating_count }} ratings</span>
+        <span class="t12 muted" *ngIf="ride.car">{{ ride.car.label }}, <b class="plate-t">{{ ride.car.plate }}</b></span>
+      </span>
+      <ion-icon name="chevron-forward-outline"></ion-icon>
+    </button>
+
+    <!-- 6b: the private chat with the driver, from the moment the request is sent -->
+    <div class="acts-row" *ngIf="mine?.chat_id && (view === 'sent' || view === 'accepted' || view === 'started')" style="margin-top: 12px">
+      <button class="c-go line" (click)="messageDriver()"><ion-icon name="chatbubble-outline"></ion-icon>Message {{ first }}</button>
+    </div>
+
+    <!-- 8d: request sent -->
+    <ng-container *ngIf="view === 'sent'">
+      <p class="t12 muted" style="margin-top: 12px; line-height: 1.5">Your code appears here once {{ first }} accepts.</p>
+      <div class="acts-row"><button class="c-go redline" (click)="openSheet('cancel')">Cancel request</button></div>
+    </ng-container>
+
+    <!-- 8b: accepted, before the ride starts -->
+    <div class="acts-row" *ngIf="view === 'accepted' && ride.status === 'published'">
+      <button class="c-go redline" (click)="openSheet('leave')">Leave carpool</button>
+    </div>
+  </div>
+
+  <div slot="fixed" class="errbar float" role="alert" *ngIf="loadError">
+    <ion-icon name="alert-circle-outline"></ion-icon>
+    <span class="grow"><b>Couldn't load this carpool</b><small>Check your connection.</small></span>
+    <button class="c-go line mini" (click)="load()">Try again</button>
+  </div>
+</ion-content>
+
+<ion-footer class="ion-no-border" *ngIf="(ride && !loading && (view === 'open' || view === 'ended')) || gone">
+  <div class="c-dock">
+    <ng-container *ngIf="!gone && view === 'open'; else another">
+      <button class="c-go tall" *ngIf="!points; else ask" (click)="searchThisRoute()">Search this trip</button>
+      <ng-template #ask>
+        <button class="c-go tall" [disabled]="!ride?.can_request" (click)="openAsk()">{{ blockedLabel || 'Request to join' }}</button>
+      </ng-template>
+    </ng-container>
+    <ng-template #another><button class="c-go tall" (click)="findAnother()">Find another carpool</button></ng-template>
+  </div>
+</ion-footer>
+
+<!-- 5. Ask to join -->
+<ng-container *ngIf="sheet === 'ask' && ride">
+  <div class="scrim" (click)="closeSheet()"></div>
+  <div class="bsheet" role="dialog" aria-modal="true" aria-labelledby="ask-h">
+    <div class="grab"></div>
+    <div class="sheet-in">
+      <h2 id="ask-h">Ask to join {{ first }}'s carpool</h2>
+      <p class="t13 muted" style="margin-top: 2px">{{ askWhen }}</p>
+      <div class="split" style="align-items: center; margin-top: 14px">
+        <div><p class="t14 b">Seats</p><p class="t12 muted">{{ seatWord(ride.seats_free) }} left</p></div>
+        <div class="stepper">
+          <button aria-label="Fewer seats" [disabled]="askSeats <= 1 || sent" (click)="setAskSeats(askSeats - 1)"><ion-icon name="remove-outline"></ion-icon></button>
+          <output aria-live="polite">{{ askSeats }}</output>
+          <button aria-label="More seats" [disabled]="askSeats >= askMax || sent" (click)="setAskSeats(askSeats + 1)"><ion-icon name="add-outline"></ion-icon></button>
+        </div>
+      </div>
+      <div class="pk" *ngIf="askPickup">
+        <div class="map"><div class="gm" #pkEl></div></div>
+        <div class="in">
+          <div class="grow">
+            <span class="label">Your pickup</span>
+            <h4 class="ell">{{ askPickup.name }}</h4>
+            <p class="t12 muted">On {{ first }}'s route · {{ distance(askPickup.walk_m) }} from you</p>
+          </div>
+          <button class="move" [disabled]="sent" (click)="openPin()">Move pin</button>
+        </div>
+      </div>
+      <div class="sumrow" style="margin-top: 6px; border-top: 0"><span>Drop<small class="dest">Closest point on the route</small></span><b>{{ search?.to?.name }}</b></div>
+      <div class="sumrow"><span>{{ askLine }}</span><b class="total">{{ askTotal }}</b></div>
+      <p class="t12 muted" style="line-height: 1.5">{{ askNote }}</p>
+      <p class="sheet-err" *ngIf="sheetError" role="alert">{{ sheetError }}</p>
+      <div style="padding-top: 14px">
+        <button class="c-go tall" *ngIf="!sent" [disabled]="sending" (click)="send()">{{ sending ? 'Sending…' : 'Send request' }}</button>
+        <p class="okline" *ngIf="sent" role="status"><ion-icon name="checkmark-circle"></ion-icon><span>Request sent. We'll tell you when {{ first }} answers.<small class="dest">Opening My trips</small></span></p>
+      </div>
+    </div>
+  </div>
+</ng-container>
+
+<!-- 5a. Add a profile photo -->
+<ng-container *ngIf="sheet === 'photo'">
+  <div class="scrim" (click)="cancelPhoto()"></div>
+  <div class="bsheet" role="dialog" aria-modal="true" aria-labelledby="photo-h">
+    <div class="grab"></div>
+    <div class="sheet-in" style="padding-top: 10px; text-align: center">
+      <div class="photo">
+        <img *ngIf="photoPreview; else cam" [src]="photoPreview" alt="">
+        <ng-template #cam><ion-icon name="camera-outline"></ion-icon></ng-template>
+      </div>
+      <h2 id="photo-h" style="margin-top: 14px; font-size: 20px">Add a profile photo</h2>
+      <p class="t14 muted" style="margin-top: 6px; line-height: 1.5">Drivers check your face against this photo at pickup, along with your code. You only do this once.</p>
+      <p class="sheet-err" *ngIf="sheetError" role="alert">{{ sheetError }}</p>
+      <label class="c-go tall file-btn" style="margin-top: 20px" [class.disabled]="uploading">
+        <ion-icon name="camera-outline"></ion-icon>{{ uploading ? 'Adding your photo…' : 'Take a photo' }}
+        <input type="file" accept="image/*" capture="user" [disabled]="uploading" (change)="onPhoto($event)">
+      </label>
+      <label class="c-go tall line file-btn" style="margin-top: 10px">
+        Choose from gallery
+        <input type="file" accept="image/*" [disabled]="uploading" (change)="onPhoto($event)">
+      </label>
+      <button class="link" style="margin-top: 6px; color: var(--cr-muted)" [disabled]="uploading" (click)="cancelPhoto()">Cancel</button>
+    </div>
+  </div>
+</ng-container>
+
+<!-- 8c. Cancel a request, 8h. Leave a carpool -->
+<ng-container *ngIf="(sheet === 'cancel' || sheet === 'leave') && ride && mine">
+  <div class="scrim" (click)="closeSheet()"></div>
+  <div class="bsheet" role="dialog" aria-modal="true" aria-labelledby="end-h">
+    <div class="grab"></div>
+    <div class="sheet-in" style="padding-top: 8px">
+      <h2 id="end-h">{{ sheet === 'leave' ? 'Leave this carpool?' : 'Cancel your request?' }}</h2>
+      <p class="t13 muted" style="margin-top: 4px">{{ sheetTrip }}</p>
+      <p class="t14" style="margin-top: 14px; line-height: 1.5" *ngIf="sheet === 'cancel'">{{ first }} hasn't answered yet. If you cancel, {{ first }} is told, and you can ask again while seats are left.</p>
+      <p class="t14" style="margin-top: 14px; line-height: 1.5" *ngIf="sheet === 'leave'">{{ first }} is told, and your {{ seatWord(mine.seats) }} go back into search for other riders. Your code stops working.</p>
+      <p class="sheet-err" *ngIf="sheetError" role="alert">{{ sheetError }}</p>
+      <div class="acts-row" style="margin-top: 18px" *ngIf="!done">
+        <button class="c-go tall line" [disabled]="working" (click)="closeSheet()">{{ sheet === 'leave' ? 'Keep my seats' : 'Keep request' }}</button>
+        <button class="c-go tall red" [disabled]="working" (click)="confirmSheet()">{{ sheet === 'leave' ? 'Leave carpool' : 'Cancel request' }}</button>
+      </div>
+      <p class="okline plain" *ngIf="done" role="status" style="margin-top: 18px">
+        <ion-icon name="close-circle-outline"></ion-icon>
+        <span>{{ sheet === 'leave' ? "You've left the carpool." : 'Request cancelled.' }}<small class="dest">Opening My trips, under Past</small></span>
+      </p>
+    </div>
+  </div>
+</ng-container>
+
+<!-- 5b. Move the pickup -->
+<div class="pinview" *ngIf="pinOpen" role="dialog" aria-modal="true" aria-label="Move your pickup">
+  <div class="map"><div class="gm" #pinEl></div></div>
+  <button class="icon-btn float" aria-label="Back" (click)="closePin()"><ion-icon name="chevron-back-outline"></ion-icon></button>
+  <div class="mchip"><ion-icon name="location-outline"></ion-icon>Drag the pin along {{ first }}'s route</div>
+  <div class="bsheet" *ngIf="pinDraft">
+    <div class="grab"></div>
+    <div class="sheet-in" style="padding-top: 8px">
+      <span class="label">Your pickup</span>
+      <h2 style="margin-top: 2px">{{ pinNaming ? 'Finding the place…' : pinDraft.name }}</h2>
+      <p class="t13 muted" style="margin-top: 4px">{{ pinLine }}</p>
+      <p class="sheet-err" *ngIf="pinError" role="alert">{{ pinError }}</p>
+      <button class="c-go tall" style="margin-top: 16px" [disabled]="!!pinError || pinNaming" (click)="usePin()">Use this pickup</button>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,170 @@
+<ion-content class="cp">
+  <div class="cp-wrap hm">
+    <div class="d-head" style="margin-bottom: 4px">
+      <button class="icon-btn" [attr.aria-label]="step === 1 ? 'Close' : 'Back'" (click)="back()">
+        <ion-icon [name]="step === 1 ? 'close-outline' : 'chevron-back-outline'"></ion-icon>
+      </button>
+      <h1>{{ title }}</h1>
+      <span class="t13 muted" *ngIf="!blocked && !loading">{{ step }} of 4</span>
+    </div>
+
+    <div class="center" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
+
+    <div class="empty-card" *ngIf="blocked === 'plan'">
+      <div class="ec-i"><ion-icon name="card-outline"></ion-icon></div>
+      <h2>Get a plan to start</h2>
+      <p>You need an active plan to publish carpools.</p>
+      <button class="d-go" style="margin-top: 16px" (click)="plans()">See plans</button>
+    </div>
+
+    <ng-container *ngIf="!loading && !blocked">
+      <!-- 3. Where -->
+      <ng-container *ngIf="step === 1">
+        <p class="t13 muted" style="margin-bottom: 18px">Where are you driving?</p>
+        <div class="pair">
+          <label class="fld" [class.on]="active === 'from'">
+            <span class="rail1"><i></i></span>
+            <span class="grow"><span class="label">From</span>
+              <input [value]="query.from" (focus)="focus('from')" (input)="onType('from', $any($event.target).value)" placeholder="Start" autocomplete="off" aria-label="Start">
+            </span>
+          </label>
+          <label class="fld" [class.on]="active === 'to'">
+            <span class="rail1"><i class="end"></i></span>
+            <span class="grow"><span class="label">To</span>
+              <input #toIn [value]="query.to" (focus)="focus('to')" (input)="onType('to', $any($event.target).value)" placeholder="Destination" autocomplete="off" aria-label="Destination">
+            </span>
+          </label>
+          <button class="swap" aria-label="Swap start and destination" (click)="swap()"><ion-icon name="swap-vertical-outline"></ion-icon></button>
+        </div>
+        <p class="t12" style="margin-top: 8px; color: var(--cp-red)" *ngIf="samePlace">Start and destination are the same place.</p>
+        <p class="t12" style="margin-top: 8px; color: var(--cp-red)" *ngIf="placeError">{{ placeError }}</p>
+
+        <ng-container *ngIf="suggestions.length || searching">
+          <p class="sec-l">Suggestions</p>
+          <p class="t13 muted" *ngIf="searching && !suggestions.length">Searching…</p>
+          <button class="pl-row" *ngFor="let s of suggestions" (click)="choose(s)">
+            <span class="d-tile"><ion-icon name="location-outline"></ion-icon></span>
+            <span class="grow"><span class="d-title">{{ s.main_text }}</span><br><span class="t12 muted">{{ s.secondary_text }}</span></span>
+          </button>
+        </ng-container>
+
+        <ng-container *ngIf="!suggestions.length && !searching && recent.length">
+          <p class="sec-l">Your recent carpools</p>
+          <button class="pl-row" *ngFor="let r of recent" (click)="useRecent(r)">
+            <span class="d-tile"><ion-icon name="time-outline"></ion-icon></span>
+            <span class="grow"><span class="d-title">{{ r.start.name }} to {{ r.end.name }}</span><br><span class="t12 muted">{{ recentWhen(r.departs_at) }}</span></span>
+          </button>
+        </ng-container>
+
+        <div class="info"><ion-icon name="information-circle-outline"></ion-icon><p>You don't add stops. Riders anywhere along your route can find you, and ask for a pickup spot in their request or in chat.</p></div>
+      </ng-container>
+
+      <p class="t13 muted" *ngIf="step === 2">{{ routeName }}</p>
+      <p class="t13 muted" *ngIf="step === 3">{{ routeName }}<ng-container *ngIf="viaSmall">, {{ viaSmall }}</ng-container></p>
+    </ng-container>
+
+    <!-- The map stays in the page so it isn't rebuilt between steps 2 and 4. -->
+    <div class="map pub-map" [class.small]="step === 4" [hidden]="loading || !!blocked || (step !== 2 && step !== 4)">
+      <div class="gm" #mapEl></div>
+      <div class="map-msg" *ngIf="routesLoading">Finding routes…</div>
+    </div>
+
+    <ng-container *ngIf="!loading && !blocked">
+      <!-- 4. Pick a route -->
+      <ng-container *ngIf="step === 2">
+        <div class="errbar" role="alert" *ngIf="routesError">
+          <ion-icon name="alert-circle-outline"></ion-icon>
+          <span class="grow"><b>No route found</b><small>{{ routesError }}</small></span>
+          <button class="d-btn line mini" (click)="loadRoutes()">Try again</button>
+        </div>
+        <div style="margin-top: 14px">
+          <button class="d-opt" *ngFor="let r of routes; let i = index" [class.on]="i === chosen" [attr.aria-pressed]="i === chosen" (click)="pickRoute(i)">
+            <span class="dot"></span>
+            <span class="grow"><span class="d-title">{{ routeTitle(r, i) }}</span><br><span class="t12 muted">{{ routeNote(r, i) }}</span></span>
+            <span class="d-title">{{ dur(r.duration_s) }}</span>
+          </button>
+        </div>
+      </ng-container>
+
+      <!-- 5. When, seats, price -->
+      <ng-container *ngIf="step === 3">
+        <div class="glist" style="margin-top: 16px">
+          <div class="datebar">
+            <button aria-label="Previous day" [disabled]="date <= today" (click)="moveDay(-1)"><ion-icon name="chevron-back-outline"></ion-icon></button>
+            <span class="db-l"><b>{{ dateTitle }}</b><small>{{ dateSub }}</small></span>
+            <button aria-label="Next day" [disabled]="date >= lastDay" (click)="moveDay(1)"><ion-icon name="chevron-forward-outline"></ion-icon></button>
+            <label class="db-cal" aria-label="Pick a date from the calendar">
+              <ion-icon name="calendar-outline"></ion-icon>
+              <input type="date" [min]="today" [max]="lastDay" [value]="date" (change)="pickDate($any($event.target).value)">
+            </label>
+          </div>
+          <div class="gl-row">
+            <span class="k">Leaving at</span>
+            <label class="val">{{ timeLabel }}<ion-icon name="chevron-down-outline"></ion-icon>
+              <input type="time" [value]="time" (change)="pickTime($any($event.target).value)" aria-label="Leaving at">
+            </label>
+          </div>
+        </div>
+        <p class="t12" style="margin-top: 6px; color: var(--cp-red)" *ngIf="timeError">{{ timeError }}</p>
+
+        <div class="glist" style="margin-top: 12px">
+          <div class="gl-row">
+            <span class="k">Seats<small>Your car has {{ carSeats }}</small></span>
+            <div class="stepper">
+              <button aria-label="Fewer seats" [disabled]="seats <= 1" (click)="seats = seats - 1"><ion-icon name="remove-outline"></ion-icon></button>
+              <output aria-live="polite">{{ seats }}</output>
+              <button aria-label="More seats" [disabled]="seats >= carSeats" (click)="seats = seats + 1"><ion-icon name="add-outline"></ion-icon></button>
+            </div>
+          </div>
+          <div class="gl-row">
+            <span class="k">Price per seat</span>
+            <span class="money" [class.off]="free">₹<input [value]="price ?? ''" inputmode="numeric" [disabled]="free" (input)="onPrice($any($event.target).value)" aria-label="Price per seat in rupees"></span>
+          </div>
+          <div class="gl-row">
+            <span class="k">Free ride<small>Riders pay nothing</small></span>
+            <button class="tog" [class.off]="!free" role="switch" [attr.aria-checked]="free" aria-label="Free ride" (click)="free = !free"></button>
+          </div>
+        </div>
+        <p class="t12" style="margin-top: 6px; color: var(--cp-red)" *ngIf="priceError && price !== null">{{ priceError }}</p>
+        <p class="t13 muted" style="margin-top: 12px; line-height: 1.5">Riders see this fixed price before they ask to join. If you agree something different with a rider, do it in chat.</p>
+      </ng-container>
+
+      <!-- 6. Check and publish -->
+      <ng-container *ngIf="step === 4">
+        <div class="d-card" style="padding: 4px 14px; margin-top: 12px">
+          <button class="sumrow" (click)="go(1)" [disabled]="published"><span>Route</span><b>{{ routeName }}</b></button>
+          <button class="sumrow" (click)="go(2)" [disabled]="published"><span>Via</span><b>{{ viaLabel }}</b></button>
+          <button class="sumrow" (click)="go(3)" [disabled]="published"><span>Leaving</span><b>{{ leavingLabel }}</b></button>
+          <button class="sumrow" (click)="go(3)" [disabled]="published"><span>Seats</span><b>{{ seats }}</b></button>
+          <button class="sumrow" (click)="go(3)" [disabled]="published"><span>Price</span><b>{{ free ? 'Free' : '₹' + price + ' per seat' }}</b></button>
+        </div>
+        <div class="d-card row" style="margin-top: 12px">
+          <div class="grow"><p class="d-title">Take join requests</p><p class="t12 muted">Turn off any time to stop new requests</p></div>
+          <button class="tog" [class.off]="!accepting" role="switch" [attr.aria-checked]="accepting" aria-label="Take join requests" (click)="accepting = !accepting"></button>
+        </div>
+        <div class="errbar" role="alert" *ngIf="publishError">
+          <ion-icon name="alert-circle-outline"></ion-icon>
+          <span class="grow"><b>Couldn't publish</b><small>{{ publishError }}</small></span>
+          <button class="d-btn line mini" (click)="publish()">Try again</button>
+        </div>
+        <p class="okline" *ngIf="published" role="status">
+          <ion-icon name="checkmark-circle"></ion-icon><span>Published. Riders can find it now.<small class="dest">Opening your carpool page</small></span>
+        </p>
+      </ng-container>
+    </ng-container>
+  </div>
+
+  <div slot="fixed" class="errbar float" role="alert" *ngIf="blocked === 'error'">
+    <ion-icon name="alert-circle-outline"></ion-icon>
+    <span class="grow"><b>Couldn't open Publish</b><small>Check your connection and try again.</small></span>
+  </div>
+</ion-content>
+
+<ion-footer class="ion-no-border" *ngIf="!loading && !blocked">
+  <div class="d-dock">
+    <button class="d-go" *ngIf="step < 4" [disabled]="!canContinue" (click)="next()">Continue</button>
+    <button class="d-go" *ngIf="step === 4" [disabled]="publishing || published" (click)="publish()">
+      <ion-spinner name="crescent" *ngIf="publishing"></ion-spinner>{{ publishing ? 'Publishing…' : 'Publish carpool' }}
+    </button>
+  </div>
+</ion-footer>

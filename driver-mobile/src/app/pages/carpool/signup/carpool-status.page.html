@@ -12,7 +12,7 @@
         <ion-icon [name]="approval === 'approved' ? 'checkmark-circle' : docsNeedingWork.length ? 'alert-circle' : 'hourglass-outline'" aria-hidden="true"></ion-icon>
         <ng-container *ngIf="approval === 'approved'">
           <h1 class="cps__title">You're approved{{ firstName ? ', ' + firstName : '' }}</h1>
-          <p class="cps__sub">Publishing carpools opens in the next app update. We'll let you know.</p>
+          <p class="cps__sub">Carpool opens to riders soon. We'll let you know when you can publish.</p>
         </ng-container>
         <ng-container *ngIf="approval !== 'approved' && docsNeedingWork.length">
           <h1 class="cps__title">A few things need your attention</h1>

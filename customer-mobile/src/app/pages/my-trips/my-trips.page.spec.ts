@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of, Subject, throwError } from 'rxjs';
 import { ApiService } from '../../core/api.service';
-import { MyTripsPage, tripCard } from './my-trips.page';
+import { MyTripsPage, carpoolCard, tripCard } from './my-trips.page';
 
 describe('My trips booking feeds', () => {
   const now = new Date('2026-10-18T12:00:00');
@@ -89,6 +89,30 @@ describe('My trips booking feeds', () => {
     page.load('fixed', 1); page.ionViewWillLeave();
     response.next({ data: [{ id: 1, status: 'BOOKED' }] });
     expect(page.feeds.fixed.rows).toEqual([]);
+  });
+
+  it('lists carpool requests with a badge and the code, never as pre-booked', () => {
+    const trip = {
+      id: 5, listing_id: 9, status: 'accepted', closed_reason: null, state: 'accepted', past: false, seats: 2,
+      price_per_seat: 60, is_free: false, total: 120, code: '4729', created_at: null,
+      pickup: { lat: 34.08, lng: 74.78, name: 'Rajbagh', at: '2099-01-01T03:12:00Z' },
+      drop: { lat: 34.11, lng: 74.82, name: 'Nigeen', at: '2099-01-01T03:25:00Z' },
+      listing: { status: 'published', departs_at: '2099-01-01T03:00:00Z', day: 30, start: { name: 'A' }, end: { name: 'B' }, cancel_reason: null },
+      driver: { name: 'Imran Bhat', first_name: 'Imran' },
+    } as any;
+    const card = carpoolCard(trip);
+    expect([card.title, card.label, card.link, card.carpool?.code]).toEqual(['Rajbagh to Nigeen', 'Accepted', '/carpool/ride/9', '4729']);
+    expect(card.carpool?.sub).toBe('with Imran Bhat');
+    expect(card.carpool?.meta[0]).toMatch(/^8:30\sAM$/);
+    expect(card.carpool?.meta.slice(1)).toEqual(['2 seats', '₹120']);
+    page.carpoolFeed.rows = [card];
+    page.tab = 'prebooked';
+    expect(page.cards.length).toBe(0);
+    page.tab = 'upcoming';
+    expect(page.cards.map(c => c.key)).toEqual(['carpool-5']);
+
+    const declined = carpoolCard({ ...trip, state: 'declined', past: true, code: null });
+    expect([declined.label, declined.carpool?.sub, declined.carpool?.meta]).toEqual(['', "Imran couldn't take this request", ['2 seats']]);
   });
 
   it('routes each service to its functioning booking or tracking page', () => {

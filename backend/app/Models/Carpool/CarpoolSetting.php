@@ -32,13 +32,19 @@ class CarpoolSetting extends Model
         static::deleted(fn () => Cache::forget(self::CACHE_KEY));
     }
 
-    /** The settings row, created with the defaults if it's missing. */
+    /**
+     * The settings row, created with the defaults if it's missing. Only the
+     * column values are cached: config/cache.php has `serializable_classes`
+     * off, so a cached model would come back broken from file or Redis caches.
+     */
     public static function current(): self
     {
-        return Cache::remember(
+        $attributes = Cache::remember(
             self::CACHE_KEY,
             (int) config('carpool.settings_cache_seconds', 300),
-            fn () => static::query()->first() ?? static::query()->create(config('carpool.defaults'))
+            fn () => (static::query()->first() ?? static::query()->create(config('carpool.defaults')))->getAttributes()
         );
+
+        return (new static())->newFromBuilder($attributes);
     }
 }

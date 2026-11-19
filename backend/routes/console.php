@@ -41,6 +41,12 @@ Schedule::command('subscriptions:notify-expiring')
     ->runInBackground();
 
 
+// Carpool chats are deleted a set time after the trip ends (M5).
+Schedule::command('carpool:prune-chats')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Dispatch fixed forming vehicles that are due.
 Schedule::command('routes:dispatch-due')
     ->everyMinute()

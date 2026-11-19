@@ -1,7 +1,6 @@
 import { NgModule } from '@angular/core';
 import { PreloadAllModules, RouterModule, Routes } from '@angular/router';
 import { AuthGuard } from './core/auth.guard';
-import { CarpoolEnabledGuard } from './pages/carpool/carpool-enabled.guard';
 import { GuestGuard } from './core/guest.guard';
 
 const routes: Routes = [
@@ -70,9 +69,11 @@ const routes: Routes = [
     loadChildren: () => import('./pages/splash/splash.module').then( m => m.SplashPageModule)
   },
   {
+    // Search and Results need carpool switched on (CarpoolEnabledGuard inside);
+    // a rider's own carpool pages keep opening while it's off (A36).
     path: 'carpool',
     loadChildren: () => import('./pages/carpool/carpool.module').then((m) => m.CarpoolModule),
-    canActivate: [AuthGuard, CarpoolEnabledGuard],
+    canActivate: [AuthGuard],
   },
   {
     path: '',

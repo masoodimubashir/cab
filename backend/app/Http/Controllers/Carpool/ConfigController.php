@@ -31,6 +31,7 @@ class ConfigController extends Controller
             'search_distance_m' => $settings->search_distance_m,
             'publish_horizon_days' => (int) config('carpool.publish_horizon_days'),
             'seats_max' => (int) config('carpool.seats_max'),
+            'price_max' => (int) config('carpool.price_max'),
             'message_max_chars' => (int) config('carpool.message_max_chars'),
             'timezone' => (string) config('carpool.timezone'),
         ]);

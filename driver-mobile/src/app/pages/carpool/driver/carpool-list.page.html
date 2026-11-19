@@ -1,0 +1,45 @@
+<ion-content class="cp">
+  <ion-refresher slot="fixed" (ionRefresh)="load($any($event).target.complete.bind($any($event).target))">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+  <div class="cp-wrap hm">
+    <div class="d-head"><h1>Carpools</h1></div>
+    <nav class="seg" aria-label="Show carpools" [style.--n]="filters.length" [style.--i]="filterIndex">
+      <span class="seg-thumb" aria-hidden="true"></span>
+      <button *ngFor="let f of filters" [class.on]="f.key === filter" [attr.aria-pressed]="f.key === filter" (click)="pick(f.key)">{{ f.label }}</button>
+    </nav>
+
+    <div class="center" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
+
+    <ng-container *ngIf="!loading">
+      <button class="hm-card" *ngFor="let l of items" (click)="open(l)">
+        <span class="split">
+          <span class="hm-time">{{ when(l) }}</span>
+          <ng-container *ngIf="filter !== 'past'; else pastPill">
+            <span class="status" *ngIf="l.status === 'in_progress'">In progress</span>
+            <span class="status" *ngIf="l.status !== 'in_progress' && l.seats_taken >= l.seats_total">Full</span>
+          </ng-container>
+          <ng-template #pastPill><span class="status" [class.muted-s]="l.status !== 'completed'">{{ ended(l) }}</span></ng-template>
+        </span>
+        <span class="hm-route"><span class="hm-rail"><i></i><b></b><ion-icon name="location"></ion-icon></span><span>{{ l.start.name }}</span><span>{{ l.end.name }}</span></span>
+        <span class="hm-foot">
+          <span *ngIf="filter !== 'past' || l.status === 'completed'"><ion-icon name="people-outline"></ion-icon>{{ l.seats_taken }} of {{ l.seats_total }} seats taken</span>
+          <span *ngIf="filter === 'past' && l.status !== 'completed'" class="ell">{{ reason(l) }}</span>
+          <span class="hm-price" [class.free]="l.is_free"><b>{{ price(l) }}</b><ng-container *ngIf="!l.is_free"> / seat</ng-container></span>
+        </span>
+      </button>
+
+      <div class="empty-plain" *ngIf="!items.length && !error">
+        <div class="ec-i"><ion-icon name="car-outline"></ion-icon></div>
+        <h2>No carpools here</h2>
+        <p>{{ emptyText }}</p>
+      </div>
+    </ng-container>
+  </div>
+
+  <div slot="fixed" class="errbar float" role="alert" *ngIf="error">
+    <ion-icon name="alert-circle-outline"></ion-icon>
+    <span class="grow"><b>Couldn't load your carpools</b><small>Check your connection.</small></span>
+    <button class="d-btn line mini" (click)="load()">Try again</button>
+  </div>
+</ion-content>

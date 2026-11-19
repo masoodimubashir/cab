@@ -8,7 +8,7 @@ describe('CarpoolApiService', () => {
   let service: CarpoolApiService;
 
   beforeEach(() => {
-    api = jasmine.createSpyObj<ApiService>('ApiService', ['get', 'post']);
+    api = jasmine.createSpyObj<ApiService>('ApiService', ['get', 'post', 'patch']);
     TestBed.configureTestingModule({ providers: [{ provide: ApiService, useValue: api }] });
     service = TestBed.inject(CarpoolApiService);
   });
@@ -77,5 +77,69 @@ describe('CarpoolApiService', () => {
     expect(api.post).toHaveBeenCalledWith('/carpool/plan/upi/verify', {
       plan_id: 7, razorpay_order_id: 'o', razorpay_payment_id: 'p', razorpay_signature: 's',
     });
+  });
+
+  it('unwraps a carpool list with its filter', (done) => {
+    api.get.and.returnValue(of({ data: [{ id: 3 }] }) as any);
+    service.myListings('past').subscribe((l) => {
+      expect(api.get).toHaveBeenCalledWith('/carpool/driver/listings?filter=past');
+      expect(l[0].id).toBe(3);
+      done();
+    });
+  });
+
+  it('sends only the changed fields when editing', () => {
+    api.patch.and.returnValue(of({ data: { id: 4 } }) as any);
+    service.editListing(4, { seats: 2 }).subscribe();
+    expect(api.patch).toHaveBeenCalledWith('/carpool/driver/listings/4', { seats: 2 });
+  });
+
+  it('searches with the places, day and seats in the query', () => {
+    api.get.and.returnValue(of({ results: [], other_days: [], distance_m: 2000 }) as any);
+    service.search({ from_lat: 34.08, from_lng: 74.78, to_lat: 34.11, to_lng: 74.82, date: '2026-11-20', seats: 2 }).subscribe();
+    expect(api.get).toHaveBeenCalledWith('/carpool/search?from_lat=34.08&from_lng=74.78&to_lat=34.11&to_lng=74.82&date=2026-11-20&seats=2');
+  });
+
+  it('opens a carpool page without a search when none is given', (done) => {
+    api.get.and.returnValue(of({ data: { id: 9 } }) as any);
+    service.ride(9).subscribe((r) => {
+      expect(api.get).toHaveBeenCalledWith('/carpool/rides/9');
+      expect(r.id).toBe(9);
+      done();
+    });
+  });
+
+  it('accepts a request by id and unwraps it', (done) => {
+    api.post.and.returnValue(of({ data: { id: 5, status: 'accepted' } }) as any);
+    service.acceptRequest(5).subscribe((r) => {
+      expect(api.post).toHaveBeenCalledWith('/carpool/driver/join-requests/5/accept', {});
+      expect(r.status).toBe('accepted');
+      done();
+    });
+  });
+
+  it('sends a chat message and unwraps it', (done) => {
+    api.post.and.returnValue(of({ data: { id: 9, body: 'Hello' } }) as any);
+    service.sendMessage(3, 'Hello').subscribe((m) => {
+      expect(api.post).toHaveBeenCalledWith('/carpool/chats/3/messages', { body: 'Hello' });
+      expect(m.id).toBe(9);
+      done();
+    });
+  });
+
+  it('asks only for newer messages after the last one seen', () => {
+    api.get.and.returnValue(of({}) as any);
+    service.chat(3, 41).subscribe();
+    expect(api.get).toHaveBeenCalledWith('/carpool/chats/3?after=41');
+    service.chat(3).subscribe();
+    expect(api.get).toHaveBeenCalledWith('/carpool/chats/3');
+  });
+
+  it('answers a pickup request with accept or decline', () => {
+    api.post.and.returnValue(of({}) as any);
+    service.answerPickup(7, true).subscribe();
+    service.answerPickup(7, false).subscribe();
+    expect(api.post).toHaveBeenCalledWith('/carpool/pickup-proposals/7/accept', {});
+    expect(api.post).toHaveBeenCalledWith('/carpool/pickup-proposals/7/decline', {});
   });
 });

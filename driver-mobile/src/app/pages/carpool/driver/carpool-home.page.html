@@ -1,0 +1,126 @@
+<ion-content class="cp cp--home">
+  <ion-refresher slot="fixed" (ionRefresh)="load($any($event).target.complete.bind($any($event).target))">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+
+
+  <div class="cp-wrap hm home">
+    <div class="center" *ngIf="loading && !home"><ion-spinner name="crescent"></ion-spinner></div>
+
+    <ng-container *ngIf="home && plan">
+      <div class="hm-top">
+        <span class="av hm-av">{{ initials || '?' }}</span>
+        <div class="grow">
+          <p class="t13 muted">{{ greeting }},</p>
+          <h1>{{ name }}</h1>
+          <p class="hm-car" *ngIf="car"><ion-icon name="car-outline"></ion-icon><span class="ell">{{ car }}</span></p>
+        </div>
+        <button class="icon-btn ring" aria-label="Notifications" routerLink="/notifications"><ion-icon name="notifications-outline"></ion-icon></button>
+      </div>
+
+      <div class="hm-hero">
+        <svg class="hm-art" viewBox="0 0 190 150" aria-hidden="true">
+          <path d="M0 150C40 108 100 96 190 104V150Z" fill="#ffffff22"/>
+          <path d="M30 150C70 120 120 112 190 122V150Z" fill="#ffffff26"/>
+          <path d="M78 150C104 128 140 118 190 116" fill="none" stroke="#ffffff55" stroke-width="16" stroke-linecap="round"/>
+          <path d="M84 150C108 132 142 123 190 121" fill="none" stroke="#ffffffaa" stroke-width="2" stroke-dasharray="7 7"/>
+          <ng-container *ngIf="plan.can_publish">
+            <g fill="#ffffff40"><path d="M150 96l9-24 9 24z"/><rect x="157.5" y="96" width="3" height="10"/><path d="M168 100l7-18 7 18z"/><rect x="173.5" y="100" width="3" height="8"/><path d="M22 116l8-20 8 20z"/><rect x="28.5" y="116" width="3" height="8"/></g>
+            <path d="M70 92C80 66 110 70 116 48S146 22 150 22" fill="none" stroke="#ffffffb0" stroke-width="2" stroke-dasharray="4 5" stroke-linecap="round"/>
+            <path d="M150 4a10 10 0 0 1 10 10c0 8-10 18-10 18s-10-10-10-18a10 10 0 0 1 10-10z" fill="#fff"/><circle cx="150" cy="14" r="3.5" fill="#087f50"/>
+            <g transform="translate(96 96) rotate(-12)">
+              <path d="M4 22c0-6 4-9 10-10l10-9c3-2 6-3 10-3h14c4 0 7 2 9 5l6 7c5 1 8 4 8 9v4H4z" fill="#fff"/>
+              <path d="M26 4h10v9H17zM40 4h7c2 0 4 1 5 3l4 6H40z" fill="#cfe9da"/>
+              <circle cx="17" cy="26" r="6" fill="#0d1b2a"/><circle cx="17" cy="26" r="2.4" fill="#cfd6de"/>
+              <circle cx="53" cy="26" r="6" fill="#0d1b2a"/><circle cx="53" cy="26" r="2.4" fill="#cfd6de"/>
+            </g>
+          </ng-container>
+        </svg>
+        <ng-container *ngIf="plan.can_publish; else noPlan">
+          <span class="hm-chip"><ion-icon name="car-sport-outline"></ion-icon>Driver</span>
+          <h2>Going somewhere?</h2>
+          <p>Share your journey.<br>Find fellow travellers.</p>
+          <button class="hm-publish" (click)="publish()"><ion-icon name="add-outline"></ion-icon>Publish a carpool</button>
+        </ng-container>
+        <ng-template #noPlan>
+          <span class="hm-chip"><ion-icon name="card-outline"></ion-icon>No active plan</span>
+          <h2>Get a plan to start</h2>
+          <p>You need an active plan to publish carpools.</p>
+          <button class="hm-publish" (click)="plans()"><ion-icon name="card-outline"></ion-icon>See plans</button>
+        </ng-template>
+      </div>
+
+      <button class="warn-card" *ngIf="plan.ending_soon" (click)="plans()">
+        <ion-icon class="warn-i" name="alert-circle-outline"></ion-icon>
+        <span class="grow"><span class="d-title">{{ planEndLabel }}</span><br><span class="t13 muted">Carpools after {{ planCutoff }} will be cancelled. Renew in Plans.</span></span>
+        <ion-icon class="muted" name="chevron-forward-outline" style="font-size: 18px"></ion-icon>
+      </button>
+
+      <!-- Mockup 2: "Waiting for you" + count while requests wait. Mockup "Home, plan ending": "Requests" with none waiting. -->
+      <ng-container *ngIf="plan.can_publish || home.next || home.waiting">
+        <div class="hm-sec">
+          <h2 *ngIf="home.waiting; else reqHead">Waiting for you <span class="n">{{ home.waiting }}</span></h2>
+          <ng-template #reqHead><h2>Requests</h2></ng-template>
+          <button class="req-sw" [class.off]="!home.requests_on" role="switch" [attr.aria-checked]="home.requests_on"
+                  aria-label="Take join requests for all live carpools" [disabled]="!home.has_live" (click)="toggleRequests()">
+            <span>{{ home.requests_on ? 'Requests on' : 'Requests off' }}</span><span class="tog" aria-hidden="true"></span>
+          </button>
+        </div>
+        <ng-container *ngIf="home.first_request as r; else noneWaiting">
+          <p class="req-paused" *ngIf="!home.requests_on">Riders can't ask to join your carpools.</p>
+          <div class="req">
+            <div class="row" style="align-items: flex-start">
+              <span class="av m">{{ r.rider.initials }}</span>
+              <div class="grow" style="padding-top: 5px"><p class="d-title" style="font-size: 14px">{{ r.rider.name }} wants to join</p><p class="t12 muted">{{ leavesLine(r.listing.departs_at) }}</p></div>
+              <span class="status">New</span>
+            </div>
+            <div class="hm-route"><span class="hm-rail"><i></i><b></b><ion-icon name="location"></ion-icon></span><span>Pickup: {{ r.pickup.name }}</span><span>Drop: {{ r.drop.name }}</span></div>
+            <p class="meta-line"><ion-icon name="people-outline"></ion-icon><span class="ell">{{ requestMeta(r) }}</span></p>
+            <div class="acts" *ngIf="!answered">
+              <button class="d-btn line" [disabled]="!!answering" (click)="answer('decline')">Decline</button>
+              <button class="d-btn" [disabled]="!!answering" (click)="answer('accept')">Accept</button>
+            </div>
+            <p class="req-done" *ngIf="answered === 'accepted'" role="status"><ion-icon name="checkmark-circle"></ion-icon>Accepted. {{ r.rider.first_name }} is on this carpool.</p>
+            <p class="req-done plain" *ngIf="answered === 'declined'" role="status"><ion-icon name="close-circle-outline"></ion-icon>Declined. {{ r.rider.first_name }} is told.</p>
+            <p class="req-err" *ngIf="answerError" role="alert">{{ answerError }}</p>
+          </div>
+          <button class="more-row" *ngIf="home.more.count" (click)="inbox()">
+            <span class="mr-i"><ion-icon name="megaphone"></ion-icon></span><span class="grow">{{ moreLine }}</span>
+            <span class="t12 muted ell" style="font-weight: 500; max-width: 45%">{{ moreRoute }}</span><ion-icon name="chevron-forward-outline"></ion-icon>
+          </button>
+        </ng-container>
+        <ng-template #noneWaiting>
+          <p class="req-none">None waiting right now.</p>
+          <p class="req-paused" *ngIf="!home.requests_on" style="margin-top: 6px">Riders can't ask to join your carpools.</p>
+        </ng-template>
+      </ng-container>
+
+      <ng-container *ngIf="home.next as n; else noCarpool">
+        <div class="hm-sec"><h2>Next carpool</h2><span class="hm-live">{{ nextDay(n) }}</span></div>
+        <button class="hm-card" (click)="open(n)">
+          <svg class="card-wave" viewBox="0 0 230 76" preserveAspectRatio="none" aria-hidden="true"><path d="M0 76C60 46 130 30 230 12V76Z" fill="#087f50" opacity=".045"/><path d="M70 76C120 54 170 46 230 38V76Z" fill="#087f50" opacity=".06"/></svg>
+          <span class="split"><span class="hm-time">{{ nextTime(n) }}</span><span class="status" *ngIf="isFull(n)">Full</span></span>
+          <span class="hm-route"><span class="hm-rail"><i></i><b></b><ion-icon name="location"></ion-icon></span><span>{{ n.start.name }}</span><span>{{ n.end.name }}</span></span>
+          <span class="hm-foot"><span><ion-icon name="people-outline"></ion-icon>{{ n.seats_taken }} of {{ n.seats_total }} seats taken</span><span class="hm-price" [class.free]="n.is_free"><b>{{ price(n) }}</b><ng-container *ngIf="!n.is_free"> / seat</ng-container></span></span>
+        </button>
+      </ng-container>
+      <!-- Mockup "Home, no plan": "Your carpools" and the empty card. -->
+      <ng-template #noCarpool>
+        <div class="hm-sec"><h2>Your carpools</h2></div>
+        <div class="empty-card" style="margin-top: 0">
+          <svg class="card-wave" viewBox="0 0 230 76" preserveAspectRatio="none" aria-hidden="true"><path d="M0 76C60 46 130 30 230 12V76Z" fill="#087f50" opacity=".045"/><path d="M70 76C120 54 170 46 230 38V76Z" fill="#087f50" opacity=".06"/></svg>
+          <div class="ec-i"><ion-icon name="car-outline"></ion-icon></div>
+          <h2>No carpools yet</h2>
+          <p *ngIf="plan.can_publish">Publish the trip you're already making, and riders along your route can ask to join.</p>
+          <p *ngIf="!plan.can_publish">With a plan, publish the trip you're already making, and riders along your route can ask to join.</p>
+        </div>
+      </ng-template>
+    </ng-container>
+  </div>
+
+  <div slot="fixed" class="errbar float" role="alert" *ngIf="error">
+    <ion-icon name="alert-circle-outline"></ion-icon>
+    <span class="grow"><b>Couldn't load your carpools</b><small>Check your connection.</small></span>
+    <button class="d-btn line mini" (click)="load()">Try again</button>
+  </div>
+</ion-content>

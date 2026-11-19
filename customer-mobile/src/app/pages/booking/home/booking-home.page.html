@@ -172,10 +172,10 @@
     <button *ngIf="homeExpanded" class="bh-booking-close" type="button" (click)="closeBookingSheet()" aria-label="Back to map">
       <ion-icon name="close-outline" aria-hidden="true"></ion-icon>Back to map
     </button>
-    <div class="bh-service-controls" *ngIf="tiles.length">
+    <div class="bh-service-controls" *ngIf="tiles.length || carpoolOn">
       <div class="bh-services" role="group" aria-label="Ride services">
         <button *ngFor="let tile of tiles; trackBy: trackByMode" type="button"
-          [class.is-selected]="mode === tile.mode" [attr.aria-pressed]="mode === tile.mode"
+          [class.is-selected]="!carpoolPicked && mode === tile.mode" [attr.aria-pressed]="!carpoolPicked && mode === tile.mode"
           aria-controls="home-service-panel" (click)="pickMode(tile)">
           <span class="bh-service-art" aria-hidden="true">
             <img *ngIf="resolveHomeImageUrl(tile.imageUrl) as imageUrl; else serviceIcon" class="bh-service-image"
@@ -184,11 +184,17 @@
           </span>
           <strong>{{ tile.title }}</strong>
         </button>
+        <!-- Carpool (M4): its own tile, not a ride mode; shown only while carpool is on. -->
+        <button *ngIf="carpoolOn" type="button" [class.is-selected]="carpoolPicked" [attr.aria-pressed]="carpoolPicked"
+          aria-controls="home-service-panel" (click)="pickCarpool()">
+          <span class="bh-service-art" aria-hidden="true"><ion-icon name="people-outline"></ion-icon></span>
+          <strong>Carpool</strong>
+        </button>
       </div>
     </div>
 
     <div #bookingScroll class="bh-home-scroll">
-      <div id="home-service-panel" [ngSwitch]="mode">
+      <div id="home-service-panel" [ngSwitch]="carpoolPicked ? 'carpool' : mode">
         <section *ngSwitchCase="'private'" class="bh-service-panel" aria-label="Private booking">
           <h1 class="bh-home-title">Where are you going?</h1>
           <button class="bh-search bh-search--book" type="button" (click)="whereTo()">
@@ -205,6 +211,14 @@
           <button class="bh-search" type="button" (click)="whereTo()">
             <ion-icon name="bus-outline" aria-hidden="true"></ion-icon>
             <span>Browse shuttles</span>
+            <span class="bh-search-action"><ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon></span>
+          </button>
+        </section>
+        <section *ngSwitchCase="'carpool'" class="bh-service-panel" aria-label="Find a carpool">
+          <h1 class="bh-home-title">Find a carpool</h1>
+          <button class="bh-search" type="button" (click)="openCarpool()">
+            <ion-icon name="search-outline" aria-hidden="true"></ion-icon>
+            <span>Where are you going?</span>
             <span class="bh-search-action"><ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon></span>
           </button>
         </section>

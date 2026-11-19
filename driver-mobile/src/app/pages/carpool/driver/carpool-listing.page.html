@@ -1,0 +1,246 @@
+<ion-content class="cp" (click)="menuOpen && $any($event.target).closest('.pop, .menu-btn') === null ? (menuOpen = false) : null">
+  <div class="center" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
+
+  <ng-container *ngIf="listing as l">
+    <!-- 8i: change route -->
+    <div class="cp-wrap hm" *ngIf="mode === 'route'" style="padding-bottom: 8px">
+      <div class="d-head" style="margin-bottom: 4px">
+        <button class="icon-btn" aria-label="Back to Edit carpool" (click)="closeRoutes()"><ion-icon name="chevron-back-outline"></ion-icon></button>
+        <h1>Change route</h1>
+      </div>
+      <p class="t13 muted">{{ l.start.name }} to {{ l.end.name }}.<ng-container *ngIf="riders"> Riders whose pickup is off the new route are told.</ng-container></p>
+    </div>
+
+    <div class="map lst-map" [class.tall]="mode === 'route'">
+      <div class="gm" #mapEl></div>
+      <div class="map-msg" *ngIf="routesLoading && mode === 'route'">Finding routes…</div>
+      <ng-container *ngIf="mode !== 'route'">
+        <button class="icon-btn float" [attr.aria-label]="mode === 'edit' ? 'Discard changes and go back' : 'Back'" (click)="back()"><ion-icon name="chevron-back-outline"></ion-icon></button>
+        <button class="icon-btn float right menu-btn" [class.open]="menuOpen" *ngIf="mode === 'view' && l.can_edit" aria-label="Carpool options" aria-haspopup="menu" [attr.aria-expanded]="menuOpen" (click)="toggleMenu()"><ion-icon name="ellipsis-horizontal"></ion-icon></button>
+      </ng-container>
+    </div>
+
+    <div class="pop" role="menu" *ngIf="menuOpen">
+      <button role="menuitem" (click)="startEdit()"><ion-icon name="create-outline"></ion-icon>Edit carpool</button>
+      <button role="menuitem" class="danger" (click)="openCancel()"><ion-icon name="close-circle-outline"></ion-icon>Cancel carpool</button>
+    </div>
+
+    <!-- 8: the carpool -->
+    <div class="cp-wrap" *ngIf="mode === 'view'" style="padding-top: 14px">
+      <div class="split" style="align-items: center">
+        <h1 class="lst-when">{{ when }}</h1>
+        <p class="t13 muted" style="font-weight: 700">{{ statusLabel }}</p>
+      </div>
+      <p class="t13 muted" style="margin-top: 4px" *ngIf="cancelLine">{{ cancelLine }}</p>
+      <div class="rt" style="margin-top: 8px"><span class="rail"><i></i><b></b><i class="end"></i></span><span>{{ l.start.name }}</span><span>{{ l.end.name }}</span></div>
+      <div class="facts">
+        <div><b>{{ l.seats_taken }} of {{ l.seats_total }}</b>seats taken</div>
+        <div><b>{{ price }}</b>{{ l.is_free ? 'ride' : 'per seat' }}</div>
+        <div><b>{{ drive }}</b>drive</div>
+      </div>
+      <p class="t12 muted" style="margin-top: 8px" *ngIf="l.route_summary">{{ l.route_summary }}</p>
+
+      <ng-container *ngIf="l.can_edit">
+        <div class="late-row">
+          <button class="d-btn line mini" [disabled]="delaying" (click)="delay()"><ion-icon name="time-outline"></ion-icon>+10 min delay</button>
+          <p [class.ok]="delayMsg">{{ delayMsg ?? (riders ? 'Running late? Moves the time and tells riders in chat.' : 'Running late? Moves the time on 10 minutes.') }}</p>
+        </div>
+      </ng-container>
+
+      <h2 class="d-h">Riders, in pickup order</h2>
+      <ng-container *ngIf="l.riders?.length && l.status !== 'cancelled'; else noRiders">
+        <button class="stop" *ngFor="let r of l.riders" (click)="openRider(r)">
+          <span class="av">{{ r.rider.initials }}</span>
+          <span class="grow"><span class="d-title">{{ r.rider.name }}</span><span class="t12 muted"> · {{ seatWord(r.seats) }}</span><span class="pd">{{ r.pickup.name }} → {{ r.drop.name }}</span></span>
+          <span class="t12 muted">{{ clock(r.pickup.at) }}</span>
+        </button>
+      </ng-container>
+      <ng-template #noRiders>
+        <div class="d-card row" style="gap: 12px">
+          <ion-icon name="people-outline" class="muted" style="font-size: 22px"></ion-icon>
+          <p class="t13 muted grow">{{ l.status === 'cancelled' ? 'This carpool was cancelled.' : 'No riders yet. Riders along your route can ask to join.' }}</p>
+        </div>
+      </ng-template>
+    </div>
+
+    <!-- 8h / 8k: edit in place -->
+    <div class="cp-wrap" *ngIf="mode === 'edit' && draft as d" style="padding-top: 14px">
+      <div class="split" style="align-items: center">
+        <label class="tchip" aria-label="Change departure time">{{ draftWhen }}<ion-icon name="chevron-down-outline"></ion-icon>
+          <input type="datetime-local" [value]="draftLocal" [min]="minLocal" [max]="maxLocal" (change)="pickWhen($any($event.target).value)">
+        </label>
+        <span class="status warn" style="font-size: 12px; padding: 5px 9px">{{ saveError ? 'Not saved' : 'Editing' }}</span>
+      </div>
+      <div class="rt-edit">
+        <div class="rt"><span class="rail"><i></i><b></b><i class="end"></i></span><span>{{ l.start.name }}</span><span>{{ l.end.name }}</span></div>
+        <button class="d-btn line mini" (click)="openRoutes()">Change route<ion-icon name="chevron-forward-outline"></ion-icon></button>
+      </div>
+      <p class="t12" style="margin-top: 6px; color: var(--cp-green); font-weight: 700" *ngIf="d.route">New route: {{ draftRouteLine }}</p>
+
+      <div class="glist" style="margin-top: 14px">
+        <div class="gl-row">
+          <span class="k">Seats<small>{{ seatsHint }}</small></span>
+          <div class="stepper">
+            <button aria-label="Fewer seats" [disabled]="d.seats <= seatsMin" (click)="d.seats = d.seats - 1"><ion-icon name="remove-outline"></ion-icon></button>
+            <output aria-live="polite">{{ d.seats }}</output>
+            <button aria-label="More seats" [disabled]="d.seats >= carSeats" (click)="d.seats = d.seats + 1"><ion-icon name="add-outline"></ion-icon></button>
+          </div>
+        </div>
+        <div class="gl-row">
+          <span class="k">Price per seat</span>
+          <span class="money" [class.off]="d.free">₹<input [value]="d.price ?? ''" inputmode="numeric" [disabled]="d.free" (input)="onPrice($any($event.target).value)" aria-label="Price per seat in rupees"></span>
+        </div>
+        <div class="gl-row">
+          <span class="k">Free ride</span>
+          <button class="tog" [class.off]="!d.free" role="switch" [attr.aria-checked]="d.free" aria-label="Free ride" (click)="d.free = !d.free"></button>
+        </div>
+      </div>
+      <p class="t12" style="margin-top: 6px; color: var(--cp-red)" *ngIf="draftError">{{ draftError }}</p>
+
+      <div class="d-card row" style="margin-top: 14px; gap: 12px">
+        <ion-icon name="people-outline" class="muted" style="font-size: 22px"></ion-icon>
+        <div class="grow"><p class="d-title">{{ riders ? riders + ' seats taken' : 'No riders yet' }}</p><p class="t12 muted">{{ riderNote }}</p></div>
+      </div>
+      <p class="okline" role="status" *ngIf="saved"><ion-icon name="checkmark-circle"></ion-icon>{{ savedText }}</p>
+    </div>
+
+    <!-- 8i: route options -->
+    <div class="cp-wrap" *ngIf="mode === 'route'" style="padding-top: 14px">
+      <div class="errbar" role="alert" *ngIf="routesError">
+        <ion-icon name="alert-circle-outline"></ion-icon>
+        <span class="grow"><b>No routes</b><small>{{ routesError }}</small></span>
+        <button class="d-btn line mini" (click)="openRoutes()">Try again</button>
+      </div>
+      <button class="d-opt" *ngFor="let r of routes; let i = index" [class.on]="i === routeChoice" [attr.aria-pressed]="i === routeChoice" (click)="pickRoute(i)">
+        <span class="dot"></span>
+        <span class="grow"><span class="d-title">{{ r.summary ?? 'Route ' + (i + 1) }}</span><br><span class="t12 muted">{{ routeNote(r) }}</span></span>
+        <span class="d-title">{{ dur(r.duration_s) }}</span>
+      </button>
+    </div>
+  </ng-container>
+
+  <div slot="fixed" class="errbar float" role="alert" *ngIf="loadError">
+    <ion-icon name="alert-circle-outline"></ion-icon>
+    <span class="grow"><b>Couldn't open this carpool</b><small>Check your connection.</small></span>
+    <button class="d-btn line mini" (click)="load()">Try again</button>
+  </div>
+  <div slot="fixed" class="errbar float" role="alert" *ngIf="delayError && mode === 'view'">
+    <ion-icon name="alert-circle-outline"></ion-icon>
+    <span class="grow"><b>Couldn't move the time</b><small>{{ delayError }} {{ failNote }}</small></span>
+    <button class="d-btn line mini" (click)="delay()">Try again</button>
+  </div>
+</ion-content>
+
+<ion-footer class="ion-no-border" *ngIf="listing && mode !== 'view'">
+  <div class="errbar foot-err" role="alert" *ngIf="mode === 'edit' && saveError">
+    <ion-icon name="alert-circle-outline"></ion-icon>
+    <span class="grow"><b>Couldn't save</b><small>{{ saveError }} {{ failNote }}</small></span>
+    <button class="d-btn line mini" (click)="save()">Try again</button>
+  </div>
+  <div class="d-dock" *ngIf="mode === 'edit'">
+    <button class="d-btn line tall" [disabled]="saving || saved" (click)="discard()">Discard</button>
+    <button class="d-go" style="flex: 1.3" [disabled]="saving || saved || !!draftError" (click)="save()">
+      <ion-spinner name="crescent" *ngIf="saving"></ion-spinner>{{ saving ? 'Saving…' : 'Save changes' }}
+    </button>
+  </div>
+  <div class="d-dock" *ngIf="mode === 'route'">
+    <button class="d-btn line tall" (click)="closeRoutes()">Cancel</button>
+    <button class="d-go" style="flex: 1.3" [disabled]="!routes.length" (click)="useRoute()">Use this route</button>
+  </div>
+</ion-footer>
+
+<!-- 8b: rider options before the ride -->
+<ng-container *ngIf="sheet === 'rider' && rider as r">
+  <div class="scrim" (click)="sheet = null"></div>
+  <div class="bsheet" role="dialog" aria-modal="true" aria-labelledby="rider-h">
+    <div class="grab"></div>
+    <div class="who-h">
+      <span class="av">{{ r.rider.initials }}</span>
+      <div class="grow"><h2 id="rider-h">{{ r.rider.name }}</h2><p class="st"><ion-icon name="time-outline"></ion-icon>Joined · pickup about {{ clock(r.pickup.at) }}</p></div>
+    </div>
+    <div class="d-card" style="margin-top: 14px; padding: 12px 14px">
+      <div class="rt"><span class="rail"><i></i><b></b><i class="end"></i></span><span><span class="label">Pickup</span>{{ r.pickup.name }}</span><span><span class="label">Drop</span>{{ r.drop.name }}</span></div>
+      <p class="t12 muted" style="margin-top: 10px">{{ seatWord(r.seats) }} · {{ r.is_free ? 'Free ride' : '₹' + r.total }}</p>
+      <button class="paid" *ngIf="!r.is_free" [class.on]="r.paid_marked" role="checkbox" [attr.aria-checked]="r.paid_marked" (click)="togglePaid(r)">
+        <span class="tick"></span><span class="grow">Paid ₹{{ r.total }}<small>A reminder for you. Riders don't see it.</small></span>
+      </button>
+    </div>
+    <div class="qa three">
+      <button *ngIf="r.chat_id" (click)="messageRider(r)"><ion-icon name="chatbubble-outline"></ion-icon>Message privately</button>
+      <button (click)="openRiderProfile(r)"><ion-icon name="person-outline"></ion-icon>Profile</button>
+      <button *ngIf="r.chat_id" (click)="messageRider(r, true)"><ion-icon name="flag-outline"></ion-icon>Report</button>
+    </div>
+    <button class="d-btn redline" style="width: 100%; margin-top: 14px; min-height: 48px" (click)="sheet = 'remove'">Remove from carpool</button>
+    <p class="req-err" *ngIf="riderError" role="alert">{{ riderError }}</p>
+    <p class="t12 muted" style="margin-top: 10px; text-align: center">Check code and No-show appear after Start ride.</p>
+  </div>
+</ng-container>
+
+<!-- 8d: remove from carpool -->
+<ng-container *ngIf="sheet === 'remove' && rider as r">
+  <div class="scrim" (click)="removing || removed ? null : (sheet = 'rider')"></div>
+  <div class="bsheet" role="dialog" aria-modal="true" aria-labelledby="remove-h">
+    <div class="grab"></div>
+    <div class="who-h">
+      <span class="av">{{ r.rider.initials }}</span>
+      <div class="grow"><h2 id="remove-h">Remove {{ r.rider.first_name }} from this carpool?</h2><p class="t13 muted">{{ r.pickup.name }} · {{ seatWord(r.seats) }}</p></div>
+    </div>
+    <p class="t14" style="margin-top: 16px; line-height: 1.5">{{ r.rider.first_name }} is told, and {{ r.seats === 1 ? 'the seat opens' : 'the seats open' }} for new requests.</p>
+    <p class="t13 muted" style="margin-top: 8px; line-height: 1.5">If {{ r.rider.first_name }} just doesn't turn up after Start ride, use No-show instead.</p>
+    <div class="errbar" role="alert" *ngIf="riderError">
+      <ion-icon name="alert-circle-outline"></ion-icon>
+      <span class="grow"><b>Couldn't remove</b><small>{{ riderError }}</small></span>
+    </div>
+    <div class="row" style="gap: 10px; margin-top: 18px" *ngIf="!removed">
+      <button class="d-btn line tall" [disabled]="removing" (click)="sheet = 'rider'">Keep {{ r.rider.first_name }}</button>
+      <button class="d-btn red tall" [disabled]="removing" (click)="confirmRemove()">{{ removing ? 'Removing…' : 'Remove' }}</button>
+    </div>
+    <p class="okline navy" role="status" *ngIf="removed">
+      <ion-icon name="person-remove-outline"></ion-icon><span>{{ r.rider.first_name }} is removed. {{ seatWord(r.seats) }} {{ r.seats === 1 ? 'is' : 'are' }} open again.<small class="dest">Back to the carpool page</small></span>
+    </p>
+  </div>
+</ng-container>
+
+<!-- 8j: discard -->
+<ng-container *ngIf="sheet === 'discard'">
+  <div class="scrim" (click)="sheet = null"></div>
+  <div class="bsheet" role="dialog" aria-modal="true" aria-labelledby="discard-h">
+    <div class="grab"></div>
+    <h2 id="discard-h">Discard your changes?</h2>
+    <p class="t14" style="margin-top: 8px; line-height: 1.5">Your edits won't be saved.<ng-container *ngIf="riders"> Riders aren't told anything.</ng-container></p>
+    <div class="row" style="gap: 10px; margin-top: 18px">
+      <button class="d-btn line tall" (click)="sheet = null">Keep editing</button>
+      <button class="d-btn redline tall" (click)="confirmDiscard()">Discard</button>
+    </div>
+  </div>
+</ng-container>
+
+<!-- 8g: cancel -->
+<ng-container *ngIf="sheet === 'cancel'">
+  <div class="scrim" (click)="closeSheet()"></div>
+  <div class="bsheet" role="dialog" aria-modal="true" aria-labelledby="cancel-h">
+    <div class="grab"></div>
+    <h2 id="cancel-h">Cancel this carpool?</h2>
+    <p class="t14" style="margin-top: 8px; line-height: 1.5">{{ cancelText }}</p>
+    <ng-container *ngIf="!cancelled">
+      <p class="sec-l" style="margin-top: 16px">{{ riders ? 'Tell riders why (optional)' : 'Why? (optional)' }}</p>
+      <button class="d-opt sm" *ngFor="let r of cancelReasons; let i = index" [class.on]="reason === i" [attr.aria-pressed]="reason === i" (click)="reason = reason === i ? null : i">
+        <span class="dot"></span><span class="grow">{{ r }}</span>
+      </button>
+      <div class="swipe" #swipeEl role="slider" tabindex="0" aria-label="Slide to cancel carpool" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="swipePercent"
+           [class.back]="swipeX === 0" (keydown)="swipeKey($event)">
+        <span class="sw-f" [style.width.px]="swipeX + 56"></span>
+        <span class="sw-l">{{ cancelling ? 'Cancelling…' : 'Slide to cancel carpool' }}</span>
+        <span class="sw-t" [style.left.px]="swipeX + 4" (pointerdown)="swipeDown($event)" (pointermove)="swipeMove($event)" (pointerup)="swipeUp()" (pointercancel)="swipeUp()"><ion-icon name="chevron-forward-outline"></ion-icon></span>
+      </div>
+      <div class="errbar" role="alert" *ngIf="cancelError">
+        <ion-icon name="alert-circle-outline"></ion-icon>
+        <span class="grow"><b>Couldn't cancel</b><small>{{ cancelError }} {{ riders ? "Riders weren't told." : 'The carpool is still live.' }}</small></span>
+      </div>
+      <button class="d-btn line tall" style="width: 100%; margin-top: 10px" [disabled]="cancelling" (click)="closeSheet()">Keep carpool</button>
+    </ng-container>
+    <p class="okline navy" role="status" *ngIf="cancelled">
+      <ion-icon name="close-circle-outline"></ion-icon><span>Carpool cancelled.{{ riders ? ' Your riders have been told.' : '' }}<small class="dest">Opening Carpools, under Past</small></span>
+    </p>
+  </div>
+</ng-container>

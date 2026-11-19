@@ -784,6 +784,7 @@ paths:
                   search_distance_m: { type: integer, example: 2000 }
                   publish_horizon_days: { type: integer, example: 30 }
                   seats_max: { type: integer, example: 6 }
+                  price_max: { type: integer, example: 5000 }
                   message_max_chars: { type: integer, example: 1000 }
                   timezone: { type: string, example: Asia/Kolkata }
         "401":
@@ -828,7 +829,453 @@ paths:
           description: Kill switch is on
         "422":
           description: Invalid, plate taken, already a commercial driver, or already approved
+  /carpool/plans:
+    get:
+      tags: [Carpool]
+      summary: Carpool plans the driver can buy (M2)
+      description: Carpool-audience plans in the driver's city, active now. Empty for anyone who isn't a carpool driver.
+      operationId: carpool_plans
+      responses:
+        "200":
+          description: "{ data: [{ id, title, subtitle, amount, days_count, terms }] }"
+  /carpool/plan:
+    get:
+      tags: [Carpool]
+      summary: The running plan, a waiting plan, and the publish gate (M2)
+      operationId: carpool_plan_state
+      responses:
+        "200":
+          description: "{ plan, next_plan, can_publish, ending_soon } (ending_soon = ends within 3 days with nothing waiting)"
+  /carpool/plan/upi/order:
+    post:
+      tags: [Carpool]
+      summary: Start a UPI payment for a carpool plan (M2)
+      description: Approved carpool drivers only, plans of their city. The order is bound to this driver and plan for 2 hours.
+      operationId: carpool_plan_order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [plan_id], properties: { plan_id: { type: integer } } }
+      responses:
+        "200":
+          description: "{ order_id, amount_paise, amount, currency, key_id, plan_id, plan_title }"
+        "422":
+          description: Not a carpool driver, not approved, or the plan isn't theirs
+  /carpool/plan/upi/verify:
+    post:
+      tags: [Carpool]
+      summary: Confirm the UPI payment and start the plan (M2)
+      description: Checks the signature and the paid amount. A plan bought while one runs is queued to start when it ends; one waiting at a time. Safe to repeat.
+      operationId: carpool_plan_verify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan_id, razorpay_order_id, razorpay_payment_id, razorpay_signature]
+              properties:
+                plan_id: { type: integer }
+                razorpay_order_id: { type: string }
+                razorpay_payment_id: { type: string }
+                razorpay_signature: { type: string }
+      responses:
+        "201":
+          description: "{ queued, subscription, message }"
+        "422":
+          description: Payment not verified, not complete, or doesn't match the plan
+  /carpool/driver/home:
+    get:
+      tags: [Carpool]
+      summary: Driver Home data (M3)
+      operationId: carpool_driver_home
+      responses:
+        "200":
+          description: "{ next: Listing|null, requests_on, has_live, recent: [{ start, end, departs_at }] }"
+        "422":
+          description: Not an approved carpool driver with a car
+  /carpool/driver/requests:
+    post:
+      tags: [Carpool]
+      summary: The Home Requests on/off switch for every carpool not yet started (M3, A2)
+      operationId: carpool_driver_requests
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [on], properties: { on: { type: boolean } } }
+      responses:
+        "200":
+          description: "{ requests_on }"
+  /carpool/driver/listings:
+    get:
+      tags: [Carpool]
+      summary: The driver's carpools for the Carpools tab (M3)
+      description: India days. today = leaving today or in progress; upcoming = not started, after today; past = completed, cancelled, or left before today (latest 50).
+      operationId: carpool_driver_listings
+      parameters:
+        - { name: filter, in: query, schema: { type: string, enum: [upcoming, today, past], default: upcoming } }
+      responses:
+        "200":
+          description: "{ data: [Listing] } without route_polyline"
+    post:
+      tags: [Carpool]
+      summary: Publish a carpool (M3)
+      description: >
+        Needs carpool enabled, an approved carpool driver with a car and an
+        active plan. The departure must be in the future, within 30 days, and
+        no later than the day after the plan (or the plan waiting after it)
+        ends. Seats are at most the car's seats. Route check (P5): the line
+        must start and end within 2 km of the places, the places at least
+        1 km apart, the distance no shorter than the straight line, and the
+        line's length within 50-150% of the distance. Lines over 500 points
+        are thinned.
+      operationId: carpool_driver_publish
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [start, end, route, departs_at, seats, is_free]
+              properties:
+                start: { $ref: "#/components/schemas/CarpoolPlace" }
+                end: { $ref: "#/components/schemas/CarpoolPlace" }
+                route: { $ref: "#/components/schemas/CarpoolRoute" }
+                departs_at: { type: string, format: date-time, example: "2026-11-19T08:30:00+05:30" }
+                seats: { type: integer, minimum: 1, maximum: 6 }
+                is_free: { type: boolean }
+                price_per_seat: { type: integer, minimum: 1, maximum: 5000, description: Rupees; required unless is_free }
+                accepting_requests: { type: boolean, default: true }
+      responses:
+        "201":
+          description: "{ data: Listing } with route_polyline"
+        "422":
+          description: No plan, carpool off, not approved, or a rule above failed (errors keyed listing, route, seats, departs_at or price_per_seat)
+  /carpool/driver/listings/{id}:
+    get:
+      tags: [Carpool]
+      summary: One of the driver's carpools, with its route line (M3)
+      operationId: carpool_driver_listing
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: "{ data: Listing }"
+        "404":
+          description: Not this driver's carpool
+    patch:
+      tags: [Carpool]
+      summary: Edit a carpool before it starts (M3, mockup 8h)
+      description: Send only what changed. Start and destination can't change. Seats can't go below seats taken. Works without a plan; a new departure date must still fall within the plan rule.
+      operationId: carpool_driver_listing_edit
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                departs_at: { type: string, format: date-time }
+                seats: { type: integer }
+                is_free: { type: boolean }
+                price_per_seat: { type: integer }
+                accepting_requests: { type: boolean }
+                route: { $ref: "#/components/schemas/CarpoolRoute" }
+      responses:
+        "200":
+          description: "{ data: Listing }"
+        "422":
+          description: Already started or ended, or a rule failed
+  /carpool/driver/listings/{id}/delay:
+    post:
+      tags: [Carpool]
+      summary: "+10 min delay (M3, mockup 8)"
+      operationId: carpool_driver_listing_delay
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: "{ data: Listing }"
+  /carpool/driver/listings/{id}/cancel:
+    post:
+      tags: [Carpool]
+      summary: Driver cancels a carpool before it starts (M3, mockup 8g)
+      operationId: carpool_driver_listing_cancel
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { note: { type: string, maxLength: 255, description: Optional reason shown to riders } } }
+      responses:
+        "200":
+          description: "{ data: Listing } with status cancelled, cancel_reason driver"
+        "422":
+          description: Already started or ended
+  /carpool/driver/inbox:
+    get:
+      tags: [Carpool]
+      summary: Join requests waiting for the driver, grouped by carpool (M4)
+      operationId: carpool_driver_inbox
+      responses:
+        "200": { description: OK }
+  /carpool/driver/inbox/count:
+    get:
+      tags: [Carpool]
+      summary: Number of waiting requests (the Inbox badge)
+      operationId: carpool_driver_inbox_count
+      responses:
+        "200": { description: OK }
+  /carpool/driver/join-requests/{carpoolRequest}:
+    get:
+      tags: [Carpool]
+      summary: A rider's profile for one request. No phone number is sent.
+      operationId: carpool_driver_request_show
+      parameters:
+        - { name: carpoolRequest, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+  /carpool/driver/join-requests/{carpoolRequest}/accept:
+    post:
+      tags: [Carpool]
+      summary: Accept a request. Locks the carpool and recounts seats, so simultaneous accepts cannot overbook.
+      description: Gives the rider a 4-digit code. Pending requests that no longer fit close as filled.
+      operationId: carpool_driver_request_accept
+      parameters:
+        - { name: carpoolRequest, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+        "422": { description: Not enough seats left, or the request is not waiting }
+  /carpool/driver/join-requests/{carpoolRequest}/decline:
+    post:
+      tags: [Carpool]
+      summary: Decline a waiting request
+      operationId: carpool_driver_request_decline
+      parameters:
+        - { name: carpoolRequest, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+  /carpool/driver/join-requests/{carpoolRequest}/remove:
+    post:
+      tags: [Carpool]
+      summary: Remove an accepted rider
+      operationId: carpool_driver_request_remove
+      parameters:
+        - { name: carpoolRequest, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+  /carpool/driver/join-requests/{carpoolRequest}/paid:
+    post:
+      tags: [Carpool]
+      summary: Private Paid tick. The rider never sees it.
+      operationId: carpool_driver_request_paid
+      parameters:
+        - { name: carpoolRequest, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+  /carpool/search:
+    get:
+      tags: [Carpool]
+      summary: Find carpools along the saved route (M4)
+      description: >
+        Query: from_lat, from_lng, to_lat, to_lng, date (India day), seats.
+        Both points must be within the search distance of the route, the pickup
+        before the drop. Ranked: requestable first, then shorter walk, then
+        time. If the day is empty, the nearest other days are offered. Refused
+        (422) while carpool is off.
+      operationId: carpool_search
+      responses:
+        "200": { description: OK }
+        "422": { description: Carpool is off, or the search is not valid }
+  /carpool/rides/{listing}:
+    get:
+      tags: [Carpool]
+      summary: One carpool as the rider sees it, with their own request if any
+      operationId: carpool_ride_show
+      parameters:
+        - { name: listing, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+  /carpool/rides/{listing}/join:
+    post:
+      tags: [Carpool]
+      summary: Ask to join. The price is copied at request time.
+      description: Needs the rider's photo at the first join (error key `photo`).
+      operationId: carpool_ride_join
+      parameters:
+        - { name: listing, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+        "422": { description: Photo missing, off route, no seats, or carpool off }
+  /carpool/join-requests/{carpoolRequest}/withdraw:
+    post:
+      tags: [Carpool]
+      summary: The rider cancels a waiting request
+      operationId: carpool_request_withdraw
+      parameters:
+        - { name: carpoolRequest, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+  /carpool/join-requests/{carpoolRequest}/leave:
+    post:
+      tags: [Carpool]
+      summary: The rider leaves an accepted carpool
+      operationId: carpool_request_leave
+      parameters:
+        - { name: carpoolRequest, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+  /carpool/trips:
+    get:
+      tags: [Carpool]
+      summary: The rider's carpool requests and trips for My trips
+      operationId: carpool_trips
+      responses:
+        "200": { description: OK }
+  /carpool/rider/photo:
+    post:
+      tags: [Carpool]
+      summary: Upload the rider's profile photo (shown to drivers)
+      operationId: carpool_rider_photo
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                photo: { type: string, format: binary }
+      responses:
+        "200": { description: OK }
+  /carpool/chats:
+    get:
+      tags: [Carpool]
+      summary: Chat inbox for the signed-in rider or driver (Active and Past, one box per carpool, unread counts)
+      operationId: carpool_chats
+      responses:
+        "200": { description: OK }
+  /carpool/chats/unread:
+    get:
+      tags: [Carpool]
+      summary: Unread carpool messages, for the badges
+      operationId: carpool_chats_unread
+      responses:
+        "200": { description: OK }
+  /carpool/chats/{conversation}:
+    get:
+      tags: [Carpool]
+      summary: A conversation with its messages (pass after=lastMessageId for newer ones only)
+      operationId: carpool_chat_show
+      parameters:
+        - { name: conversation, in: path, required: true, schema: { type: integer } }
+        - { name: after, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+        "404": { description: Not a member }
+  /carpool/chats/{conversation}/messages:
+    post:
+      tags: [Carpool]
+      summary: Send a message (1,000 characters, 20 per minute, banned words masked)
+      operationId: carpool_chat_send
+      parameters:
+        - { name: conversation, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, maxLength: 1000 }
+      responses:
+        "201": { description: Created }
+        "422": { description: Read only, banned, too long or too fast }
+  /carpool/chats/{conversation}/read:
+    post:
+      tags: [Carpool]
+      summary: Mark the conversation read
+      operationId: carpool_chat_read
+      parameters:
+        - { name: conversation, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+  /carpool/chats/{conversation}/pickup:
+    post:
+      tags: [Carpool]
+      summary: A rider asks for a new pickup, or the driver answers with another spot (on the route, before the rider drop). The other side accepts or declines
+      operationId: carpool_chat_pickup
+      parameters:
+        - { name: conversation, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lng, name]
+              properties:
+                lat: { type: number }
+                lng: { type: number }
+                name: { type: string, maxLength: 120 }
+                address: { type: string, maxLength: 255 }
+      responses:
+        "201": { description: Created }
+  /carpool/pickup-proposals/{proposal}/accept:
+    post:
+      tags: [Carpool]
+      summary: Accept a pickup request (the driver answers a rider request, the rider answers a driver counter-spot); the agreed pickup moves
+      operationId: carpool_pickup_accept
+      parameters:
+        - { name: proposal, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+  /carpool/pickup-proposals/{proposal}/decline:
+    post:
+      tags: [Carpool]
+      summary: The driver declines a pickup request
+      operationId: carpool_pickup_decline
+      parameters:
+        - { name: proposal, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+  /carpool/reports:
+    post:
+      tags: [Carpool]
+      summary: Report a message (copy kept) or a person you share a carpool with
+      operationId: carpool_report
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, enum: [spam, harassment, unsafe, photo, other] }
+                message_id: { type: integer }
+                user_id: { type: integer }
+                listing_id: { type: integer }
+                details: { type: string, maxLength: 1000 }
+      responses:
+        "201": { description: Created }
 components:
+  schemas:
+    CarpoolPlace:
+      type: object
+      required: [lat, lng, name, address]
+      properties:
+        lat: { type: number }
+        lng: { type: number }
+        name: { type: string, maxLength: 120, example: Bemina Bypass }
+        address: { type: string, maxLength: 255 }
+    CarpoolRoute:
+      type: object
+      required: [polyline, distance_m, duration_s]
+      properties:
+        polyline: { type: array, items: { type: array, items: { type: number }, minItems: 2, maxItems: 2 }, description: "[[lat, lng], ...], 2 to 5000 points" }
+        distance_m: { type: integer }
+        duration_s: { type: integer }
+        summary: { type: string, maxLength: 120, example: Via Rajbagh }
   securitySchemes:
     bearerAuth:
       type: http

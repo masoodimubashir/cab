@@ -2,12 +2,13 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { NavController } from '@ionic/angular';
 import { ApiService } from '../../../core/api.service';
 import { AuthService } from '../../../core/auth.service';
+import { CarpoolApiService } from '../carpool-api.service';
 import { CarpoolVehicle, DocumentRequirement, DriverMe } from './carpool-signup.models';
 
 /**
  * Where a carpool driver lands after sign-up: under review, needs changes,
- * or approved. Until the carpool home arrives (M3) an approved driver sees a
- * short "you're approved" page here instead of the commercial dashboard.
+ * or approved. An approved driver goes on to the carpool Home once carpool is
+ * open (M3); until then they see a short "you're approved" page here.
  */
 @Component({
   selector: 'app-carpool-status',
@@ -29,6 +30,7 @@ export class CarpoolStatusPage implements OnInit, OnDestroy {
     private api: ApiService,
     private auth: AuthService,
     private nav: NavController,
+    private carpool: CarpoolApiService,
   ) {}
 
   ngOnInit(): void {
@@ -54,6 +56,11 @@ export class CarpoolStatusPage implements OnInit, OnDestroy {
         this.approval = me.driver.approval_status;
         this.car = me.driver.carpool_vehicle ?? null;
         this.docs = (me.document_requirements ?? []).filter((d) => d.document_id !== null);
+        if (this.approval === 'approved') {
+          this.carpool.config(true).subscribe((c) => {
+            if (c.enabled) void this.nav.navigateRoot('/carpool/home');
+          });
+        }
       },
       error: () => {
         this.loading = false;

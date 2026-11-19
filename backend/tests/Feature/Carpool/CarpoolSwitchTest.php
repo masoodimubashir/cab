@@ -30,6 +30,21 @@ class CarpoolSwitchTest extends TestCase
         CarpoolSetting::current()->update(['enabled' => $on]);
     }
 
+    public function test_settings_survive_a_serializing_cache(): void
+    {
+        // Real servers use file or Redis caches, where cached objects can't be
+        // rebuilt (cache.serializable_classes is off). Only plain values may be cached.
+        CarpoolSetting::current();
+        $this->assertIsArray(\Illuminate\Support\Facades\Cache::get('carpool.settings'));
+
+        config(['cache.default' => 'file']);
+        \Illuminate\Support\Facades\Cache::forget('carpool.settings');
+        $this->enable(true);
+        CarpoolSetting::current();
+        $this->assertTrue(CarpoolSetting::current()->enabled);
+        \Illuminate\Support\Facades\Cache::forget('carpool.settings');
+    }
+
     public function test_settings_row_starts_with_the_spec_defaults(): void
     {
         $s = CarpoolSetting::current();

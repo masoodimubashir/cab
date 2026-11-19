@@ -38,6 +38,7 @@ import {
   RawScope
 } from '../booking.service';
 import { City, RideMode, ServiceTile, TripScope } from '../booking.models';
+import { CarpoolApiService } from '../../carpool/carpool-api.service';
 import { environment } from '../../../../environments/environment';
 import { NearbyHomeCar, NearbyCarGroup, groupNearbyCars, NearbyRoadDistances, carName, carImage } from './nearby-cars';
 
@@ -265,7 +266,31 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     private router: Router,
     private zone: NgZone,
     private cdr: ChangeDetectorRef,
+    private carpool: CarpoolApiService,
   ) {}
+
+  /** Carpool tile (Carpool.md section 10): its own tile, not a ride mode, shown only while carpool is on. */
+  carpoolOn = false;
+  carpoolPicked = false;
+
+  private checkCarpool(): void {
+    this.carpool.enabled().subscribe((on) => {
+      this.carpoolOn = on;
+      if (!on) this.carpoolPicked = false;
+      this.cdr.markForCheck();
+    });
+  }
+
+  pickCarpool(): void {
+    this.setBookingSheetExpanded(true);
+    this.carpoolPicked = true;
+    this.resetBookingScroll();
+    this.cdr.markForCheck();
+  }
+
+  openCarpool(): void {
+    void this.router.navigate(['/carpool/search']);
+  }
 
   private bannerRealtimeUnsub: (() => void) | null = null;
   private bannerPollSub?: Subscription;
@@ -321,6 +346,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   ionViewWillEnter(): void {
     this.pageActive = true;
+    this.checkCarpool();
     this.startNotificationBadge();
     this.loadHomeOffers();
     if (!this.located || !this.city) {
@@ -946,6 +972,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   pickMode(tile: ServiceTile): void {
     this.setBookingSheetExpanded(true);
+    this.carpoolPicked = false;
     const changed = this.mode !== tile.mode;
     this.mode = tile.mode;
     this.scope = this.catalog.find(s => s.scope === this.scope && s.modes.some(m => m.mode === tile.mode))?.scope

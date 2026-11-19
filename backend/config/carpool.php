@@ -28,8 +28,11 @@ return [
     // Pickup proposals must be this close to the route (P9, same check as Fixed pins).
     'pickup_max_distance_m' => 300,
 
-    // Chat message length limit (P9).
+    // Chat message length limit (P9: 1,000 characters, fixed in code, not an admin setting).
     'message_max_chars' => 1000,
+
+    // Chat rate limit (P9 says "a rate limit" without a number; 20 a minute is our proposal, decided 2026-11-19).
+    'messages_per_minute' => 20,
 
     // Rider code checks (section 10, proposed): wrong tries before a lock, and the lock length.
     'code_max_attempts' => 3,
@@ -41,6 +44,18 @@ return [
 
     // Stored route lines are simplified to at most this many points (P5).
     'route_max_points' => 500,
+
+    // Route check on publish (P5). Google snaps the ends to the nearest road, so
+    // the route's first and last points may sit a little away from the places.
+    'route_endpoint_max_m' => 2000,
+    'route_min_m' => 1000,
+    'route_max_m' => 1500000,
+
+    // Highest price per seat a driver can set, in rupees (guard against typos).
+    'price_max' => 5000,
+
+    // "+10 min delay" on the carpool page (mockup screen 8).
+    'delay_minutes' => 10,
 
     // Defaults for the one carpool_settings row (section 10, Carpool > Settings).
     'defaults' => [

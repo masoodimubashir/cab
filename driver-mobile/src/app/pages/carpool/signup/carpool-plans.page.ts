@@ -5,8 +5,8 @@ import { CarpoolPaymentResult, CarpoolPlan, CarpoolPlanState, CarpoolUpiOrder } 
 
 /**
  * Carpool Plans: time-based, no commission, UPI only, no auto-renew
- * (Carpool.md P4). Until the carpool Profile tab arrives (M3) it is opened from
- * the approved status page.
+ * (Carpool.md P4). Opened from Profile and the Home plan banner, or from the
+ * approved status page while carpool is still closed.
  */
 @Component({
   selector: 'app-carpool-plans',
@@ -112,7 +112,7 @@ export class CarpoolPlansPage {
   }
 
   back(): void {
-    void this.nav.navigateBack('/carpool-signup/status');
+    this.carpool.config().subscribe((c) => void this.nav.navigateBack(c.enabled ? '/carpool/profile' : '/carpool-signup/status'));
   }
 
   private fail(err: any, fallback: string): void {

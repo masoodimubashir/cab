@@ -2,7 +2,11 @@
   <main class="trips-page">
     <header class="trips-heading">
       <h1>My trips</h1>
+      <div class="head-btns">
+      <button type="button" class="chat-btn" *ngIf="showMessages" routerLink="/carpool/messages" aria-label="Carpool messages"><ion-icon name="chatbubbles-outline" aria-hidden="true"></ion-icon><span class="chat-count" *ngIf="chatUnread">{{ chatUnread > 99 ? '99+' : chatUnread }}</span></button>
       <button type="button" (click)="refresh()" [disabled]="loading" aria-label="Refresh trips"><ion-icon name="refresh-outline" aria-hidden="true"></ion-icon></button>
+    
+      </div>
     </header>
     <nav class="trips-tabs" aria-label="Trip categories">
       <button *ngFor="let item of tabs" type="button" [class.selected]="tab === item.id" [attr.aria-pressed]="tab === item.id" (click)="tab = item.id">{{ item.title }}</button>
@@ -13,12 +17,22 @@
         <span>{{ feeds[source].error }}</span><button type="button" (click)="retry(source)" [disabled]="feeds[source].loading">Retry</button>
       </div>
     </ng-container>
+    <div class="feed-error" *ngIf="carpoolFeed.error" role="alert">
+      <span>{{ carpoolFeed.error }}</span><button type="button" (click)="loadCarpools()" [disabled]="carpoolFeed.loading">Retry</button>
+    </div>
     <div class="trips-loading" *ngIf="loading" role="status"><ion-spinner name="crescent"></ion-spinner><span>Loading your trips…</span></div>
     <section class="trips-list" aria-label="Bookings" [attr.aria-busy]="loading">
       <h2 *ngIf="tab === 'past' && cards.length">Past rides</h2>
       <ng-container *ngFor="let card of cards; let index = index; trackBy: trackCard">
       <h2 class="journey-section-title" *ngIf="tab === 'journeys' && (index === 0 || card.past !== cards[index - 1].past)">{{ card.past ? 'Past rides' : 'Your next rides' }}</h2>
-      <article class="trip-card">
+      <!-- Carpool (M4): same list, blue Carpool badge, the code the driver checks. Opens the carpool page. -->
+      <a class="trip-card carpool-card" *ngIf="card.carpool as cp" [class.carpool-card--sent]="cp.sent" [routerLink]="card.link">
+        <div class="trip-card-heading"><h2>{{ card.title }}</h2><span class="status" *ngIf="card.label" [class.status--muted]="cp.sent">{{ card.label }}</span></div>
+        <p class="carpool-sub"><span class="carpool-type"><ion-icon name="people-outline" aria-hidden="true"></ion-icon>Carpool</span><span [class.carpool-navy]="cp.navy">{{ cp.sub }}</span></p>
+        <p class="trip-meta"><span><strong>{{ cp.day }}</strong></span><span *ngFor="let m of cp.meta">{{ m }}</span></p>
+        <div class="carpool-code" *ngIf="cp.code"><span>Your code for the driver</span><b>{{ cp.code }}</b></div>
+      </a>
+      <article class="trip-card" *ngIf="!card.carpool">
         <div class="trip-card-heading"><h2>{{ card.title }}</h2><span class="status" [class.status--muted]="card.status === 'CANCELLED' || card.status === 'EXPIRED'" [class.status--warning]="card.status === 'NO_SHOW' || card.status === 'PAYMENT_PENDING' || card.status === 'PENDING_DRIVER_APPROVAL'">{{ card.label }}</span></div>
         <p class="trip-route" *ngIf="card.route">{{ card.route }}</p>
         <p class="trip-meta"><span>{{ names[card.source] }}</span><span *ngIf="dateLabel(card.date)">{{ dateLabel(card.date) }}</span><span *ngIf="card.seats">{{ card.seats }}</span></p>

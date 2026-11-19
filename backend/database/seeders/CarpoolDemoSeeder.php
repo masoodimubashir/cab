@@ -20,6 +20,12 @@ use RuntimeException;
  * adds its own data here (M1 vehicles and documents, M2 plans, M3 listings...).
  *
  * M0: carpool drivers only, for checking the commercial fence by hand.
+ * M1: their cars and the four carpool documents.
+ * M3: switches carpool on (local only), adds a carpool plan in the city and
+ * gives "Demo Carpool Asif" a running plan, so Publish can be tried at once.
+ * Log in as Asif with +910000000101; the code is in storage/logs/laravel.log.
+ * M4: two riders with profile photos (+910000000201, +910000000202), so
+ * search and ask to join can be tried from the customer app.
  */
 class CarpoolDemoSeeder extends Seeder
 {
@@ -66,8 +72,45 @@ class CarpoolDemoSeeder extends Seeder
 
         $this->seedDocuments();
         $this->seedVehicles();
+        $this->seedPlans($city);
+        $this->seedRiders();
+        \App\Models\Carpool\CarpoolSetting::current()->update(['enabled' => true]);
 
-        $this->command?->info('Carpool demo: ' . count(self::DRIVERS) . " carpool drivers with cars in {$city->name}, and the carpool documents.");
+        $this->command?->info('Carpool demo: ' . count(self::DRIVERS) . " carpool drivers with cars in {$city->name}, the carpool documents, a carpool plan (Asif's is running) and "
+            . count(self::RIDERS) . ' riders with photos. Carpool is switched on.');
+    }
+
+    /** [key, name] customers who can ask to join (M4). Each has a profile photo. */
+    private const RIDERS = [
+        ['rider-1', 'Demo Rider Bilal'],
+        ['rider-2', 'Demo Rider Sana'],
+    ];
+
+    /**
+     * M4: riders with a profile photo (a plain coloured square), so asking to
+     * join works straight away. Phones +910000000201 and up.
+     */
+    private function seedRiders(): void
+    {
+        foreach (self::RIDERS as $i => [$key, $name]) {
+            $user = User::query()->firstOrCreate(['email' => "demo-carpool-{$key}@dreamcabs.test"], [
+                'name' => $name,
+                'phone' => '+9100000002' . str_pad((string) ($i + 1), 2, '0', STR_PAD_LEFT),
+                'password' => Hash::make(Str::random(32)),
+            ]);
+            if (! $user->hasRole('customer')) {
+                $user->addRole('customer');
+            }
+            if (! $user->avatar_path && function_exists('imagecreatetruecolor')) {
+                $img = imagecreatetruecolor(96, 96);
+                imagefill($img, 0, 0, imagecolorallocate($img, 60 + 70 * $i, 140, 110));
+                ob_start();
+                imagepng($img);
+                $path = "avatars/demo-carpool-{$key}.png";
+                \Illuminate\Support\Facades\Storage::disk('public')->put($path, (string) ob_get_clean());
+                $user->forceFill(['avatar_path' => $path])->save();
+            }
+        }
     }
 
     /**
@@ -118,5 +161,29 @@ class CarpoolDemoSeeder extends Seeder
             ])->save();
             $driver->forceFill(['vehicle_brand' => $make, 'vehicle_color' => $colour])->save();
         }
+    }
+
+    private function seedPlans(City $city): void
+    {
+        $plan = \App\Models\SubscriptionPlan::query()->where('city_id', $city->id)->where('title', 'Demo carpool 30 days')->first()
+            ?? new \App\Models\SubscriptionPlan();
+        $plan->fill([
+            'city_id' => $city->id, 'title' => 'Demo carpool 30 days', 'amount' => 199, 'meter_type' => 'days',
+            'days_count' => 30, 'commission_percent' => 0, 'pricing_model' => 'subscription', 'is_active' => true,
+        ]);
+        $plan->audience = 'carpool';
+        $plan->save();
+
+        $user = User::query()->where('email', 'demo-carpool-approved-1@dreamcabs.test')->first();
+        if (! $user || app(\App\Services\Carpool\CarpoolPlanService::class)->activePlan($user)) {
+            return;
+        }
+        \App\Models\DriverSubscription::query()->create([
+            'subscription_plan_id' => $plan->id, 'driver_user_id' => $user->id, 'city_id' => $city->id,
+            'meter_type' => 'days', 'amount_paid' => 0, 'commission_percent' => 0, 'pricing_model' => 'subscription',
+            'payment_method' => 'upi', 'payment_reference' => 'demo-seed', 'days_count' => 30,
+            'starts_at' => now(), 'expires_at' => now()->addDays(30),
+            'status' => 'active', 'is_queued' => false, 'auto_renew' => false,
+        ]);
     }
 }
