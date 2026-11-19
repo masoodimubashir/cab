@@ -40,7 +40,7 @@ class PhoneOtpService
             return ['sent' => false];
         }
         $phone = $this->normalize($phone);
-        $cooldown = (int) config('services.msg91.resend_cooldown_sec', 30);
+        $cooldown = \App\Services\Dev\DevHub::isTestPhone($phone) ? 0 : (int) config('services.msg91.resend_cooldown_sec', 30);
 
         $existing = PhoneOtp::query()->where('phone', $phone)->first();
         if ($existing && $existing->last_sent_at) {
@@ -51,7 +51,9 @@ class PhoneOtpService
         }
 
         // Cryptographically-strong 6-digit code.
-        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $code = \App\Services\Dev\DevHub::isTestPhone($phone)
+            ? \App\Services\Dev\DevHub::CODE // developer hub test numbers (local only)
+            : str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $ttlMin = (int) config('services.msg91.otp_ttl_min', 5);
 
         PhoneOtp::query()->updateOrCreate(

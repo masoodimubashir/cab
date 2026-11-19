@@ -1,6 +1,9 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 import { KeyboardResize } from '@capacitor/keyboard';
 
+// Carpool test build (CARPOOL_TEST=1): the page may call http://localhost (the laptop, through adb reverse).
+const carpoolTest = !!process.env['CARPOOL_TEST'];
+
 const config: CapacitorConfig = {
   appId: 'product.customer.dreamcab',
   appName: 'DREAMCABS',
@@ -9,7 +12,7 @@ const config: CapacitorConfig = {
   // origin so stored sessions survive upgrades; it is not a remote API URL.
   server: {
     androidScheme: 'http',
-    cleartext: false,
+    cleartext: carpoolTest,
   },
   plugins: {
     FirebaseAuthentication: {

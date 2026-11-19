@@ -27,6 +27,8 @@ class AppServiceProvider extends ServiceProvider
         // Broadcast::routes() again here — once the route is registered it can't
         // be redefined, and a duplicate call silently no-ops.
 
+        \App\Services\Dev\DevHub::applyTime();
+
         RateLimiter::for('otp', function (Request $request) {
             $key = 'otp:' . ($request->ip() ?? 'unknown');
             return [Limit::perMinute(5)->by($key)];

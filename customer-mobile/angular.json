@@ -46,6 +46,18 @@
             "scripts": []
           },
           "configurations": {
+            "carpooltest": {
+              "optimization": false,
+              "sourceMap": true,
+              "extractLicenses": false,
+              "namedChunks": true,
+              "fileReplacements": [
+                {
+                  "replace": "src/app/dev-hub/dev-hub.entry.ts",
+                  "with": "src/app/dev-hub/dev-hub.entry.carpooltest.ts"
+                }
+              ]
+            },
             "production": {
               "budgets": [
                 {

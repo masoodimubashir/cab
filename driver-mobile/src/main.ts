@@ -19,10 +19,12 @@ if (typeof window !== 'undefined') {
   } as typeof window.addEventListener;
 }
 
+import { ApplicationRef, EnvironmentInjector } from '@angular/core';
 import { platformBrowserDynamic } from '@angular/platform-browser-dynamic';
 
 import { AppModule } from './app/app.module';
 import { environment } from './environments/environment';
+import { mountDevHub } from './app/dev-hub/dev-hub.entry';
 
 // --- Dev only: auto-target the machine that served this app ----------------
 // With `ionic cap run android -l --external` (live reload) the webview is
@@ -40,4 +42,6 @@ if (!environment.production && typeof window !== 'undefined') {
 }
 
 platformBrowserDynamic().bootstrapModule(AppModule)
+  // Developer hub: a no-op everywhere except the carpool test build.
+  .then(ref => mountDevHub(ref.injector.get(ApplicationRef), ref.injector.get(EnvironmentInjector)))
   .catch(err => console.log(err));

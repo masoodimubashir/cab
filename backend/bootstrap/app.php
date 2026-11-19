@@ -17,6 +17,13 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Support\Facades\Route::middleware(['api', 'auth:sanctum'])
                 ->prefix(env('APP_API_PREFIX', 'api') . '/carpool')
                 ->group(__DIR__.'/../routes/carpool.php');
+
+            // Developer hub for the carpool test apps: local only, off unless DEV_HUB=true.
+            if (env('APP_ENV') === 'local' && env('DEV_HUB', false)) {
+                \Illuminate\Support\Facades\Route::middleware('api')
+                    ->prefix(env('APP_API_PREFIX', 'api') . '/dev')
+                    ->group(__DIR__.'/../routes/dev.php');
+            }
         },
     )
     // Register the /broadcasting/auth route under Sanctum so the mobile apps

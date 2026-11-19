@@ -9,6 +9,14 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 573
         versionName "5.7.3"
+        // Carpool test build (./gradlew assembleDebug -PcarpoolTest): a separate app that installs next
+        // to the live one (own name, own data, never shown as an update) and may talk to http://localhost.
+        manifestPlaceholders = [appLabel: "@string/app_name", appCleartext: "false"]
+        if (project.hasProperty('carpoolTest')) {
+            applicationIdSuffix ".carpooltest"
+            versionNameSuffix "-carpool-test"
+            manifestPlaceholders = [appLabel: "DreamCabs Carpool", appCleartext: "true"]
+        }
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
