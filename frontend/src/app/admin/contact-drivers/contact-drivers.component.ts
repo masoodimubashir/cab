@@ -10,6 +10,7 @@ import {
   IconComponent,
   InputComponent,
   ModalComponent,
+  FilterSelectComponent,
 } from '../../ui';
 
 type AudienceKey =
@@ -51,7 +52,7 @@ interface SendResult {
   imports: [
     CommonModule, FormsModule,
     ButtonComponent, ColumnComponent, DataTableComponent,
-    IconComponent, InputComponent, ModalComponent,
+    IconComponent, InputComponent, ModalComponent, FilterSelectComponent,
   ],
   template: `
     <div class="page">
@@ -107,6 +108,16 @@ interface SendResult {
               </li>
             </ul>
           </div>
+
+          <!-- Driver type: commercial by default, so today's messages reach the same people -->
+          <tm-filter-select
+            icon="car"
+            ariaLabel="Driver type filter"
+            allLabel="Commercial"
+            [options]="driverTypeOptions"
+            [value]="driverType"
+            (valueChange)="onDriverType($event)"
+          />
 
           <!-- Vehicle -->
           <div
@@ -700,10 +711,20 @@ export class ContactDriversComponent implements OnInit {
   }
 
   // ── Fetch ───────────────────────────────────────────────────────
+  /** 'commercial' | 'carpool' | 'all' (Carpool.md section 10). */
+  driverType: string = 'commercial';
+  readonly driverTypeOptions = [{ label: 'Carpool', value: 'carpool' }, { label: 'All types', value: 'all' }];
+
+  onDriverType(value: string): void {
+    this.driverType = value === 'carpool' || value === 'all' ? value : 'commercial';
+    this.selectedIds = new Set();
+    this.refreshAudience();
+  }
+
   refreshAudience(): void {
     if (this.audience === 'custom_csv') return;
     this.loading = true;
-    const params: string[] = [`to=${this.audience}`];
+    const params: string[] = [`to=${this.audience}`, `audience=${this.driverType}`];
     if (this.vehicleType) params.push(`vehicle_type=${encodeURIComponent(this.vehicleType)}`);
     this.api.get<{ data: AudienceRow[] }>(`/admin/contact-drivers/audience?${params.join('&')}`).subscribe({
       next: (res) => {
@@ -779,12 +800,14 @@ export class ContactDriversComponent implements OnInit {
     // Hand-picked subset → send driver_ids. Otherwise use the audience.
     if (this.selectedIds.size) {
       body['to'] = 'custom_csv';
+      body['audience'] = this.driverType;
       body['driver_ids'] = Array.from(this.selectedIds);
     } else if (this.audience === 'custom_csv') {
       body['to'] = 'custom_csv';
       body['driver_ids'] = this.csvDriverIds;
     } else {
       body['to'] = this.audience;
+      body['audience'] = this.driverType;
       if (this.vehicleType) body['vehicle_type'] = this.vehicleType;
     }
 

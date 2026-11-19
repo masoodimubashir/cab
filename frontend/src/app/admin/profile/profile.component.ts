@@ -1305,6 +1305,7 @@ export class ProfileComponent implements OnInit, OnDestroy {
       fleets: 'Franchise Fleet Fleets',
       safety: 'Safety Incidents & SOS',
       contact_drivers: 'Driver Communication',
+      carpool: 'Carpool Listings, Reports & Settings',
       operator_settings: 'Operator Platform Rules',
       managers: 'Admin Manager Accounts',
       roles_permissions: 'Roles & Access Control',

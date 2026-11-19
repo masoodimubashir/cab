@@ -271,11 +271,16 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
 
   /** Carpool tile (Carpool.md section 10): its own tile, not a ride mode, shown only while carpool is on. */
   carpoolOn = false;
+  carpoolTileName = 'Carpool';
+  carpoolTileImage: string | null = null;
   carpoolPicked = false;
 
   private checkCarpool(): void {
-    this.carpool.enabled().subscribe((on) => {
+    this.carpool.config().subscribe((cfg) => {
+      const on = cfg.enabled;
       this.carpoolOn = on;
+      this.carpoolTileName = cfg.tile_name || 'Carpool';
+      this.carpoolTileImage = cfg.tile_image_url || null;
       if (!on) this.carpoolPicked = false;
       this.cdr.markForCheck();
     });

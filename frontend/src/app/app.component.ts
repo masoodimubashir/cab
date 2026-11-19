@@ -205,6 +205,18 @@ export class AppComponent implements OnInit {
       });
     }
 
+    // Carpool group, after Drivers (Carpool.md section 10).
+    if (can('carpool')) {
+      operations.push({
+        label: 'Carpool', icon: 'car',
+        children: [
+          { label: 'Listings', icon: 'road', route: '/carpool/listings' },
+          { label: 'Reports', icon: 'alert-triangle', route: '/carpool/reports' },
+          { label: 'Settings', icon: 'cog', route: '/carpool/settings' },
+        ],
+      });
+    }
+
     if (can('safety'))          operations.push({ label: 'Safety',          icon: 'shield',     route: '/safety' });
 
     // --- Finance (Unified Money Ledger + Refunds) ---

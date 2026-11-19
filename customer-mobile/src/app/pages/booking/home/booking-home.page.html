@@ -187,8 +187,12 @@
         <!-- Carpool (M4): its own tile, not a ride mode; shown only while carpool is on. -->
         <button *ngIf="carpoolOn" type="button" [class.is-selected]="carpoolPicked" [attr.aria-pressed]="carpoolPicked"
           aria-controls="home-service-panel" (click)="pickCarpool()">
-          <span class="bh-service-art" aria-hidden="true"><ion-icon name="people-outline"></ion-icon></span>
-          <strong>Carpool</strong>
+          <span class="bh-service-art" aria-hidden="true">
+            <img *ngIf="resolveHomeImageUrl(carpoolTileImage) as imageUrl; else carpoolIcon" class="bh-service-image"
+              [src]="imageUrl" alt="" (error)="carpoolTileImage = null">
+            <ng-template #carpoolIcon><ion-icon name="people-outline"></ion-icon></ng-template>
+          </span>
+          <strong>{{ carpoolTileName }}</strong>
         </button>
       </div>
     </div>

@@ -395,6 +395,7 @@ class AdminDriversController
                 'carpool_vehicle' => $driver->isCarpool() && $driver->carpoolVehicle
                     ? (new \App\Http\Resources\Carpool\CarpoolVehicleResource($driver->carpoolVehicle))->resolve()
                     : null,
+                'carpool' => $driver->isCarpool() ? $this->carpoolBlock($driver) : null,
                 'ride_type_id' => $driver->ride_type_id,
                 'ride_type_name' => $driver->rideType?->name,
                 'vehicle_type_id' => $driver->vehicle_type_id,
@@ -440,9 +441,11 @@ class AdminDriversController
             'cityVehicleType:id,display_name',
             'city:id,name',
             'cities:id,name',
+            'carpoolVehicle',
         ]);
 
         $user = $driver->user;
+        $car = $driver->isCarpool() ? $driver->carpoolVehicle : null;
 
         $totalRides = Trip::query()
             ->where('driver_id', $driver->user_id)
@@ -480,9 +483,11 @@ class AdminDriversController
                 'city_vehicle_type_id' => $driver->city_vehicle_type_id,
                 'city_vehicle_type_name' => $driver->cityVehicleType?->display_name,
                 'vehicle_type' => $driver->vehicle_type,
-                'vehicle_model' => $driver->vehicle_model,
-                'vehicle_color' => $driver->vehicle_color,
-                'vehicle_reg_no' => $driver->vehicle_reg_no,
+                'vehicle_model' => $car ? trim($car->make . ' ' . $car->model) : $driver->vehicle_model,
+                'vehicle_color' => $car ? $car->colour : $driver->vehicle_color,
+                'vehicle_reg_no' => $car ? $car->plate : $driver->vehicle_reg_no,
+                'driver_type' => $driver->driver_type,
+                'carpool' => $driver->isCarpool() ? $this->carpoolBlock($driver) : null,
                 'city_id' => $driver->city_id,
                 'city_ids' => $driver->city_ids,
                 'cities' => $driver->cities->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])->values(),
@@ -597,8 +602,38 @@ class AdminDriversController
         // A blocked driver must not keep receiving dispatches.
         $driver->is_online = false;
         $driver->save();
+        $this->endCarpools($driver); // A30
 
         return response()->json(['message' => 'Driver blocked.', 'driver' => $driver->fresh('user')]);
+    }
+
+    /** The carpool part of the driver drawer: plan, counts, rating (with the latest comments, A34) and access. */
+    private function carpoolBlock(Driver $driver): array
+    {
+        $user = $driver->user;
+        $plan = $user ? app(\App\Services\Carpool\CarpoolPlanService::class)->activePlan($user) : null;
+        $listings = \App\Models\Carpool\CarpoolListing::query()->where('driver_id', $driver->id);
+        $rating = app(\App\Services\Carpool\CarpoolPresenter::class)->ratingOf($driver->user_id);
+
+        return [
+            'plan_active_until' => $plan?->expires_at,
+            'published' => (clone $listings)->where('status', \App\Models\Carpool\CarpoolListing::STATUS_PUBLISHED)->count(),
+            'completed' => (clone $listings)->where('status', \App\Models\Carpool\CarpoolListing::STATUS_COMPLETED)->count(),
+            'rating_avg' => $rating['avg'],
+            'rating_count' => $rating['count'],
+            'comments' => \App\Models\Carpool\CarpoolRating::query()->where('rated_id', $driver->user_id)->whereNotNull('comment')
+                ->orderByDesc('id')->limit(10)->get(['score', 'comment', 'created_at']),
+            'banned' => (bool) $user?->carpool_banned_at,
+            'ban_reason' => $user?->carpool_ban_reason,
+        ];
+    }
+
+    /** A30: a carpool driver who is blocked, deactivated or deleted loses their upcoming carpools. */
+    private function endCarpools(Driver $driver): void
+    {
+        if ($driver->isCarpool()) {
+            app(\App\Services\Carpool\CarpoolAdminService::class)->cancelUpcomingOf($driver);
+        }
     }
 
     public function unblock(Driver $driver)
@@ -661,6 +696,7 @@ class AdminDriversController
         $driver->deactivated_reason = '[DELETED] ' . $data['reason'];
         $driver->is_online = false;
         $driver->save();
+        $this->endCarpools($driver); // A30
 
         $user->delete();
 
@@ -1362,6 +1398,9 @@ class AdminDriversController
         }
 
         $driver->save();
+        if (! $data['active']) {
+            $this->endCarpools($driver); // A30
+        }
 
         return response()->json(['driver' => $driver->fresh()]);
     }

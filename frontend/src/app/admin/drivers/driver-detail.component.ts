@@ -9,6 +9,7 @@ import { forkJoin } from 'rxjs';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
+import { CarpoolAccessComponent } from '../carpool/carpool-access.component';
 import { DriverRouteGroupsPanelComponent } from './driver-route-groups-panel.component';
 import {
   ButtonComponent,
@@ -75,6 +76,17 @@ interface DriverProfile {
   deactivated_at: string | null;
   deactivated_reason: string | null;
   rating_avg: number | null;
+  driver_type?: 'commercial' | 'carpool';
+  carpool?: {
+    plan_active_until: string | null;
+    published: number;
+    completed: number;
+    rating_avg: number | null;
+    rating_count: number;
+    comments: { score: number; comment: string; created_at: string }[];
+    banned: boolean;
+    ban_reason: string | null;
+  } | null;
   rating_count: number | null;
   wallet_balance: number;
   pending_payout?: number;
@@ -117,6 +129,7 @@ const BLOCK_REASONS = [
   selector: 'app-driver-detail',
   standalone: true,
   imports: [
+    CarpoolAccessComponent,
     CommonModule,
     FormsModule,
     MultiSelectModule,
@@ -148,7 +161,7 @@ const BLOCK_REASONS = [
         </div>
 
         <div class="top-action-bar__right">
-          <button class="btn-action btn-action--primary" (click)="openPayout()">
+          <button class="btn-action btn-action--primary" *ngIf="profile.driver_type !== 'carpool'" (click)="openPayout()">
             <tm-icon name="rupee" [size]="13" />
             <span>Record Payout</span>
           </button>
@@ -208,7 +221,7 @@ const BLOCK_REASONS = [
 
         <!-- 5 Unified Metric Columns -->
         <div class="hero-metrics-strip">
-          <div class="metric-cell" [class.metric-cell--neg]="(profile.wallet_balance || 0) < 0">
+          <div class="metric-cell" *ngIf="profile.driver_type !== 'carpool'" [class.metric-cell--neg]="(profile.wallet_balance || 0) < 0">
             <span class="m-label">Wallet Balance</span>
             <div class="m-value-wrap">
               <strong class="m-value">₹ {{ (profile.wallet_balance || 0) | number:'1.2-2' }}</strong>
@@ -218,7 +231,7 @@ const BLOCK_REASONS = [
             </div>
           </div>
 
-          <div class="metric-cell metric-cell--payout">
+          <div class="metric-cell metric-cell--payout" *ngIf="profile.driver_type !== 'carpool'">
             <span class="m-label">Pending Payout</span>
             <div class="m-value-wrap">
               <strong class="m-value text-emerald">₹ {{ (profile.pending_payout || 0) | number:'1.2-2' }}</strong>
@@ -227,8 +240,11 @@ const BLOCK_REASONS = [
           </div>
 
           <div class="metric-cell">
-            <span class="m-label">Subscription Plan</span>
-            <div class="m-value-wrap">
+            <span class="m-label">{{ profile.driver_type === 'carpool' ? 'Carpool Plan' : 'Subscription Plan' }}</span>
+            <div class="m-value-wrap" *ngIf="profile.driver_type === 'carpool'">
+              <strong class="m-value m-value--sm">{{ profile.carpool?.plan_active_until ? 'Until ' + (profile.carpool?.plan_active_until | date:'d MMM y') : 'No plan' }}</strong>
+            </div>
+            <div class="m-value-wrap" *ngIf="profile.driver_type !== 'carpool'">
               <strong class="m-value m-value--sm">
                 {{ profile.active_subscription ? profile.active_subscription.plan_title : 'Standard 10%' }}
               </strong>
@@ -236,7 +252,7 @@ const BLOCK_REASONS = [
             </div>
           </div>
 
-          <div class="metric-cell">
+          <div class="metric-cell" *ngIf="profile.driver_type !== 'carpool'">
             <span class="m-label">Completed Rides</span>
             <div class="m-value-wrap">
               <strong class="m-value">{{ profile.total_rides || 0 }}</strong>
@@ -244,7 +260,7 @@ const BLOCK_REASONS = [
             </div>
           </div>
 
-          <div class="metric-cell">
+          <div class="metric-cell" *ngIf="profile.driver_type !== 'carpool'">
             <span class="m-label">GPS Telemetry</span>
             <div class="m-value-wrap">
               <strong class="m-value m-value--sm" [class.text-danger]="isLocationStale" [class.text-emerald]="!isLocationStale && profile.is_online">
@@ -271,18 +287,23 @@ const BLOCK_REASONS = [
           <span class="sc-head"><tm-icon name="car" [size]="12" /> Vehicle Specifications</span>
           <div class="sc-row"><span class="sc-lbl">Reg Plate:</span><span class="sc-val mono">{{ profile.vehicle_reg_no || '—' }}</span></div>
           <div class="sc-row"><span class="sc-lbl">Model & Color:</span><span class="sc-val">{{ profile.vehicle_model || '—' }} ({{ profile.vehicle_color || '—' }})</span></div>
-          <div class="sc-row"><span class="sc-lbl">Category & City:</span><span class="sc-val">{{ profile.vehicle_type_name || profile.vehicle_type || '—' }} · {{ profile.city_name || 'All' }}</span></div>
+          <div class="sc-row"><span class="sc-lbl">Category & City:</span><span class="sc-val">{{ profile.driver_type === 'carpool' ? 'Private car' : (profile.vehicle_type_name || profile.vehicle_type || '—') }} · {{ profile.city_name || 'All' }}</span></div>
         </div>
 
         <div class="spec-col">
           <span class="sc-head"><tm-icon name="shield" [size]="12" /> Subscription Details</span>
-          <ng-container *ngIf="profile.active_subscription; else noSubCol">
+          <ng-container *ngIf="profile.driver_type === 'carpool'">
+            <div class="sc-row"><span class="sc-lbl">Plan:</span><span class="sc-val">{{ profile.carpool?.plan_active_until ? 'Active until ' + (profile.carpool?.plan_active_until | date:'mediumDate') : 'None' }}</span></div>
+            <div class="sc-row"><span class="sc-lbl">Carpools:</span><span class="sc-val">{{ profile.carpool?.published }} published, {{ profile.carpool?.completed }} completed</span></div>
+            <div class="sc-row"><span class="sc-lbl">Rating:</span><span class="sc-val">{{ profile.carpool?.rating_avg ? profile.carpool?.rating_avg + ' (' + profile.carpool?.rating_count + ')' : (profile.carpool?.rating_count || 0) + ' ratings' }}</span></div>
+          </ng-container>
+          <ng-container *ngIf="profile.driver_type !== 'carpool' && profile.active_subscription; else noSubCol">
             <div class="sc-row"><span class="sc-lbl">Fee Paid:</span><span class="sc-val mono">₹ {{ profile.active_subscription.amount_paid | number:'1.2-2' }} ({{ profile.active_subscription.payment_method | uppercase }})</span></div>
             <div class="sc-row"><span class="sc-lbl">Commission:</span><span class="sc-val text-emerald font-bold">{{ profile.active_subscription.commission_percent }}% (Keep {{ 100 - profile.active_subscription.commission_percent }}%)</span></div>
             <div class="sc-row"><span class="sc-lbl">Expires:</span><span class="sc-val">{{ profile.active_subscription.expires_at | date:'mediumDate' }}</span></div>
           </ng-container>
           <ng-template #noSubCol>
-            <div class="sc-row"><span class="sc-lbl">Status:</span><span class="sc-val text-muted">No active plan · 10% Platform fee</span></div>
+            <div class="sc-row" *ngIf="profile.driver_type !== 'carpool'"><span class="sc-lbl">Status:</span><span class="sc-val text-muted">No active plan · 10% Platform fee</span></div>
           </ng-template>
         </div>
 
@@ -294,6 +315,8 @@ const BLOCK_REASONS = [
             <span class="sc-lbl">Settings:</span>
             <button class="sc-btn" (click)="openUnsub()">Manage Push Alerts</button>
           </div>
+          <app-carpool-access *ngIf="profile.driver_type === 'carpool' && profile.carpool"
+            [userId]="profile.user_id" [banned]="profile.carpool.banned" [reason]="profile.carpool.ban_reason"></app-carpool-access>
         </div>
       </section>
 
@@ -304,7 +327,7 @@ const BLOCK_REASONS = [
         <header class="workspace-tabs-header">
           <nav class="console-tabs-nav" role="tablist">
             <button
-              *ngFor="let t of historyTabs"
+              *ngFor="let t of visibleTabs"
               type="button"
               class="c-tab-btn"
               [class.is-active]="activeTab === t.key"
@@ -1953,6 +1976,11 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     { key: 'specs',     label: 'Full Specifications',   icon: 'user' },
   ];
 
+  /** A carpool driver has no rides, wallet, cancellations or stands: only the specifications (documents). */
+  get visibleTabs(): { key: TabKey; label: string; icon: 'car' | 'tag' | 'x' | 'road' | 'user' }[] {
+    return this.profile?.driver_type === 'carpool' ? this.historyTabs.filter((t) => t.key === 'specs') : this.historyTabs;
+  }
+
   constructor(
     private route: ActivatedRoute,
     private router: Router,
@@ -2589,6 +2617,9 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       next: (res) => {
         this.profile = res.driver;
         this.unsubPush = this.profile?.push_unsubscribed ?? false;
+        if (this.profile?.driver_type === 'carpool' && this.activeTab !== 'specs') {
+          this.setTab('specs');
+        }
       },
       error: (err) =>
         this.toast.error(

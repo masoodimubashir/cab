@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\Storage;
     'private_service_image_path',
     'fixed_service_image_path',
     'shuttle_service_image_path',
+  'carpool_service_name',
+  'carpool_service_image_path',
 
     // Tipping
     'customer_tip_value_1',

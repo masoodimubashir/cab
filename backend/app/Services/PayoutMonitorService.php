@@ -468,6 +468,44 @@ class PayoutMonitorService
                         'driver_phone' => $user?->phone,
                     ]);
                 }
+
+                // Carpool plan payments: their own movement type, so no commercial total includes them (Carpool.md section 10).
+                $carpoolSubs = \App\Models\DriverSubscription::query()
+                    ->whereHas('plan', fn ($q) => $q->where('audience', \App\Models\SubscriptionPlan::AUDIENCE_CARPOOL))
+                    ->where('status', \App\Models\DriverSubscription::STATUS_ACTIVE)
+                    ->where('is_queued', false)
+                    ->with(['driver', 'plan:id,title'])
+                    ->orderByDesc('created_at');
+                if (!empty($fromDate) && !empty($toDate)) {
+                    $carpoolSubs->whereBetween('created_at', [$fromDate, $toDate]);
+                } elseif (!empty($fromDate)) {
+                    $carpoolSubs->whereDate('created_at', $fromDate);
+                }
+                if (!empty($search)) {
+                    $term = trim($search);
+                    $carpoolSubs->where(function ($sq) use ($term) {
+                        $sq->where('payment_reference', 'LIKE', "%{$term}%")
+                           ->orWhereHas('plan', fn ($pq) => $pq->where('title', 'LIKE', "%{$term}%"))
+                           ->orWhereHas('driver', fn ($uq) => $uq->where('name', 'LIKE', "%{$term}%")->orWhere('phone', 'LIKE', "%{$term}%"));
+                    });
+                }
+                foreach ($carpoolSubs->limit(100)->get() as $sub) {
+                    $rowsCollection->push([
+                        'id' => 'carpool_plan_' . $sub->id,
+                        'trip_id' => null,
+                        'payment_id' => null,
+                        'type' => 'carpool_plan',
+                        'party' => 'operator',
+                        'direction' => 'in',
+                        'amount' => (float) $sub->amount_paid,
+                        'razorpay_ref' => 'Carpool plan: ' . ($sub->plan?->title ?? 'Plan') . ' · UPI ' . ($sub->payment_reference ?: '#SUB-' . str_pad($sub->id, 4, '0', STR_PAD_LEFT)),
+                        'created_at' => optional($sub->created_at)->toIso8601String(),
+                        'customer_name' => null,
+                        'customer_phone' => null,
+                        'driver_name' => $sub->driver?->name,
+                        'driver_phone' => $sub->driver?->phone,
+                    ]);
+                }
             }
         }
 

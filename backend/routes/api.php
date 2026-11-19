@@ -331,6 +331,26 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::patch('/admin/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'globalUpdate'])->middleware('permission:subscriptions');
     Route::delete('/admin/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'globalDestroy'])->middleware('permission:subscriptions');
 
+    // ── Carpool (Carpool.md section 10) ─────────────────────────────
+    Route::prefix('admin/carpool')->middleware('permission:carpool')->group(function () {
+        $c = \App\Http\Controllers\Admin\AdminCarpoolController::class;
+        Route::get('/listings', [$c, 'listings']);
+        Route::get('/listings/{listing}', [$c, 'listing']);
+        Route::post('/listings/{listing}/cancel', [$c, 'cancelListing']);
+        Route::get('/reports', [$c, 'reports']);
+        Route::get('/reports/{report}', [$c, 'report']);
+        Route::post('/reports/{report}/remove-message', [$c, 'removeMessage']);
+        Route::post('/reports/{report}/close', [$c, 'closeReport']);
+        Route::get('/users/{user}/ban-impact', [$c, 'banImpact']);
+        Route::post('/users/{user}/ban', [$c, 'ban']);
+        Route::post('/users/{user}/restore', [$c, 'restore']);
+        Route::get('/settings', [$c, 'settings']);
+        Route::patch('/settings', [$c, 'updateSettings']);
+        Route::post('/banned-words', [$c, 'addWord']);
+        Route::patch('/banned-words/{word}', [$c, 'updateWord']);
+        Route::delete('/banned-words/{word}', [$c, 'deleteWord']);
+    });
+
     // ── Customer Management ─────────────────────────────────────────
     Route::prefix('admin/customers')->middleware('permission:customers')->group(function () {
         Route::get('/', [AdminCustomersController::class, 'index']);

@@ -152,7 +152,7 @@ class FinanceController extends Controller
 
         if ($source === null || $source === 'subscription') {
             $subs = DriverSubscription::query()
-                ->ofCommercialPlans() // carpool plan payments join the ledger in M7
+                ->ofCommercialPlans() // carpool plan payments are listed separately below
                 ->where('status', DriverSubscription::STATUS_ACTIVE)
                 ->where('is_queued', false)
                 ->whereBetween('created_at', [$from, $to])
@@ -179,12 +179,40 @@ class FinanceController extends Controller
             }
         }
 
+        // Carpool plan payments (UPI) carry a "Carpool plan" label. They are listed but kept out of the
+        // totals below, so the commercial numbers do not move (Carpool.md section 10).
+        if ($source === null || $source === 'carpool_plan') {
+            $carpool = DriverSubscription::query()
+                ->whereHas('plan', fn ($q) => $q->where('audience', \App\Models\SubscriptionPlan::AUDIENCE_CARPOOL))
+                ->where('status', DriverSubscription::STATUS_ACTIVE)
+                ->where('is_queued', false)
+                ->whereBetween('created_at', [$from, $to])
+                ->with(['driver:id,name,phone', 'plan:id,title'])
+                ->orderByDesc('created_at')->limit(200)->get();
+            foreach ($carpool as $s) {
+                $rows->push([
+                    'id' => 'carpool_plan_' . $s->id,
+                    'source' => 'carpool_plan',
+                    'kind' => 'subscription',
+                    'at' => optional($s->created_at)->toIso8601String(),
+                    'amount' => (float) $s->amount_paid,
+                    'method' => $s->payment_method ?? 'upi',
+                    'user_id' => $s->driver_user_id,
+                    'user_name' => $s->driver?->name ?? 'Driver',
+                    'user_phone' => $s->driver?->phone ?? '—',
+                    'label' => 'Carpool plan: ' . ($s->plan?->title ?? 'Plan'),
+                    'reference' => $s->payment_reference ?? ('#SUB-' . str_pad($s->id, 4, '0', STR_PAD_LEFT)),
+                    'status' => 'ACTIVE',
+                ]);
+            }
+        }
+
         $rows = $rows->sortByDesc('at')->values();
 
         $online = $rows->whereIn('source', ['fixed', 'shuttle'])->where('method', 'razorpay')->sum('amount')
             + $rows->where('source', 'topup')->sum('amount')
             + $rows->where('source', 'subscription')->where('method', '!=', 'wallet')->sum('amount');
-        $cash = $rows->where('method', 'cash')->sum('amount');
+        $cash = $rows->where('source', '!=', 'carpool_plan')->where('method', 'cash')->sum('amount');
 
         return response()->json([
             'range' => ['from' => $from->toDateString(), 'to' => $to->toDateString()],

@@ -5,9 +5,10 @@ import {
   Input,
   Output,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent, IconComponent } from '../../../ui';
+import { CarpoolAccessComponent } from '../../carpool/carpool-access.component';
 
 import { DriverProfile, VehicleForm } from './driver-detail.types';
 
@@ -15,7 +16,7 @@ import { DriverProfile, VehicleForm } from './driver-detail.types';
   selector: 'app-driver-profile-pane',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent],
+  imports: [CommonModule, DatePipe, FormsModule, ButtonComponent, IconComponent, CarpoolAccessComponent],
   template: `
     <header class="head" *ngIf="driver">
       <span
@@ -80,6 +81,21 @@ import { DriverProfile, VehicleForm } from './driver-detail.types';
         </div>
       </ng-container>
       <ng-template #noCar><p class="card__hint">No car details yet.</p></ng-template>
+    </section>
+
+    <section class="card" *ngIf="driver?.driver_type === 'carpool' && driver?.carpool as cp">
+      <header class="card__head">
+        <h3 class="card__title"><tm-icon name="road" [size]="16" /> Carpool</h3>
+      </header>
+      <div class="grid two">
+        <div class="field"><label class="lbl">Plan</label><div class="ro-value">{{ cp.plan_active_until ? 'Active until ' + (cp.plan_active_until | date:'d MMM y') : 'None' }}</div></div>
+        <div class="field"><label class="lbl">Carpools</label><div class="ro-value">{{ cp.published }} published, {{ cp.completed }} completed</div></div>
+        <div class="field"><label class="lbl">Rating</label><div class="ro-value">{{ cp.rating_avg ? cp.rating_avg + ' (' + cp.rating_count + ')' : cp.rating_count + ' ratings' }}</div></div>
+      </div>
+      <ul class="rating-comments" *ngIf="cp.comments.length">
+        <li *ngFor="let c of cp.comments">{{ c.score }}★ {{ c.comment }}</li>
+      </ul>
+      <app-carpool-access [userId]="driver!.user_id" [banned]="cp.banned" [reason]="cp.ban_reason"></app-carpool-access>
     </section>
 
     <section class="card" *ngIf="driver && driver.driver_type !== 'carpool'">
@@ -234,6 +250,7 @@ import { DriverProfile, VehicleForm } from './driver-detail.types';
     .small { font-size: 12px; }
 
     /* Card */
+    .rating-comments { margin: 8px 0; padding-left: 18px; font-size: 12px; color: var(--tm-text-muted); }
     .card {
       background: var(--tm-surface);
       border: 1px solid var(--tm-line);

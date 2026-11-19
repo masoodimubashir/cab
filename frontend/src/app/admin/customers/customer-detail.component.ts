@@ -1,3 +1,4 @@
+import { CarpoolAccessComponent } from '../carpool/carpool-access.component';
 import { AfterViewInit, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -35,6 +36,8 @@ interface CustomerProfile {
   os_version: string | null;
   device_type: string | null;
   is_suspended: boolean;
+  carpool_banned?: boolean;
+  carpool_ban_reason?: string | null;
   suspended_reason: string | null;
   duplicate_registration: boolean;
   push_unsubscribed: boolean;
@@ -60,6 +63,7 @@ const BLOCK_REASONS = [
   selector: 'app-customer-detail',
   standalone: true,
   imports: [
+    CarpoolAccessComponent,
     CommonModule,
     FormsModule,
     DatePipe,
@@ -235,6 +239,7 @@ const BLOCK_REASONS = [
               <div class="kv-row" *ngIf="profile.is_suspended"><span>Reason</span><strong>{{ profile.suspended_reason || '—' }}</strong></div>
               <div class="kv-row"><span>Registered</span><strong>{{ profile.date_registered | date:'MMMM d, y' }}</strong></div>
             </div>
+            <app-carpool-access [userId]="profile.id" [banned]="!!profile.carpool_banned" [reason]="profile.carpool_ban_reason ?? null"></app-carpool-access>
           </section>
 
           <section class="detail-card">

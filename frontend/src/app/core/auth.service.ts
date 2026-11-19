@@ -140,6 +140,7 @@ export class AuthService {
       ['fleets', '/settings/fleets'],
       ['safety', '/safety'],
       ['contact_drivers', '/contact-drivers'],
+      ['carpool', '/carpool/listings'],
       ['operator_settings', '/settings/operator'],
       ['managers', '/managers'],
       ['roles_permissions', '/roles-permissions'],

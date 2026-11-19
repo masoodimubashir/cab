@@ -2218,6 +2218,7 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
     { key: 'transfer', label: 'Driver Payouts' },
     { key: 'topup', label: 'Wallet Recharges' },
     { key: 'subscription', label: 'Subscriptions' },
+    { key: 'carpool_plan', label: 'Carpool Plans' },
     { key: 'retained', label: 'Commissions' },
     { key: 'gateway_fee', label: 'Gateway Fees' },
     { key: 'held', label: 'On Hold' },
@@ -2638,6 +2639,7 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
       case 'transfer': return 'Driver Share';
       case 'topup': return 'Wallet Recharge';
       case 'subscription': return 'Subscription';
+      case 'carpool_plan': return 'Carpool Plan';
       case 'cash_retained': return 'Cash Retained';
       case 'retained': return 'Platform Fee';
       case 'gateway_fee': return 'Gateway Fee';

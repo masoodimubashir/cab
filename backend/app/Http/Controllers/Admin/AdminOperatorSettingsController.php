@@ -20,7 +20,7 @@ class AdminOperatorSettingsController
     public function update(Request $request)
     {
         $imageRules = [];
-        foreach (RideType::MODES as $mode) {
+        foreach ([...RideType::MODES, 'carpool'] as $mode) {
             $imageRules[$mode . '_service_image'] = ['sometimes', 'required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'];
             $imageRules[$mode . '_remove_service_image'] = ['sometimes', 'boolean'];
         }
@@ -29,6 +29,7 @@ class AdminOperatorSettingsController
             'private_service_name' => ['nullable', 'string', 'max:40'],
             'fixed_service_name' => ['nullable', 'string', 'max:40'],
             'shuttle_service_name' => ['nullable', 'string', 'max:40'],
+            'carpool_service_name' => ['nullable', 'string', 'max:40'],
 
             // Tipping
             'customer_tip_value_1' => ['nullable', 'integer', 'min:0', 'max:10000'],
@@ -119,7 +120,7 @@ class AdminOperatorSettingsController
         }
 
         $images = [];
-        foreach (RideType::MODES as $mode) {
+        foreach ([...RideType::MODES, 'carpool'] as $mode) {
             $upload = $mode . '_service_image';
             $remove = $mode . '_remove_service_image';
             if (isset($data[$upload]) || !empty($data[$remove])) {
@@ -143,7 +144,7 @@ class AdminOperatorSettingsController
     private function settingsPayload(OperatorSetting $settings): array
     {
         $payload = $settings->toArray();
-        foreach (RideType::MODES as $mode) {
+        foreach ([...RideType::MODES, 'carpool'] as $mode) {
             $payload[$mode . '_service_image_url'] = $settings->serviceImageUrl($mode);
         }
 

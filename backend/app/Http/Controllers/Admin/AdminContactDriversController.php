@@ -181,8 +181,13 @@ class AdminContactDriversController
         $to = strtolower((string) $request->input('to', $request->query('to', 'active')));
         $vehicleType = $request->input('vehicle_type', $request->query('vehicle_type'));
 
-        // Commercial only until the audience filter arrives (Carpool.md section 10).
-        $query = Driver::query()->commercial();
+        // Audience (Carpool.md section 10): commercial by default so today's messages go to the same people.
+        $audience = (string) $request->input('audience', $request->query('audience', 'commercial'));
+        $query = match ($audience) {
+            'carpool' => Driver::query()->carpool(),
+            'all' => Driver::query(),
+            default => Driver::query()->commercial(),
+        };
 
         switch ($to) {
             case 'active':

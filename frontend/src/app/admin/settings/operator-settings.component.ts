@@ -16,9 +16,11 @@ interface OperatorSettings {
   private_service_name: string | null;
   fixed_service_name: string | null;
   shuttle_service_name: string | null;
+  carpool_service_name?: string | null;
   private_service_image_url: string | null;
   fixed_service_image_url: string | null;
   shuttle_service_image_url: string | null;
+  carpool_service_image_url?: string | null;
   tips_enabled: boolean;
   customer_tip_value_1: number;
   customer_tip_value_2: number;
@@ -56,7 +58,7 @@ interface OperatorSettings {
   ride_cancellation_msg: string | null;
 }
 
-type ServiceMode = 'private' | 'fixed' | 'shuttle';
+type ServiceMode = 'private' | 'fixed' | 'shuttle' | 'carpool';
 
 type SectionKey =
   | 'tipping'
@@ -717,6 +719,7 @@ export class OperatorSettingsComponent implements OnInit, OnDestroy {
     { mode: 'private', label: 'Private', nameField: 'private_service_name' },
     { mode: 'fixed', label: 'Fixed', nameField: 'fixed_service_name' },
     { mode: 'shuttle', label: 'Shuttle', nameField: 'shuttle_service_name' },
+    { mode: 'carpool', label: 'Carpool', nameField: 'carpool_service_name' },
   ] as const;
   private readonly serviceImageEdits = new Map<ServiceMode, { file: File | null; preview: string | null }>();
   loading = false;
@@ -793,7 +796,7 @@ export class OperatorSettingsComponent implements OnInit, OnDestroy {
       'subscription_popup_button2',
     ],
     services: [], // per-toggle instant PATCH, not part of the settings form
-    serviceNames: ['private_service_name', 'fixed_service_name', 'shuttle_service_name'],
+    serviceNames: ['private_service_name', 'fixed_service_name', 'shuttle_service_name', 'carpool_service_name'],
     // SMS keys dropped from the UI on purpose: SMS is OTP-only (login +
     // boarding, always on) so the old SMS toggles are dead switches.
     notifications: [

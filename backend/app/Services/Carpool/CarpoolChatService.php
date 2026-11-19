@@ -186,6 +186,11 @@ class CarpoolChatService
 
         [$clean, $flagged] = $this->mask($body);
         $m = $this->store($c, $user->id, 'text', $clean, null, $flagged ? 'masked' : 'ok', $flagged ? 'banned word' : null);
+        if ($flagged) {
+            // Only admins reading a report ever see this; it is never part of a chat payload.
+            $m->original_body = $body;
+            $m->save();
+        }
         $this->pushOthers($c, $user, $m);
 
         return $m;
@@ -323,6 +328,7 @@ class CarpoolChatService
     public function report(User $reporter, array $data): CarpoolReport
     {
         $messageText = null;
+        $originalText = null;
         $messageId = null;
         $listingId = $data['listing_id'] ?? null;
         if (! empty($data['message_id'])) {
@@ -334,6 +340,7 @@ class CarpoolChatService
             $reportedId = (int) $msg->sender_id;
             $messageId = $msg->id;
             $messageText = $msg->body;
+            $originalText = $msg->original_body;
             $listingId = $msg->conversation->listing_id;
         } else {
             $reportedId = (int) ($data['user_id'] ?? 0);
@@ -347,7 +354,7 @@ class CarpoolChatService
 
         return CarpoolReport::query()->create([
             'reporter_id' => $reporter->id, 'reported_user_id' => $reportedId, 'message_id' => $messageId,
-            'message_text' => $messageText, 'listing_id' => $listingId,
+            'message_text' => $messageText, 'original_text' => $originalText, 'listing_id' => $listingId,
             'reason' => $data['reason'], 'details' => isset($data['details']) ? mb_substr((string) $data['details'], 0, 1000) : null,
         ]);
     }
@@ -360,8 +367,11 @@ class CarpoolChatService
         CarpoolConversation::query()->whereNull('ended_at')
             ->whereHas('listing', fn ($q) => $q->whereNotIn('status', CarpoolListing::LIVE))->update(['ended_at' => now()]);
         $days = $this->retentionDays();
+        $due = CarpoolConversation::query()->whereNotNull('ended_at')->where('ended_at', '<', now()->subDays($days));
+        // Keep a note that the chats existed, so the trip says "This chat was deleted" (B1, Option A).
+        CarpoolListing::query()->whereIn('id', (clone $due)->select('listing_id'))->whereNull('chats_deleted_at')->update(['chats_deleted_at' => now()]);
 
-        return CarpoolConversation::query()->whereNotNull('ended_at')->where('ended_at', '<', now()->subDays($days))->delete();
+        return $due->delete();
     }
 
     // ---- Internals ----

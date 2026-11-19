@@ -20,6 +20,16 @@ export interface DriverProfile {
   avatar_url?: string | null;
   driver_type?: 'commercial' | 'carpool';
   carpool_vehicle?: CarpoolVehicle | null;
+  carpool?: {
+    plan_active_until: string | null;
+    published: number;
+    completed: number;
+    rating_avg: number | null;
+    rating_count: number;
+    comments: { score: number; comment: string; created_at: string }[];
+    banned: boolean;
+    ban_reason: string | null;
+  } | null;
   ride_type_id: number | null;
   ride_type_name: string | null;
   vehicle_type_id: number | null;

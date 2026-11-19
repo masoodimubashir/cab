@@ -43,7 +43,7 @@ class AdminCustomersController
             ->whereHas('roles', fn ($q) => $q->where('role', 'customer'))
             ->select([
                 'id', 'name', 'email', 'phone', 'last_login_at',
-                'address', 'created_at', 'is_suspended',
+                'address', 'created_at', 'is_suspended', 'carpool_banned_at',
                 'avatar_path',
             ])
             ->withCount(['tripsAsCustomer as total_rides'])
@@ -60,6 +60,11 @@ class AdminCustomersController
                   ->orWhere('email', 'like', "%{$search}%")
                   ->orWhere('id', $search);
             });
+        }
+
+        // Carpool access filter (Carpool.md section 10): ?carpool=banned
+        if ($request->query('carpool') === 'banned') {
+            $query->whereNotNull('carpool_banned_at');
         }
 
         // "Customers with Docs" tab — customers who have ever uploaded any document.
@@ -113,6 +118,9 @@ class AdminCustomersController
                 'os_version' => $user->os_version,
                 'device_type' => $user->device_type,
                 'is_suspended' => (bool) $user->is_suspended,
+                'carpool_banned' => (bool) $user->carpool_banned_at,
+                'carpool_banned_at' => $user->carpool_banned_at,
+                'carpool_ban_reason' => $user->carpool_ban_reason,
                 'suspended_reason' => $user->suspended_reason,
                 'suspended_at' => $user->suspended_at,
                 'duplicate_registration' => (bool) $user->duplicate_registration,

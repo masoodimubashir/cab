@@ -35,6 +35,9 @@ class ConfigController extends Controller
             'message_max_chars' => (int) config('carpool.message_max_chars'),
             'chat_retention_days' => max(1, (int) $settings->chat_retention_days),
             'timezone' => (string) config('carpool.timezone'),
+            // Tile name and picture from Operator Settings (the apps fall back to "Carpool" and an icon).
+            'tile_name' => \App\Models\OperatorSetting::instance()->carpool_service_name ?: null,
+            'tile_image_url' => \App\Models\OperatorSetting::instance()->serviceImageUrl('carpool'),
         ]);
     }
 }

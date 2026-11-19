@@ -23,6 +23,7 @@ import {
   IconComponent,
   InputComponent,
   ModalComponent,
+  FilterSelectComponent,
 } from '../../ui';
 
 interface CustomerRow {
@@ -47,6 +48,7 @@ interface CustomerRow {
     FormsModule,
     RouterLink,
     DatePipe,
+    FilterSelectComponent,
     ButtonComponent,
     ColumnComponent,
     DataTableComponent,
@@ -100,6 +102,14 @@ interface CustomerRow {
 
         <!-- Toolbar: filters on the RIGHT -->
         <ng-container slot="filters">
+          <tm-filter-select
+            icon="car"
+            ariaLabel="Carpool access filter"
+            allLabel="Carpool access"
+            [options]="[{ label: 'Carpool banned', value: 'banned' }]"
+            [value]="carpoolFilter"
+            (valueChange)="onCarpoolFilter($event)"
+          />
           <!-- Date range picker (Dan Grossman daterangepicker) — filters by last_ride_at -->
           <div class="date-range" [class.has-value]="dateFrom || dateTo">
             <span class="date-range__icon" aria-hidden="true">
@@ -1095,6 +1105,15 @@ export class CustomersListComponent implements OnInit, AfterViewInit, OnDestroy 
     if (picker) picker.remove();
   }
 
+  /** '' = everyone, 'banned' = carpool access paused. */
+  carpoolFilter = '';
+
+  onCarpoolFilter(value: string): void {
+    this.carpoolFilter = value === 'banned' ? 'banned' : '';
+    this.page = 1;
+    this.reload();
+  }
+
   reload(): void {
     const params = new URLSearchParams({
       page: String(this.page),
@@ -1102,6 +1121,7 @@ export class CustomersListComponent implements OnInit, AfterViewInit, OnDestroy 
       search: this.search,
       per_page: String(this.pageSize),
     });
+    if (this.carpoolFilter) params.set('carpool', this.carpoolFilter);
     if (this.dateFrom) params.set('last_ride_from', this.dateFrom);
     if (this.dateTo) params.set('last_ride_to', this.dateTo);
 

@@ -34,7 +34,7 @@ Route::middleware('carpool.enabled')->group(function () {
         Route::get('/home', [DriverListingController::class, 'home']);
         Route::post('/requests', [DriverListingController::class, 'requests']);
         Route::get('/listings', [DriverListingController::class, 'index']);
-        Route::post('/listings', [DriverListingController::class, 'store']);
+        Route::post('/listings', [DriverListingController::class, 'store'])->middleware('throttle:carpool-write');
         Route::get('/listings/{listing}', [DriverListingController::class, 'show']);
         Route::patch('/listings/{listing}', [DriverListingController::class, 'update']);
         Route::post('/listings/{listing}/delay', [DriverListingController::class, 'delay']);
@@ -59,9 +59,9 @@ Route::middleware('carpool.enabled')->group(function () {
 
     // M4: riders. Search and asking to join need carpool enabled (A36); the
     // carpool page, My trips, cancel and leave keep working when it's off.
-    Route::get('/search', [RiderController::class, 'search']);
+    Route::get('/search', [RiderController::class, 'search'])->middleware('throttle:carpool-search');
     Route::get('/rides/{listing}', [RiderController::class, 'show']);
-    Route::post('/rides/{listing}/join', [RiderController::class, 'join']);
+    Route::post('/rides/{listing}/join', [RiderController::class, 'join'])->middleware('throttle:carpool-write');
     Route::post('/join-requests/{carpoolRequest}/withdraw', [RiderController::class, 'withdraw']);
     Route::post('/join-requests/{carpoolRequest}/leave', [RiderController::class, 'leave']);
     Route::post('/rides/{listing}/rating', [RiderController::class, 'rate']);
@@ -77,5 +77,5 @@ Route::middleware('carpool.enabled')->group(function () {
     Route::post('/chats/{conversation}/pickup', [ChatController::class, 'proposePickup']);
     Route::post('/pickup-proposals/{proposal}/accept', [ChatController::class, 'acceptPickup']);
     Route::post('/pickup-proposals/{proposal}/decline', [ChatController::class, 'declinePickup']);
-    Route::post('/reports', [ChatController::class, 'report']);
+    Route::post('/reports', [ChatController::class, 'report'])->middleware('throttle:carpool-write');
 });

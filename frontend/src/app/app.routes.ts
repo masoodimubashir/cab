@@ -30,6 +30,9 @@ import { ManagersComponent } from './admin/rbac/managers.component';
 import { AnalyticsRealTimeComponent } from './admin/analytics/analytics-real-time.component';
 import { AnalyticsGraphsComponent } from './admin/analytics/analytics-graphs.component';
 import { AnalyticsReportsComponent } from './admin/analytics/analytics-reports.component';
+import { CarpoolListingsComponent } from './admin/carpool/carpool-listings.component';
+import { CarpoolReportsComponent } from './admin/carpool/carpool-reports.component';
+import { CarpoolSettingsComponent } from './admin/carpool/carpool-settings.component';
 import { SigninComponent } from './auth/signin.component';
 import { adminAuthGuard } from './auth/admin-auth.guard';
 
@@ -88,6 +91,9 @@ export const routes: Routes = [
     canActivate: [adminAuthGuard],
     data: { permission: 'drivers' },
   },
+  { path: 'carpool/listings', component: CarpoolListingsComponent, canActivate: [adminAuthGuard], data: { permission: 'carpool' } },
+  { path: 'carpool/reports', component: CarpoolReportsComponent, canActivate: [adminAuthGuard], data: { permission: 'carpool' } },
+  { path: 'carpool/settings', component: CarpoolSettingsComponent, canActivate: [adminAuthGuard], data: { permission: 'carpool' } },
   { path: 'contact-drivers', component: ContactDriversComponent, canActivate: [adminAuthGuard], data: { permission: 'contact_drivers' } },
 
   { path: 'rides', component: RidesShellComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },

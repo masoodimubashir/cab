@@ -83,6 +83,7 @@ interface DocumentGroupView {
               <div class="meta-row" *ngFor="let k of labelKeys(group.rows[0])">
                 <span class="meta-row__lbl">{{ k }}</span>
                 <span class="mono">{{ group.rows[0].label_values?.[k] || '—' }}</span>
+                <span class="expired-tag" *ngIf="isExpired(k, group.rows[0].label_values?.[k])">Expired</span>
               </div>
             </div>
 
@@ -157,6 +158,7 @@ interface DocumentGroupView {
   `,
   styles: [`
     :host { display: block; }
+    .expired-tag { margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; background: var(--tm-danger-bg, #fee2e2); color: var(--tm-danger-fg, #b91c1c); }
     .requirements { margin-bottom: 20px; border: 1px solid var(--tm-line); border-radius: 12px; overflow: hidden; }
     .requirements__intro { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; background: var(--tm-canvas); }
     .requirement { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-top: 1px solid var(--tm-line); flex-wrap: wrap; }
@@ -413,6 +415,13 @@ export class DriverDocumentsPaneComponent implements OnChanges, OnDestroy {
 
   hasLabels(d: DriverDocumentRow): boolean {
     return !!d.label_values && Object.keys(d.label_values).length > 0;
+  }
+
+  /** A35: an expiry date label in the past shows an Expired tag. Nothing is blocked automatically. */
+  isExpired(label: string, value: string | undefined): boolean {
+    if (!value || !/expir|valid\s*(till|until|upto)/i.test(label)) return false;
+    const t = Date.parse(value);
+    return !isNaN(t) && t < new Date().setHours(0, 0, 0, 0);
   }
 
   labelKeys(d: DriverDocumentRow): string[] {
