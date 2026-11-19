@@ -18,3 +18,18 @@ Photos/
 release-apks/
 *.apk
 *.aab
+
+# Extra safety net (added 2026-11-19): common secret files that were not covered above.
+*.pem
+*.p12
+*.pfx
+**/key.properties
+**/GoogleService-Info.plist
+**/google-services.json
+**/service-account*.json
+**/credentials.json
+**/secrets.json
+*.sql
+*.sql.gz
+.npmrc
+id_rsa*
