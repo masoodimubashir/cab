@@ -1,31 +1,23 @@
-<ion-content class="ion-padding" [fullscreen]="true">
-  <!-- Header / Logo Area -->
-  <div class="logo-header">
-    <span class="cabbies-wordmark" aria-label="Cabbies">Cabbies</span>
-  </div>
+<ion-content [fullscreen]="true">
+  <main class="welcome">
+    <span class="wordmark" aria-label="Cabbies">Cabbies</span>
 
-  <!-- Illustration Area (Placeholder for the vector graphic) -->
-  <div class="illustration-container">
-    <img src="assets/taxi-app-concept-illustration.jpg" alt="Drive with Cabbies" (error)="useFallbackImage($event)" />
-  </div>
-
-  <!-- Main Content -->
-  <div class="content-wrapper">
-    <h1 class="welcome-title">Drive with Cabbies</h1>
-
-    <div class="actions">
-      <!-- Main Phone Login Button -->
-      <ion-button expand="block" color="secondary" class="action-btn main-btn" (click)="goToLogin()">
-        <ion-icon slot="start" name="call"></ion-icon>
-        Continue with Mobile Number
-        <ion-icon slot="end" name="arrow-forward-outline"></ion-icon>
-      </ion-button>
+    <div class="art">
+      <img src="assets/welcome-art.png" alt="A taxi and a rider with a phone" (error)="useFallbackImage($event)" />
     </div>
 
-    <!-- Terms and Privacy -->
-    <p class="terms-text">
-      By continuing you agree that you have read and accept our <br>
-      <a (click)="goToTerms()">Term & Conditions</a> and <a (click)="goToPrivacy()">Privacy Policy</a>
-    </p>
-  </div>
+    <section class="copy">
+      <h1>Drive with Cabbies</h1>
+      <p class="sub">Take rides on your schedule, and fill empty seats with carpool.</p>
+
+      <ion-button expand="block" color="secondary" class="cta" (click)="goToLogin()">
+        Continue with mobile number
+      </ion-button>
+
+      <p class="terms">
+        By continuing you agree that you have read and accept our <br />
+        <a (click)="goToTerms()">Terms &amp; Conditions</a> and <a (click)="goToPrivacy()">Privacy Policy</a>
+      </p>
+    </section>
+  </main>
 </ion-content>

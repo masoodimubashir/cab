@@ -15,6 +15,11 @@ const config: CapacitorConfig = {
     cleartext: carpoolTest,
   },
   plugins: {
+    // Page draws behind the phone's button bar; dark icons because every main screen is light.
+    SystemBars: {
+      insetsHandling: 'css',
+      style: 'LIGHT',
+    },
     FirebaseAuthentication: {
       skipNativeAuth: false,
       providers: ['google.com'],
