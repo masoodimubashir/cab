@@ -125,6 +125,11 @@ const POS_KEY = 'dev_hub_dock';
                 <button type="button" class="dh-btn" (click)="clearApp()">Clear this app's saved state</button>
               </div>
             </div>
+            <div class="dh-group">
+              <h3>Screen info</h3>
+              <p class="dh-hint">{{ screenInfo }}</p>
+              <div class="dh-row"><button type="button" class="dh-btn" (click)="measure()">Measure again</button></div>
+            </div>
             <p class="dh-hint">Server: {{ base }}<br>Phone, laptop and local database only. Nothing here touches the live server.</p>
           </ng-container>
         </div>
@@ -311,7 +316,25 @@ export class DevHubComponent implements OnInit, OnDestroy {
     });
   }
 
-  setTab(t: Tab): void { this.tab = t; this.note = ''; }
+  screenInfo = '';
+
+  /** Window size and the bottom safe area, for the phone system-bar checks. */
+  measure(): void {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;left:0;top:0;visibility:hidden;padding-bottom:env(safe-area-inset-bottom);padding-top:env(safe-area-inset-top)';
+    document.body.appendChild(probe);
+    const cs = getComputedStyle(probe);
+    const env = `env bottom ${cs.paddingBottom}, top ${cs.paddingTop}`;
+    probe.remove();
+    const ion = getComputedStyle(document.documentElement).getPropertyValue('--ion-safe-area-bottom').trim() || 'unset';
+    const cap = getComputedStyle(document.documentElement).getPropertyValue('--safe-area-inset-bottom').trim() || 'unset';
+    const vp = document.querySelector('meta[name=viewport]')?.getAttribute('content') ?? 'none';
+    const tab = document.querySelector('ion-tab-bar');
+    const tabH = tab ? Math.round(tab.getBoundingClientRect().height) + 'px' : 'none';
+    this.screenInfo = `Window ${innerWidth} x ${innerHeight}, screen ${screen.width} x ${screen.height}, ratio ${devicePixelRatio}. ${env}. Ionic safe bottom ${ion}, Capacitor ${cap}. Tab bar ${tabH}. Viewport: ${vp}.`;
+  }
+
+  setTab(t: Tab): void { this.tab = t; this.note = ''; if (t === 'tools') this.measure(); }
 
   // ---- this screen ----
 
