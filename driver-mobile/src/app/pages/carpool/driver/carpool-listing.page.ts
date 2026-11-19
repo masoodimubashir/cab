@@ -9,7 +9,7 @@ import { RouteOption, createMap, drawRoutes, fetchRouteOptions, loadCarpoolMaps,
 import { addDays, cancelReasonLabel, clock, daysFromToday, durationLabel, indiaDate, indiaIso, indiaTime, kmLabel, priceLabel, whenLabel } from './carpool-format';
 
 type Mode = 'view' | 'edit' | 'route';
-type Sheet = 'cancel' | 'discard' | 'rider' | 'remove' | null;
+type Sheet = 'cancel' | 'discard' | 'rider' | 'remove' | 'noshow' | null;
 
 interface Draft {
   date: string;
@@ -28,8 +28,10 @@ interface Me {
  * The carpool page, driver side (mockup 8, 8f to 8k): the carpool before it
  * starts, the ⋯ menu, edit in place, change route, discard, slide to cancel and
  * the failure bar. M4 adds the riders in pickup order, their options sheet
- * (8b: Paid tick, Profile, Remove) and Remove (8d). Message, Report, Start ride
- * and Group chat come with M5 and M6.
+ * (8b: Paid tick, Profile, Remove) and Remove (8d). M6 adds Start ride and
+ * Complete ride in the bottom bar, the in-progress and completed states (9,
+ * 13b), the rider options on the road (10, 12), No-show (13) and, on its own
+ * page, Check code and pick up (11, 11b).
  */
 @Component({
   selector: 'app-carpool-listing',
@@ -50,6 +52,7 @@ export class CarpoolListingPage implements OnDestroy {
   carSeats = 6;
   horizonDays = 30;
   priceMax = 5000;
+  retentionDays = 1;
 
   mode: Mode = 'view';
   menuOpen = false;
@@ -96,6 +99,7 @@ export class CarpoolListingPage implements OnDestroy {
     this.carpool.config().subscribe((c) => {
       this.horizonDays = c.publish_horizon_days ?? 30;
       this.priceMax = c.price_max ?? 5000;
+      this.retentionDays = c.chat_retention_days ?? 1;
     });
   }
 
@@ -151,6 +155,143 @@ export class CarpoolListingPage implements OnDestroy {
     return this.listing?.seats_taken ?? 0;
   }
 
+  // ── the ride (M6) ──
+
+  /** The next pickup: the first rider still waiting, once the ride is on the road. */
+  get nextRider(): CarpoolJoinRequest | null {
+    if (this.listing?.status !== 'in_progress') return null;
+    return this.listing.riders?.find((r) => r.ride_state === 'waiting') ?? null;
+  }
+
+  /** Riders still on this ride, no-shows left out. */
+  get activeCount(): number {
+    return (this.listing?.riders ?? []).filter((r) => r.ride_state !== 'no_show').length;
+  }
+
+  get pickedCount(): number {
+    return (this.listing?.riders ?? []).filter((r) => r.ride_state === 'picked_up' || r.ride_state === 'dropped').length;
+  }
+
+  /** Planned arrival, moved by how late the ride really started. */
+  get arrival(): string {
+    const l = this.listing;
+    return l?.started_at ? clock(new Date(new Date(l.started_at).getTime() + l.duration_s * 1000)) : '';
+  }
+
+  get ranRange(): string {
+    const l = this.listing;
+    return l?.started_at && l.completed_at ? `${clock(l.started_at)}–${clock(l.completed_at)}` : '';
+  }
+
+  /** The planned distance; there is no live tracking in v1. */
+  get km(): string {
+    return this.listing ? kmLabel(this.listing.distance_m) : '';
+  }
+
+  get showDock(): boolean {
+    const l = this.listing;
+    return !!l && (l.status === 'published' || l.status === 'in_progress' || (l.status === 'completed' && !!l.group_chat_id));
+  }
+
+  starting = false;
+  completing = false;
+  dropping = false;
+  noShowing = false;
+  noShown = false;
+  rideError: string | null = null;
+  rideErrorTitle = '';
+  private rideRetry: 'start' | 'complete' | null = null;
+
+  startRide(): void {
+    if (!this.listing || this.starting) return;
+    this.starting = true;
+    this.rideError = null;
+    this.rideRetry = 'start';
+    this.carpool.startRide(this.id).subscribe({
+      next: () => {
+        this.starting = false;
+        this.load();
+      },
+      error: (err) => {
+        this.starting = false;
+        this.rideErrorTitle = "Couldn't start the ride";
+        this.rideError = this.message(err, 'No connection. Riders weren\'t told.');
+      },
+    });
+  }
+
+  completeRide(): void {
+    if (!this.listing || this.completing) return;
+    this.completing = true;
+    this.rideError = null;
+    this.rideRetry = 'complete';
+    this.carpool.completeRide(this.id).subscribe({
+      next: () => {
+        this.completing = false;
+        this.load();
+      },
+      error: (err) => {
+        this.completing = false;
+        this.rideErrorTitle = "Couldn't complete the ride";
+        this.rideError = this.message(err, 'No connection.');
+      },
+    });
+  }
+
+  retryRide(): void {
+    if (this.rideRetry === 'start') this.startRide();
+    else if (this.rideRetry === 'complete') this.completeRide();
+  }
+
+  openGroup(): void {
+    if (this.listing?.group_chat_id) void this.nav.navigateForward(`/carpool/chat/${this.listing.group_chat_id}`);
+  }
+
+  /** "Check code and pick up" opens the code screen (mockup 11). */
+  goPickup(r: CarpoolJoinRequest): void {
+    this.sheet = null;
+    void this.nav.navigateForward(`/carpool/listing/${this.id}/pickup/${r.id}`);
+  }
+
+  markDropped(r: CarpoolJoinRequest): void {
+    if (this.dropping) return;
+    this.dropping = true;
+    this.riderError = null;
+    this.carpool.markDropped(r.id).subscribe({
+      next: () => {
+        this.dropping = false;
+        this.sheet = null;
+        this.load();
+      },
+      error: (err) => {
+        this.dropping = false;
+        this.riderError = this.message(err, 'No connection.');
+      },
+    });
+  }
+
+  confirmNoShow(): void {
+    const r = this.rider;
+    if (!r || this.noShowing) return;
+    this.noShowing = true;
+    this.riderError = null;
+    this.carpool.markNoShow(r.id).subscribe({
+      next: () => {
+        this.noShowing = false;
+        this.noShown = true;
+        this.later(() => {
+          this.sheet = null;
+          this.noShown = false;
+          this.load();
+        }, 1600);
+      },
+      error: (err) => {
+        this.noShowing = false;
+        this.riderError = this.message(err, 'No connection.');
+      },
+    });
+  }
+
   // ── map ──
 
   private async drawSaved(): Promise<void> {
@@ -188,6 +329,7 @@ export class CarpoolListingPage implements OnDestroy {
     this.rider = r;
     this.riderError = null;
     this.removed = false;
+    this.noShown = false;
     this.sheet = 'rider';
   }
 

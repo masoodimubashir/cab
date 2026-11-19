@@ -1015,6 +1015,84 @@ paths:
           description: "{ data: Listing } with status cancelled, cancel_reason driver"
         "422":
           description: Already started or ended
+  /carpool/driver/listings/{id}/start:
+    post:
+      tags: [Carpool]
+      summary: Driver taps Start ride (M6, mockup 8, 9)
+      operationId: carpool_driver_listing_start
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+        "422": { description: "Too early (opens 60 minutes before departure), already started, ended, or another ride is on the road" }
+  /carpool/driver/listings/{id}/complete:
+    post:
+      tags: [Carpool]
+      summary: Driver taps Complete ride (M6, mockup 9, 13b)
+      operationId: carpool_driver_listing_complete
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+        "422": { description: Riders are still to be dropped or marked no-show }
+  /carpool/driver/join-requests/{id}/check-code:
+    post:
+      tags: [Carpool]
+      summary: Check a rider code at their pickup (M6, mockup 11, 11b)
+      operationId: carpool_driver_request_check_code
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [code], properties: { code: { type: string, pattern: '^[0-9]{4}$' } } }
+      responses:
+        "200": { description: OK }
+        "422": { description: Locked after too many wrong codes, or the ride has not started }
+  /carpool/driver/join-requests/{id}/pick-up:
+    post:
+      tags: [Carpool]
+      summary: Mark a rider as picked up; only after their code matched (M6)
+      operationId: carpool_driver_request_pick_up
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+        "422": { description: Code not checked yet, or the rider is no longer waiting }
+  /carpool/driver/join-requests/{id}/drop:
+    post:
+      tags: [Carpool]
+      summary: Mark a picked-up rider as dropped (M6, mockup 12)
+      operationId: carpool_driver_request_drop
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+  /carpool/driver/join-requests/{id}/no-show:
+    post:
+      tags: [Carpool]
+      summary: Mark a waiting rider as no-show; the rider is told (M6, mockup 13)
+      operationId: carpool_driver_request_no_show
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK }
+  /carpool/rides/{id}/rating:
+    post:
+      tags: [Carpool]
+      summary: Rider rates the driver after drop-off (M6, customer 8g)
+      operationId: carpool_ride_rating
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [score], properties: { score: { type: integer, minimum: 1, maximum: 5 }, comment: { type: string, maxLength: 500 } } }
+      responses:
+        "200": { description: OK }
+        "422": { description: Not dropped off, or already rated }
   /carpool/driver/inbox:
     get:
       tags: [Carpool]

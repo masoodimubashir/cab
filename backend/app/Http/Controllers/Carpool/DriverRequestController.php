@@ -10,6 +10,7 @@ use App\Services\Carpool\CarpoolClock;
 use App\Services\Carpool\CarpoolListingService;
 use App\Services\Carpool\CarpoolPresenter;
 use App\Services\Carpool\CarpoolRequestService;
+use App\Services\Carpool\CarpoolRideService;
 use App\Services\Carpool\RouteGeometry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,6 +21,7 @@ class DriverRequestController extends Controller
     public function __construct(
         private CarpoolListingService $listings,
         private CarpoolRequestService $requests,
+        private CarpoolRideService $rides,
         private CarpoolPresenter $present,
     ) {
     }
@@ -101,6 +103,35 @@ class DriverRequestController extends Controller
     {
         $data = $request->validate(['paid' => ['required', 'boolean']]);
         $r = $this->requests->markPaid($request->user(), $carpoolRequest, (bool) $data['paid']);
+
+        return response()->json(['data' => $this->present->driverRequest($r, $r->listing)]);
+    }
+
+    /** Check the rider's 4-digit code at their pickup (driver 11, 11b). */
+    public function checkCode(Request $request, CarpoolRequest $carpoolRequest): JsonResponse
+    {
+        $data = $request->validate(['code' => ['required', 'digits:4']]);
+
+        return response()->json(['data' => $this->rides->checkCode($request->user(), $carpoolRequest, $data['code'])]);
+    }
+
+    public function pickUp(Request $request, CarpoolRequest $carpoolRequest): JsonResponse
+    {
+        $r = $this->rides->pickUp($request->user(), $carpoolRequest);
+
+        return response()->json(['data' => $this->present->driverRequest($r, $r->listing)]);
+    }
+
+    public function drop(Request $request, CarpoolRequest $carpoolRequest): JsonResponse
+    {
+        $r = $this->rides->drop($request->user(), $carpoolRequest);
+
+        return response()->json(['data' => $this->present->driverRequest($r, $r->listing)]);
+    }
+
+    public function noShow(Request $request, CarpoolRequest $carpoolRequest): JsonResponse
+    {
+        $r = $this->rides->noShow($request->user(), $carpoolRequest);
 
         return response()->json(['data' => $this->present->driverRequest($r, $r->listing)]);
     }

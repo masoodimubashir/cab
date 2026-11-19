@@ -16,6 +16,7 @@ export interface CarpoolConfig {
   seats_max?: number;
   price_max?: number;
   message_max_chars?: number;
+  chat_retention_days?: number;
   timezone?: string;
 }
 
@@ -97,10 +98,23 @@ export interface CarpoolListing {
   cancel_reason: 'driver' | 'missed_departure' | 'plan_ended' | 'admin' | null;
   cancel_note: string | null;
   can_edit: boolean;
+  /** M6: the ride. */
+  started_at: string | null;
+  completed_at: string | null;
+  completed_by: 'driver' | 'auto' | null;
+  counts_as_ride: boolean;
+  /** Start ride opens an hour before the departure time. */
+  can_start: boolean;
+  start_opens_at: string;
   route_polyline?: [number, number][];
   /** One carpool only: accepted riders in pickup order, and how many requests wait (M4). */
   riders?: CarpoolJoinRequest[];
   pending_count?: number;
+  /** One carpool only (M6). Complete ride unlocks once every rider is dropped or a no-show. */
+  can_complete?: boolean;
+  riders_rode?: number;
+  riders_picked_up?: number;
+  group_chat_id?: number | null;
 }
 
 /** A route as the driver app sends it: a simplified line plus Google's numbers (Carpool.md P5). */
@@ -171,6 +185,9 @@ export type CarpoolRiderState =
   | 'sent' | 'accepted' | 'started' | 'completed' | 'cancelled' | 'declined'
   | 'removed' | 'filled' | 'ended' | 'withdrawn' | 'left' | 'no_show';
 
+/** Where a rider stands once the ride is on the road (driver mockup 9). */
+export type CarpoolRideState = 'waiting' | 'picked_up' | 'dropped' | 'no_show';
+
 /** A request as its rider sees it. `code` only while accepted on a carpool that hasn't ended. */
 export interface CarpoolMyRequest {
   id: number;
@@ -186,6 +203,13 @@ export interface CarpoolMyRequest {
   is_free: boolean;
   total: number;
   code: string | null;
+  picked_up_at: string | null;
+  dropped_at: string | null;
+  no_show_at: string | null;
+  /** Dropped off and not rated yet: shows Rate (customer 8f, 8g). */
+  can_rate: boolean;
+  /** While the ride is on the road: how far the car is, from the plan (no live location in v1). */
+  ride: { picked_up: boolean; minutes_away: number; pickup_at: string; drop_at: string } | null;
   pickup: CarpoolRoutePoint;
   drop: CarpoolRoutePoint;
   created_at: string | null;
@@ -291,6 +315,19 @@ export interface CarpoolRide {
   can_request: boolean;
   blocked: CarpoolBlocked;
   my_request: CarpoolMyRequest | null;
+  /** 4b: how soon a carpool already on the road reaches the suggested pickup (negative = probably passed). */
+  on_road: { minutes_to_pickup: number; started_at: string } | null;
+  group_chat_id: number | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+/** POST .../check-code (driver mockup 11, 11b). */
+export interface CarpoolCodeCheck {
+  ok: boolean;
+  tries_left: number;
+  /** Set while checking is locked after too many wrong codes. */
+  locked_until: string | null;
 }
 
 export interface CarpoolJoinInput {
@@ -313,6 +350,13 @@ export interface CarpoolJoinRequest {
   paid_marked: boolean;
   /** The private chat with this rider. */
   chat_id: number | null;
+  /** M6: waiting, picked up, dropped or no-show, and the code check. */
+  ride_state: CarpoolRideState;
+  picked_up_at: string | null;
+  dropped_at: string | null;
+  no_show_at: string | null;
+  code_verified: boolean;
+  code_locked_until: string | null;
   pickup: CarpoolRoutePoint & { name: string };
   drop: CarpoolRoutePoint & { name: string };
   created_at: string | null;

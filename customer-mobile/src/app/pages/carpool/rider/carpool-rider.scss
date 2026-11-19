@@ -154,7 +154,7 @@ ion-footer .c-dock > :only-child { max-width: 520px; margin: 0 auto; }
 .price-tag.free { color: var(--cr-green); }
 .statehead { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 14px; font-weight: 700; color: var(--cr-ink); }
 .statehead > ion-icon { flex: none; font-size: 18px; }
-.statehead > span { flex: 1; }
+.statehead > span:not(.live) { flex: 1; }
 .statehead small { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; color: var(--cr-muted); }
 .statehead.warn, .statehead.warn > ion-icon { color: var(--cr-warn, #8a5a00); }
 .statehead.ok > ion-icon { color: var(--cr-green); }
@@ -263,3 +263,10 @@ ion-footer .c-dock > :only-child { max-width: 520px; margin: 0 auto; }
 .seg button { position: relative; z-index: 1; flex: 1; min-width: 0; min-height: 44px; padding: 0 6px; border: 0; border-radius: 10px; background: transparent; font-size: 12.5px; font-weight: 700; color: #5d6b7e; transition: color .2s; }
 .seg button.on { color: var(--cr-ink); }
 .seg-thumb { position: absolute; top: 4px; bottom: 4px; left: calc(4px + var(--i, 0) * (100% - 8px) / var(--n, 2)); width: calc((100% - 8px) / var(--n, 2)); border-radius: 10px; background: #fff; box-shadow: 0 1px 3px #101a2c1f, 0 1px 1px #101a2c0d; transition: left .25s cubic-bezier(.3, .7, .3, 1); }
+
+// Rate the driver (M6, mockup 8g)
+.rate-av { display: inline-grid; place-items: center; width: 64px; height: 64px; font-size: 20px; }
+.rate-stars { display: flex; justify-content: center; gap: 6px; margin: 16px 0 6px; }
+.rate-stars button { display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; background: transparent; font-size: 34px; color: var(--cr-green); }
+.rate-note { width: 100%; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--cr-line); border-radius: 12px; background: #fff; font: inherit; font-size: 14px; color: var(--cr-ink); resize: none; outline: none; }
+.rate-note:focus { border: 2px solid var(--cr-green); padding: 9px 11px; }

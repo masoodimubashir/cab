@@ -8,6 +8,7 @@ use App\Models\Carpool\CarpoolRequest;
 use App\Services\Carpool\CarpoolClock;
 use App\Services\Carpool\CarpoolPresenter;
 use App\Services\Carpool\CarpoolRequestService;
+use App\Services\Carpool\CarpoolRideService;
 use App\Services\Carpool\CarpoolSearchService;
 use App\Services\Carpool\RouteGeometry;
 use App\Models\Carpool\CarpoolSetting;
@@ -22,6 +23,7 @@ class RiderController extends Controller
         private CarpoolSearchService $search,
         private CarpoolRequestService $requests,
         private CarpoolPresenter $present,
+        private CarpoolRideService $rides,
     ) {
     }
 
@@ -67,6 +69,15 @@ class RiderController extends Controller
             }
         }
 
+        // 4b: a carpool already on the road. No live location in v1, so the time to the pickup is worked
+        // out from the plan, moved by how late the driver really started.
+        $onRoad = null;
+        if ($listing->status === CarpoolListing::STATUS_IN_PROGRESS && $suggested && $listing->started_at) {
+            $shift = max(0, $listing->departs_at->diffInSeconds($listing->started_at, false));
+            $at = \Carbon\CarbonImmutable::parse($suggested['pickup']['at'])->addSeconds($shift);
+            $onRoad = ['minutes_to_pickup' => (int) ceil(now()->diffInSeconds($at, false) / 60), 'started_at' => $listing->started_at->toIso8601String()];
+        }
+
         $seats = (int) ($q['seats'] ?? 1);
         $free = $listing->seatsFree();
         $own = (int) $listing->driver?->user_id === (int) $user->id;
@@ -97,6 +108,8 @@ class RiderController extends Controller
             'accepting_requests' => $listing->accepting_requests,
             'cancel_reason' => $listing->cancel_reason,
             'cancel_note' => $listing->cancel_note,
+            'started_at' => $listing->started_at?->toIso8601String(),
+            'completed_at' => $listing->completed_at?->toIso8601String(),
             'changed' => $listing->changed_kind && $listing->changed_at?->gt(now()->subDay()) ? [
                 'kind' => $listing->changed_kind,
                 'was_at' => $listing->changed_from_at?->toIso8601String(),
@@ -104,9 +117,11 @@ class RiderController extends Controller
             'driver' => $this->present->driver($listing),
             'car' => $this->present->car($listing->vehicle),
             'suggested' => $suggested,
+            'on_road' => $onRoad,
             'can_request' => $blocked === null && ! $active,
             'blocked' => $blocked,
             'my_request' => $mine ? $this->present->riderRequest($mine, $listing, $geo) : null,
+            'group_chat_id' => $mine && in_array($mine->status, CarpoolRequest::SEATED, true) ? $this->present->groupChatId($listing) : null,
         ]]);
     }
 
@@ -165,6 +180,16 @@ class RiderController extends Controller
                 'driver' => ['name' => $driver['name'], 'first_name' => $driver['first_name']],
             ];
         })->values()]);
+    }
+
+    /** Rate the driver after drop-off (customer 8g). Stars required, comment optional. */
+    public function rate(Request $request, CarpoolListing $listing): JsonResponse
+    {
+        $data = $request->validate(['score' => ['required', 'integer', 'between:1,5'], 'comment' => ['nullable', 'string', 'max:500']]);
+        $listing->loadMissing('driver.user');
+        $this->rides->rateDriver($request->user(), $listing, (int) $data['score'], $data['comment'] ?? null);
+
+        return response()->json(['data' => ['rated' => true]], 201);
     }
 
     /** The profile photo asked for at the first join request (customer 5a, P12, A20). */

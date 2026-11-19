@@ -67,9 +67,14 @@ class CarpoolRequest extends Model
         'drop_lat' => 'float', 'drop_lng' => 'float', 'drop_m' => 'integer',
         'price_per_seat' => 'integer', 'is_free' => 'boolean', 'paid_marked' => 'boolean',
         'answered_at' => 'datetime', 'ended_at' => 'datetime',
+        'code_verified_at' => 'datetime', 'code_locked_until' => 'datetime',
+        'picked_up_at' => 'datetime', 'dropped_at' => 'datetime', 'no_show_at' => 'datetime',
     ];
 
     protected $hidden = ['code'];
+
+    /** Counted against the car's seats: in the car or still to be picked up, or already dropped on this ride. */
+    public const SEATED = [self::STATUS_ACCEPTED, self::STATUS_COMPLETED];
 
     public function listing(): BelongsTo
     {

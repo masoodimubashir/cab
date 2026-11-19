@@ -47,6 +47,13 @@ Schedule::command('carpool:prune-chats')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Carpool lifecycle jobs (M6): missed departures at the end of the India day,
+// rides never completed, and the plan grace rule. Each does nothing while the kill switch is on.
+Schedule::command('carpool:lifecycle')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Dispatch fixed forming vehicles that are due.
 Schedule::command('routes:dispatch-due')
     ->everyMinute()

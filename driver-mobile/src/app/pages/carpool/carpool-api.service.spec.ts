@@ -142,4 +142,31 @@ describe('CarpoolApiService', () => {
     expect(api.post).toHaveBeenCalledWith('/carpool/pickup-proposals/7/accept', {});
     expect(api.post).toHaveBeenCalledWith('/carpool/pickup-proposals/7/decline', {});
   });
+
+  it('starts and completes a ride and works each rider through the ride', () => {
+    api.post.and.returnValue(of({ data: { id: 4 } }) as any);
+    service.startRide(4).subscribe();
+    service.completeRide(4).subscribe();
+    service.markPickedUp(9).subscribe();
+    service.markDropped(9).subscribe();
+    service.markNoShow(9).subscribe();
+    expect(api.post).toHaveBeenCalledWith('/carpool/driver/listings/4/start', {});
+    expect(api.post).toHaveBeenCalledWith('/carpool/driver/listings/4/complete', {});
+    expect(api.post).toHaveBeenCalledWith('/carpool/driver/join-requests/9/pick-up', {});
+    expect(api.post).toHaveBeenCalledWith('/carpool/driver/join-requests/9/drop', {});
+    expect(api.post).toHaveBeenCalledWith('/carpool/driver/join-requests/9/no-show', {});
+  });
+
+  it('checks a rider code and sends a rating', (done) => {
+    api.post.and.returnValue(of({ data: { ok: false, tries_left: 2, locked_until: null } }) as any);
+    service.checkCode(9, '5189').subscribe((r) => {
+      expect(api.post).toHaveBeenCalledWith('/carpool/driver/join-requests/9/check-code', { code: '5189' });
+      expect(r.tries_left).toBe(2);
+      api.post.and.returnValue(of({ data: { rated: true } }) as any);
+      service.rateDriver(4, 5, null).subscribe(() => {
+        expect(api.post).toHaveBeenCalledWith('/carpool/rides/4/rating', { score: 5, comment: null });
+        done();
+      });
+    });
+  });
 });

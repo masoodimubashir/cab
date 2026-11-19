@@ -237,6 +237,9 @@ class CarpoolRequestService
             if (! in_array($l->status, CarpoolListing::LIVE, true)) {
                 $this->fail('This carpool has ended.');
             }
+            if ($r->picked_up_at) {
+                $this->fail("This rider is already in the car. Mark them as dropped instead.");
+            }
             $r->status = CarpoolRequest::STATUS_REMOVED;
             $r->ended_at = now();
             $r->save();
@@ -310,12 +313,14 @@ class CarpoolRequestService
         $title = match ($listing->cancel_reason) {
             CarpoolListing::CANCEL_PLAN_ENDED => "Carpool cancelled: the driver's plan has ended",
             CarpoolListing::CANCEL_ADMIN => 'Carpool cancelled by Dream Cabs',
+            CarpoolListing::CANCEL_MISSED => "Carpool cancelled: it wasn't started that day",
             default => $this->driverFirstName($listing) . ' cancelled the carpool',
         };
         try {
             app(CarpoolChatService::class)->listingCancelled($listing, 'Cancelled: ' . lcfirst(match ($listing->cancel_reason) {
                 CarpoolListing::CANCEL_PLAN_ENDED => "the driver's plan has ended",
                 CarpoolListing::CANCEL_ADMIN => 'by Dream Cabs',
+                CarpoolListing::CANCEL_MISSED => "it wasn't started that day",
                 default => 'by the driver',
             }));
         } catch (\Throwable $e) {
@@ -355,7 +360,7 @@ class CarpoolRequestService
     private function acceptedSeats(CarpoolListing $l): int
     {
         return (int) CarpoolRequest::query()->where('listing_id', $l->id)
-            ->where('status', CarpoolRequest::STATUS_ACCEPTED)->sum('seats');
+            ->whereIn('status', CarpoolRequest::SEATED)->sum('seats');
     }
 
     /** @return Collection<int, CarpoolRequest> the requests closed as filled */

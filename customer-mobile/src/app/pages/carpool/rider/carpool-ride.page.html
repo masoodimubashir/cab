@@ -82,6 +82,7 @@
 
     <!-- 6b: the private chat with the driver, from the moment the request is sent -->
     <div class="acts-row" *ngIf="mine?.chat_id && (view === 'sent' || view === 'accepted' || view === 'started')" style="margin-top: 12px">
+      <button class="c-go line" *ngIf="ride.group_chat_id && (view === 'accepted' || view === 'started')" (click)="openGroup()"><ion-icon name="people-outline"></ion-icon>Group chat</button>
       <button class="c-go line" (click)="messageDriver()"><ion-icon name="chatbubble-outline"></ion-icon>Message {{ first }}</button>
     </div>
 
@@ -105,7 +106,12 @@
 </ion-content>
 
 <ion-footer class="ion-no-border" *ngIf="(ride && !loading && (view === 'open' || view === 'ended')) || gone">
-  <div class="c-dock">
+  <div class="c-dock acts-row" *ngIf="rode && !gone">
+    <button class="c-go tall line" *ngIf="ride?.group_chat_id" (click)="openGroup()">Group chat</button>
+    <button class="c-go tall" *ngIf="mine?.can_rate" (click)="openRate()"><ion-icon name="star-outline"></ion-icon>Rate {{ first }}</button>
+    <button class="c-go tall" *ngIf="!mine?.can_rate" (click)="findAnother()">Find another carpool</button>
+  </div>
+  <div class="c-dock" *ngIf="!rode || gone">
     <ng-container *ngIf="!gone && view === 'open'; else another">
       <button class="c-go tall" *ngIf="!points; else ask" (click)="searchThisRoute()">Search this trip</button>
       <ng-template #ask>
@@ -177,6 +183,35 @@
         <input type="file" accept="image/*" [disabled]="uploading" (change)="onPhoto($event)">
       </label>
       <button class="link" style="margin-top: 6px; color: var(--cr-muted)" [disabled]="uploading" (click)="cancelPhoto()">Cancel</button>
+    </div>
+  </div>
+</ng-container>
+
+<!-- 8g. Rate the driver -->
+<ng-container *ngIf="sheet === 'rate' && ride">
+  <div class="scrim" (click)="closeSheet()"></div>
+  <div class="bsheet" role="dialog" aria-modal="true" aria-labelledby="rate-h">
+    <div class="grab"></div>
+    <div class="sheet-in" style="padding-top: 8px; text-align: center">
+      <span class="av rate-av">{{ ride.driver.initials }}</span>
+      <h2 id="rate-h" style="margin-top: 10px">How was your ride with {{ first }}?</h2>
+      <p class="t13 muted" style="margin-top: 2px">{{ rateTrip }}</p>
+      <div class="rate-stars" role="radiogroup" aria-label="Your rating">
+        <button *ngFor="let n of [1, 2, 3, 4, 5]" role="radio" [attr.aria-checked]="rateScore === n" [attr.aria-label]="n + (n === 1 ? ' star' : ' stars')" [disabled]="rateDone || rateSending" (click)="rateScore = n">
+          <ion-icon [name]="n <= rateScore ? 'star' : 'star-outline'"></ion-icon>
+        </button>
+      </div>
+      <p class="t13 muted" *ngIf="!rateScore && !rateDone">Tap a star</p>
+      <textarea class="rate-note" *ngIf="!rateDone" rows="2" maxlength="500" placeholder="Add a comment (optional)" aria-label="Comment, optional" [(ngModel)]="rateComment"></textarea>
+      <p class="sheet-err" *ngIf="rateError" role="alert">{{ rateError }}</p>
+      <ng-container *ngIf="!rateDone">
+        <button class="c-go tall" style="margin-top: 14px" [disabled]="!rateScore || rateSending" (click)="sendRate()">{{ rateSending ? 'Sending…' : 'Send rating' }}</button>
+        <button class="link" style="margin-top: 6px; color: var(--cr-muted)" [disabled]="rateSending" (click)="skipRate()">Not now</button>
+      </ng-container>
+      <ng-container *ngIf="rateDone">
+        <p class="okline" role="status" style="margin-top: 14px"><ion-icon name="checkmark-circle"></ion-icon><span>Thanks. Your rating helps other riders.</span></p>
+        <button class="c-go tall line" style="margin-top: 6px" (click)="sheet = null">Back to the trip</button>
+      </ng-container>
     </div>
   </div>
 </ng-container>

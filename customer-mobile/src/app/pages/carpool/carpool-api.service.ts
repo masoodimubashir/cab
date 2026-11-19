@@ -7,6 +7,7 @@ import {
   CarpoolChatInbox,
   CarpoolChatMessage,
   CarpoolChatThread,
+  CarpoolCodeCheck,
   CarpoolConfig,
   CarpoolDriverHome,
   CarpoolEditInput,
@@ -160,6 +161,37 @@ export class CarpoolApiService {
   /** The driver's private Paid tick. */
   markPaid(id: number, paid: boolean): Observable<CarpoolJoinRequest> {
     return this.api.post<{ data: CarpoolJoinRequest }>(`/carpool/driver/join-requests/${id}/paid`, { paid }).pipe(map((r) => r.data));
+  }
+
+  /* ── M6: the ride ── */
+
+  startRide(id: number): Observable<CarpoolListing> {
+    return this.api.post<{ data: CarpoolListing }>(`/carpool/driver/listings/${id}/start`, {}).pipe(map((r) => r.data));
+  }
+
+  completeRide(id: number): Observable<CarpoolListing> {
+    return this.api.post<{ data: CarpoolListing }>(`/carpool/driver/listings/${id}/complete`, {}).pipe(map((r) => r.data));
+  }
+
+  checkCode(requestId: number, code: string): Observable<CarpoolCodeCheck> {
+    return this.api.post<{ data: CarpoolCodeCheck }>(`/carpool/driver/join-requests/${requestId}/check-code`, { code }).pipe(map((r) => r.data));
+  }
+
+  markPickedUp(requestId: number): Observable<CarpoolJoinRequest> {
+    return this.api.post<{ data: CarpoolJoinRequest }>(`/carpool/driver/join-requests/${requestId}/pick-up`, {}).pipe(map((r) => r.data));
+  }
+
+  markDropped(requestId: number): Observable<CarpoolJoinRequest> {
+    return this.api.post<{ data: CarpoolJoinRequest }>(`/carpool/driver/join-requests/${requestId}/drop`, {}).pipe(map((r) => r.data));
+  }
+
+  markNoShow(requestId: number): Observable<CarpoolJoinRequest> {
+    return this.api.post<{ data: CarpoolJoinRequest }>(`/carpool/driver/join-requests/${requestId}/no-show`, {}).pipe(map((r) => r.data));
+  }
+
+  /** A rider's rating of the driver, once, after drop-off (customer 8g). */
+  rateDriver(listingId: number, score: number, comment: string | null): Observable<void> {
+    return this.api.post<unknown>(`/carpool/rides/${listingId}/rating`, { score, comment }).pipe(map(() => undefined));
   }
 
   /* ── M4, customer app: search and join ── */

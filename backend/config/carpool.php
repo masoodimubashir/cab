@@ -38,6 +38,9 @@ return [
     'code_max_attempts' => 3,
     'code_lock_minutes' => 5,
 
+    // Start ride opens this long before the departure time (our proposal, M6).
+    'start_early_minutes' => 60,
+
     // Seats a carpool driver can offer (section 2, driver sign-up).
     'seats_min' => 1,
     'seats_max' => 6,

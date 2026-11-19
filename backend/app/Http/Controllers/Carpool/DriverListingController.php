@@ -9,6 +9,7 @@ use App\Services\Carpool\CarpoolClock;
 use App\Services\Carpool\CarpoolListingService;
 use App\Services\Carpool\CarpoolPresenter;
 use App\Services\Carpool\CarpoolRequestService;
+use App\Services\Carpool\CarpoolRideService;
 use App\Services\Carpool\RouteGeometry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class DriverListingController extends Controller
     public function __construct(
         private CarpoolListingService $listings,
         private CarpoolRequestService $requests,
+        private CarpoolRideService $rides,
         private CarpoolPresenter $present,
     ) {
     }
@@ -103,6 +105,18 @@ class DriverListingController extends Controller
         return response()->json(['data' => $this->shape($this->listings->cancel($request->user(), $listing, $data['note'] ?? null), true)]);
     }
 
+    /** Start ride (driver 8, 9). */
+    public function start(Request $request, CarpoolListing $listing): JsonResponse
+    {
+        return response()->json(['data' => $this->shape($this->rides->start($request->user(), $listing), true)]);
+    }
+
+    /** Complete ride (driver 9, 13b). */
+    public function complete(Request $request, CarpoolListing $listing): JsonResponse
+    {
+        return response()->json(['data' => $this->shape($this->rides->complete($request->user(), $listing), true)]);
+    }
+
     public function requests(Request $request): JsonResponse
     {
         $data = $request->validate(['on' => ['required', 'boolean']]);
@@ -167,13 +181,28 @@ class DriverListingController extends Controller
             'cancel_reason' => $l->cancel_reason,
             'cancel_note' => $l->cancel_note,
             'can_edit' => $l->isEditable(),
+            'started_at' => $l->started_at?->toIso8601String(),
+            'completed_at' => $l->completed_at?->toIso8601String(),
+            'completed_by' => $l->completed_by,
+            'counts_as_ride' => $l->counts_as_ride,
+            'can_start' => $l->status === CarpoolListing::STATUS_PUBLISHED
+                && now()->gte($l->departs_at->copy()->subMinutes((int) config('carpool.start_early_minutes', 60))),
+            'start_opens_at' => $l->departs_at->copy()->subMinutes((int) config('carpool.start_early_minutes', 60))->toIso8601String(),
         ];
         if ($full) {
             $out['route_polyline'] = $l->route_polyline;
             // Riders, in pickup order (driver mockup 8), and how many are still waiting.
             $geo = RouteGeometry::of($l->route_polyline ?? []);
-            $out['riders'] = $l->requests()->where('status', CarpoolRequest::STATUS_ACCEPTED)->with('rider')
-                ->orderBy('pickup_m')->get()->map(fn ($r) => $this->present->driverRequest($r, $l, $geo))->values();
+            $statuses = in_array($l->status, [CarpoolListing::STATUS_IN_PROGRESS, CarpoolListing::STATUS_COMPLETED], true)
+                ? [CarpoolRequest::STATUS_ACCEPTED, CarpoolRequest::STATUS_COMPLETED, CarpoolRequest::STATUS_NO_SHOW]
+                : [CarpoolRequest::STATUS_ACCEPTED];
+            $riders = $l->requests()->whereIn('status', $statuses)->with('rider')->orderBy('pickup_m')->get();
+            $out['riders'] = $riders->map(fn ($r) => $this->present->driverRequest($r, $l, $geo))->values();
+            $out['group_chat_id'] = $this->present->groupChatId($l);
+            $out['riders_rode'] = $riders->where('status', CarpoolRequest::STATUS_COMPLETED)->count();
+            $out['riders_picked_up'] = $riders->filter(fn ($r) => $r->picked_up_at)->count();
+            $out['can_complete'] = $l->status === CarpoolListing::STATUS_IN_PROGRESS
+                && $riders->where('status', CarpoolRequest::STATUS_ACCEPTED)->isEmpty();
             $out['pending_count'] = $l->requests()->where('status', CarpoolRequest::STATUS_PENDING)->count();
         }
 

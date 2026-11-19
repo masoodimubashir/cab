@@ -7,6 +7,7 @@ import { CarpoolInboxPage } from './driver/carpool-inbox.page';
 import { CarpoolProfilePage } from './driver/carpool-profile.page';
 import { CarpoolPublishPage } from './driver/carpool-publish.page';
 import { CarpoolListingPage } from './driver/carpool-listing.page';
+import { CarpoolCodePage } from './driver/carpool-code.page';
 import { CarpoolRiderPage } from './driver/carpool-rider.page';
 import { CarpoolChatPage } from './chat/carpool-chat.page';
 import { CarpoolPickupPage } from './driver/carpool-pickup.page';
@@ -35,6 +36,7 @@ const routes: Routes = [
   { path: 'listing/:id', component: CarpoolListingPage, canActivate: [CarpoolDriverGuard] },
   { path: 'chat/:id', component: CarpoolChatPage, canActivate: [CarpoolDriverGuard] },
   { path: 'chat/:id/pickup', component: CarpoolPickupPage, canActivate: [CarpoolDriverGuard] },
+  { path: 'listing/:id/pickup/:requestId', component: CarpoolCodePage, canActivate: [CarpoolDriverGuard] },
   { path: 'listing/:id/rider/:requestId', component: CarpoolRiderPage, canActivate: [CarpoolDriverGuard] },
 ];
 

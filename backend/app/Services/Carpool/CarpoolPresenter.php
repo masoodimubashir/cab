@@ -3,6 +3,7 @@
 namespace App\Services\Carpool;
 
 use App\Models\Carpool\CarpoolListing;
+use App\Models\Carpool\CarpoolRating;
 use App\Models\Carpool\CarpoolRequest;
 use App\Models\Carpool\CarpoolVehicle;
 use App\Models\User;
@@ -51,18 +52,31 @@ class CarpoolPresenter
         $driver = $l->driver;
         $user = $driver?->user;
         $name = $this->name($user, 'Driver');
+        $rating = $this->ratingOf($user?->id);
 
         return [
             'name' => $name,
             'first_name' => $this->firstName($name),
             'initials' => $this->initials($name),
-            // Rider-to-driver ratings arrive with M6 (P11); until then the apps hide the line.
-            'rating' => null,
-            'rating_count' => 0,
+            'rating' => $rating['avg'],
+            'rating_count' => $rating['count'],
             'carpools_driven' => $driver ? CarpoolListing::query()->where('driver_id', $driver->id)
                 ->where('status', CarpoolListing::STATUS_COMPLETED)->where('counts_as_ride', true)->count() : 0,
             'since' => $driver?->approved_at ? CarpoolClock::local($driver->approved_at)->format('Y-m') : null,
         ];
+    }
+
+    /** @return array{avg: ?float, count: int} a driver's average from riders (P11); drivers see only this */
+    public function ratingOf(?int $userId): array
+    {
+        if (! $userId) {
+            return ['avg' => null, 'count' => 0];
+        }
+        // One aggregate query instead of a count and an average.
+        $row = CarpoolRating::query()->where('rated_id', $userId)->selectRaw('COUNT(*) as n, AVG(score) as a')->first();
+        $count = (int) ($row->n ?? 0);
+
+        return ['avg' => $count ? round((float) $row->a, 1) : null, 'count' => $count];
     }
 
     /** @return array<string, mixed>|null */
@@ -114,7 +128,9 @@ class CarpoolPresenter
     {
         $geo ??= RouteGeometry::of($l->route_polyline ?? []);
         $state = $this->riderState($r, $l);
-        $showCode = $r->status === CarpoolRequest::STATUS_ACCEPTED && in_array($l->status, CarpoolListing::LIVE, true);
+        $showCode = $r->status === CarpoolRequest::STATUS_ACCEPTED && in_array($l->status, CarpoolListing::LIVE, true) && ! $r->picked_up_at;
+        $canRate = $r->status === CarpoolRequest::STATUS_COMPLETED && $r->dropped_at
+            && ! CarpoolRating::query()->where('listing_id', $l->id)->where('rater_id', $r->rider_id)->exists();
 
         return [
             'id' => $r->id,
@@ -129,6 +145,12 @@ class CarpoolPresenter
             'total' => $r->total(),
             'code' => $showCode ? $r->code : null,
             'chat_id' => $this->chatId($r),
+            'picked_up_at' => $r->picked_up_at?->toIso8601String(),
+            'dropped_at' => $r->dropped_at?->toIso8601String(),
+            'no_show_at' => $r->no_show_at?->toIso8601String(),
+            'can_rate' => $canRate,
+            'ride' => $r->status === CarpoolRequest::STATUS_ACCEPTED && $l->status === CarpoolListing::STATUS_IN_PROGRESS
+                ? $this->rideProgress($r, $l, $geo) : null,
             'pickup' => [
                 'lat' => $r->pickup_lat, 'lng' => $r->pickup_lng, 'name' => $r->pickup_name,
                 'address' => $r->pickup_address, 'along_m' => $r->pickup_m,
@@ -185,6 +207,12 @@ class CarpoolPresenter
             'is_free' => $r->is_free,
             'total' => $r->total(),
             'paid_marked' => $r->paid_marked,
+            'ride_state' => $this->rideState($r),
+            'picked_up_at' => $r->picked_up_at?->toIso8601String(),
+            'dropped_at' => $r->dropped_at?->toIso8601String(),
+            'no_show_at' => $r->no_show_at?->toIso8601String(),
+            'code_verified' => (bool) $r->code_verified_at,
+            'code_locked_until' => $r->code_locked_until?->isFuture() ? $r->code_locked_until->toIso8601String() : null,
             'chat_id' => $this->chatId($r),
             'pickup' => ['name' => $r->pickup_name, 'address' => $r->pickup_address, 'lat' => $r->pickup_lat, 'lng' => $r->pickup_lng,
                 'at' => $this->etaAt($l, $geo, $r->pickup_m)->toIso8601String()],
@@ -192,6 +220,49 @@ class CarpoolPresenter
                 'at' => $this->etaAt($l, $geo, $r->drop_m)->toIso8601String()],
             'created_at' => $r->created_at?->toIso8601String(),
         ];
+    }
+
+    /** waiting, picked_up, dropped or no_show: how a rider stands once the ride is on the road (driver 9). */
+    public function rideState(CarpoolRequest $r): string
+    {
+        return match (true) {
+            $r->status === CarpoolRequest::STATUS_NO_SHOW => 'no_show',
+            $r->status === CarpoolRequest::STATUS_COMPLETED => 'dropped',
+            (bool) $r->picked_up_at => 'picked_up',
+            default => 'waiting',
+        };
+    }
+
+    /**
+     * Where the car is, worked out from the plan: no live location in v1 (spec
+     * "out of scope"). The planned pickup and drop times shift by how late the
+     * driver actually started (customer 8e).
+     *
+     * @return array<string, mixed>
+     */
+    private function rideProgress(CarpoolRequest $r, CarpoolListing $l, RouteGeometry $geo): array
+    {
+        // Only a late start moves the times; leaving early doesn't make riders' pickups earlier.
+        $shift = $l->started_at ? max(0, $l->departs_at->diffInSeconds($l->started_at, false)) : 0;
+        $pickupAt = $this->etaAt($l, $geo, $r->pickup_m)->addSeconds($shift);
+        $dropAt = $this->etaAt($l, $geo, $r->drop_m)->addSeconds($shift);
+        $mins = (int) max(0, ceil(now()->diffInSeconds($r->picked_up_at ? $dropAt : $pickupAt, false) / 60));
+
+        return [
+            'picked_up' => (bool) $r->picked_up_at,
+            'minutes_away' => $mins,
+            'pickup_at' => $pickupAt->toIso8601String(),
+            'drop_at' => $dropAt->toIso8601String(),
+        ];
+    }
+
+    /** The group chat of a carpool, once someone has been accepted. Callers decide who may be told. */
+    public function groupChatId(CarpoolListing $l): ?int
+    {
+        $id = \App\Models\Carpool\CarpoolConversation::query()->where('listing_id', $l->id)
+            ->where('kind', \App\Models\Carpool\CarpoolConversation::GROUP)->value('id');
+
+        return $id ? (int) $id : null;
     }
 
     /** The private chat of this request (driver and rider only), once it exists. */

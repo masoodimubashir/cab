@@ -39,6 +39,9 @@ Route::middleware('carpool.enabled')->group(function () {
         Route::patch('/listings/{listing}', [DriverListingController::class, 'update']);
         Route::post('/listings/{listing}/delay', [DriverListingController::class, 'delay']);
         Route::post('/listings/{listing}/cancel', [DriverListingController::class, 'cancel']);
+        // M6: the ride.
+        Route::post('/listings/{listing}/start', [DriverListingController::class, 'start']);
+        Route::post('/listings/{listing}/complete', [DriverListingController::class, 'complete']);
 
         // M4: join requests on the driver's side.
         Route::get('/inbox', [DriverRequestController::class, 'inbox']);
@@ -48,6 +51,10 @@ Route::middleware('carpool.enabled')->group(function () {
         Route::post('/join-requests/{carpoolRequest}/decline', [DriverRequestController::class, 'decline']);
         Route::post('/join-requests/{carpoolRequest}/remove', [DriverRequestController::class, 'remove']);
         Route::post('/join-requests/{carpoolRequest}/paid', [DriverRequestController::class, 'paid']);
+        Route::post('/join-requests/{carpoolRequest}/check-code', [DriverRequestController::class, 'checkCode']);
+        Route::post('/join-requests/{carpoolRequest}/pick-up', [DriverRequestController::class, 'pickUp']);
+        Route::post('/join-requests/{carpoolRequest}/drop', [DriverRequestController::class, 'drop']);
+        Route::post('/join-requests/{carpoolRequest}/no-show', [DriverRequestController::class, 'noShow']);
     });
 
     // M4: riders. Search and asking to join need carpool enabled (A36); the
@@ -57,6 +64,7 @@ Route::middleware('carpool.enabled')->group(function () {
     Route::post('/rides/{listing}/join', [RiderController::class, 'join']);
     Route::post('/join-requests/{carpoolRequest}/withdraw', [RiderController::class, 'withdraw']);
     Route::post('/join-requests/{carpoolRequest}/leave', [RiderController::class, 'leave']);
+    Route::post('/rides/{listing}/rating', [RiderController::class, 'rate']);
     Route::get('/trips', [RiderController::class, 'trips']);
     Route::post('/rider/photo', [RiderController::class, 'photo']);
 

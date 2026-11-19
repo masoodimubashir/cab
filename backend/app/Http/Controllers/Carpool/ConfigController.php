@@ -33,6 +33,7 @@ class ConfigController extends Controller
             'seats_max' => (int) config('carpool.seats_max'),
             'price_max' => (int) config('carpool.price_max'),
             'message_max_chars' => (int) config('carpool.message_max_chars'),
+            'chat_retention_days' => max(1, (int) $settings->chat_retention_days),
             'timezone' => (string) config('carpool.timezone'),
         ]);
     }

@@ -9,7 +9,7 @@ import { LatLng, createMap, drawRide, flat, loadRiderMaps, pathLength, pickupPin
 import { RiderSearch, fromParams, toParams, toQuery } from './rider-search';
 
 type View = 'open' | 'sent' | 'accepted' | 'started' | 'ended';
-type Sheet = 'ask' | 'photo' | 'cancel' | 'leave' | null;
+type Sheet = 'ask' | 'photo' | 'cancel' | 'leave' | 'rate' | null;
 
 /** A pickup the rider is about to ask for: a point on the route with its name and timing. */
 interface AskPoint extends LatLng {
@@ -26,8 +26,9 @@ interface Head { text: string; small?: string; icon?: string; cls?: 'ok' | 'grey
 /**
  * The carpool page, rider side, in every state (customer mockup 4, 4b, 8b,
  * 8d, 8j, 8k) with its sheets: Ask to join (5), the photo prompt (5a), Move
- * the pickup (5b), Cancel a request (8c) and Leave (8h). Chat buttons, the
- * started and past states and Report arrive with M5 and M6.
+ * the pickup (5b), Cancel a request (8c) and Leave (8h). M6 adds the started
+ * state (8e: how soon the car reaches you, worked out from the plan), the
+ * past page with Rate (8f) and the rating sheet (8g).
  */
 @Component({
   selector: 'app-carpool-ride',
@@ -74,6 +75,14 @@ export class CarpoolRidePage implements OnDestroy {
   private pin: any = null;
   private clear: (() => void)[] = [];
   private timers: ReturnType<typeof setTimeout>[] = [];
+  private poll: ReturnType<typeof setInterval> | null = null;
+
+  // ── Rate the driver (8g) ──
+  rateScore = 0;
+  rateComment = '';
+  rateSending = false;
+  rateDone = false;
+  rateError: string | null = null;
 
   constructor(
     private route: ActivatedRoute,
@@ -88,9 +97,39 @@ export class CarpoolRidePage implements OnDestroy {
     this.id = Number(this.route.snapshot.paramMap.get('id'));
     this.search = fromParams(this.route.snapshot.queryParams);
     this.load();
+    // While you wait for or ride in the car, the page checks for news every 15 seconds.
+    this.stopPoll();
+    this.poll = setInterval(() => {
+      if (this.view === 'started' || (this.view === 'accepted' && this.nearDeparture)) this.refresh();
+    }, 15000);
+  }
+
+  /** Within an hour of leaving (or past it): the only time an accepted ride can change under you. */
+  private get nearDeparture(): boolean {
+    return !!this.ride && new Date(this.ride.departs_at).getTime() - Date.now() < 60 * 60 * 1000;
+  }
+
+  ionViewWillLeave(): void {
+    this.stopPoll();
+  }
+
+  private stopPoll(): void {
+    if (this.poll) clearInterval(this.poll);
+    this.poll = null;
+  }
+
+  /** A quiet reload: no spinner, keeps what is on screen if it fails. */
+  private refresh(): void {
+    this.carpool.ride(this.id, this.search ? toQuery(this.search) : undefined).subscribe({
+      next: (r) => {
+        this.ride = r;
+        this.maybeAskRating();
+      },
+    });
   }
 
   ngOnDestroy(): void {
+    this.stopPoll();
     this.timers.forEach(clearTimeout);
     this.clear.forEach((c) => c());
   }
@@ -104,6 +143,7 @@ export class CarpoolRidePage implements OnDestroy {
         this.loading = false;
         this.gone = false;
         setTimeout(() => void this.drawMain());
+        this.maybeAskRating();
       },
       error: (e) => {
         this.loading = false;
@@ -165,13 +205,13 @@ export class CarpoolRidePage implements OnDestroy {
     if (!r) return null;
     switch (this.view) {
       case 'open':
-        return r.status === 'in_progress' ? { live: true, text: 'Already on the road', small: `It left at ${clock(r.departs_at)}.` } : null;
+        return r.status === 'in_progress' ? this.roadHead() : null;
       case 'sent':
         return { icon: 'time-outline', cls: 'grey', text: `Waiting for ${this.first} to answer` };
       case 'accepted':
         return { icon: 'checkmark-circle', cls: 'ok', text: `${this.first} accepted your request` };
       case 'started':
-        return { live: true, text: `${this.first} is on the way` };
+        return this.startedHead();
     }
     const grey = (text: string, small?: string): Head => ({ icon: 'close-circle-outline', cls: 'grey', text, small });
     switch (m?.state) {
@@ -192,18 +232,92 @@ export class CarpoolRidePage implements OnDestroy {
     }
   }
 
+  /** 4b: the car left already; how soon it reaches the suggested pickup, from the plan. */
+  private roadHead(): Head {
+    const mins = this.ride?.on_road?.minutes_to_pickup;
+    if (mins == null) return { live: true, text: 'Already on the road', small: `It left at ${clock(this.ride!.departs_at)}.` };
+    if (mins < 0) return { live: true, text: 'Already on the road', small: 'The car has probably passed your pickup. Ask before you request.' };
+    return { live: true, text: 'Already on the road', small: mins < 1 ? 'It is at your pickup now.' : `About ${mins} min from your pickup.` };
+  }
+
+  /** 8e: where the car is and how soon it reaches you, then the drop time once you're in. */
+  private startedHead(): Head {
+    const p = this.mine?.ride;
+    if (!p) return { live: true, text: `${this.first} is on the way` };
+    if (p.picked_up) return { live: true, text: `You're on your way to ${this.mine?.drop.name}`, small: `Drop about ${clock(p.drop_at)}.` };
+    if (p.minutes_away < 1) return { live: true, text: `${this.first} is at your pickup` };
+    return { live: true, text: `${this.first} is ${p.minutes_away} min from your pickup` };
+  }
+
+  /** Dropped off and not rated: the sheet opens once (8g); Not now keeps the button on the past page. */
+  private maybeAskRating(): void {
+    const m = this.mine;
+    if (!m?.can_rate || this.sheet || this.rateDone) return;
+    try {
+      if (localStorage.getItem(`carpool_rate_skipped_${this.ride?.id}`)) return;
+    } catch {
+      /* storage can be blocked; the sheet then shows once per visit */
+    }
+    this.openRate();
+  }
+
+  openRate(): void {
+    this.rateScore = 0;
+    this.rateComment = '';
+    this.rateError = null;
+    this.rateDone = false;
+    this.sheet = 'rate';
+  }
+
+  skipRate(): void {
+    try {
+      localStorage.setItem(`carpool_rate_skipped_${this.ride?.id}`, '1');
+    } catch {
+      /* fine */
+    }
+    this.sheet = null;
+  }
+
+  sendRate(): void {
+    if (!this.rateScore || this.rateSending || !this.ride) return;
+    this.rateSending = true;
+    this.rateError = null;
+    this.carpool.rateDriver(this.ride.id, this.rateScore, this.rateComment.trim() || null).subscribe({
+      next: () => {
+        this.rateSending = false;
+        this.rateDone = true;
+        this.load();
+      },
+      error: (e) => {
+        this.rateSending = false;
+        this.rateError = (Object.values(e?.error?.errors ?? {})[0] as string[] | undefined)?.[0] ?? "Couldn't send your rating. Check your connection.";
+      },
+    });
+  }
+
+  /** Group chat and Rate, shown on the past page of a trip you rode (8f). */
+  get rode(): boolean {
+    return this.view === 'ended' && this.mine?.state === 'completed';
+  }
+
+  openGroup(): void {
+    const id = this.ride?.group_chat_id;
+    if (id) void this.nav.navigateForward(`/carpool/chat/${id}`);
+  }
+
   get pickupLabel(): string {
     const at = this.points?.pickup.at;
     switch (this.view) {
       case 'open': return at ? `Suggested pickup, about ${clock(at)}` : 'Suggested pickup';
       case 'sent': return at ? `Your pickup, about ${clock(at)}` : 'Your pickup';
-      case 'ended': return 'Pickup';
+      case 'ended': return this.mine?.picked_up_at ? `Picked up ${clock(this.mine.picked_up_at)}` : 'Pickup';
       default: return at ? `Pickup, about ${clock(at)}` : 'Pickup';
     }
   }
 
   get dropLabel(): string {
     const at = this.points?.drop.at;
+    if (this.view === 'ended' && this.mine?.dropped_at) return `Dropped ${clock(this.mine.dropped_at)}`;
     return this.view === 'ended' || !at ? 'Drop' : `Drop, about ${clock(at)}`;
   }
 
@@ -462,6 +576,12 @@ export class CarpoolRidePage implements OnDestroy {
     this.sheet = which;
   }
 
+  /** "Thu 12 Nov · Rajbagh to Nigeen". */
+  get rateTrip(): string {
+    const m = this.mine;
+    return this.ride && m ? `${titleWhen(this.ride.departs_at)} · ${m.pickup.name} to ${m.drop.name}` : '';
+  }
+
   get sheetTrip(): string {
     const m = this.mine;
     if (!this.ride || !m) return '';
@@ -494,7 +614,11 @@ export class CarpoolRidePage implements OnDestroy {
   }
 
   closeSheet(): void {
-    if (this.sending || this.working || this.uploading) return;
+    if (this.sending || this.working || this.uploading || this.rateSending) return;
+    if (this.sheet === 'rate') {
+      this.skipRate();
+      return;
+    }
     this.sheet = null;
   }
 
