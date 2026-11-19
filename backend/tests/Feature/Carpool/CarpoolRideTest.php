@@ -254,7 +254,7 @@ class CarpoolRideTest extends TestCase
         $this->postJson("/api/carpool/rides/{$l->id}/rating", ['score' => 4, 'comment' => 'Smooth ride'])->assertCreated();
         $this->postJson("/api/carpool/rides/{$l->id}/rating", ['score' => 5])->assertStatus(422);
         $this->getJson("/api/carpool/rides/{$l->id}")->assertJsonPath('data.my_request.can_rate', false)
-            ->assertJsonPath('data.driver.rating', 4)->assertJsonPath('data.driver.rating_count', 1);
+            ->assertJsonPath('data.driver.rating', null)->assertJsonPath('data.driver.rating_count', 1);
         $this->assertSame('Smooth ride', CarpoolRating::query()->first()->comment);
     }
 
@@ -442,13 +442,110 @@ class CarpoolRideTest extends TestCase
     public function test_driver_rating_average_is_one_value_across_riders(): void
     {
         $l = $this->listing(['status' => CarpoolListing::STATUS_COMPLETED]);
-        foreach ([[ '9990005125', 5 ], [ '9990005126', 4 ]] as [$phone, $score]) {
+        foreach ([[ '9990005125', 5 ], [ '9990005126', 4 ], [ '9990005127', 4 ]] as [$phone, $score]) {
             $r = $this->accepted($l, $phone);
             $r->status = CarpoolRequest::STATUS_COMPLETED;
             $r->dropped_at = now();
             $r->save();
             app(CarpoolRideService::class)->rateDriver($r->rider, $l->fresh()->load('driver.user'), $score, null);
         }
-        $this->assertSame(['avg' => 4.5, 'count' => 2], app(\App\Services\Carpool\CarpoolPresenter::class)->ratingOf($this->driverUser->id));
+        $this->assertSame(['avg' => 4.3, 'count' => 3], app(\App\Services\Carpool\CarpoolPresenter::class)->ratingOf($this->driverUser->id));
+    }
+
+    public function test_the_average_is_hidden_until_enough_ratings(): void
+    {
+        $l = $this->listing(['status' => CarpoolListing::STATUS_COMPLETED]);
+        foreach ([['9990005130', 1], ['9990005131', 5]] as [$phone, $score]) {
+            $r = $this->accepted($l, $phone);
+            $r->status = CarpoolRequest::STATUS_COMPLETED;
+            $r->dropped_at = now();
+            $r->save();
+            app(CarpoolRideService::class)->rateDriver($r->rider, $l->fresh()->load('driver.user'), $score, null);
+        }
+        $this->assertSame(['avg' => null, 'count' => 2], app(\App\Services\Carpool\CarpoolPresenter::class)->ratingOf($this->driverUser->id));
+    }
+
+    public function test_waiting_requests_stay_open_when_the_ride_starts_and_close_15_minutes_after_the_pickup(): void
+    {
+        $l = $this->listing();
+        $waiting = $this->accepted($l, '9990005140', 1500, 7000);
+        $waiting->status = CarpoolRequest::STATUS_PENDING;
+        $waiting->save();
+        $this->asDriver();
+        $this->postJson("/api/carpool/driver/listings/{$l->id}/start")->assertOk();
+
+        $svc = app(\App\Services\Carpool\CarpoolRequestService::class);
+        $this->assertSame('pending', $waiting->fresh()->status);
+        Sanctum::actingAs($waiting->rider);
+        $this->getJson("/api/carpool/rides/{$l->id}")->assertJsonPath('data.my_request.on_road', true);
+        $this->assertSame(0, $svc->expirePassedPickups());
+
+        $this->travel(30)->minutes();
+        $this->asDriver();
+        $this->getJson("/api/carpool/driver/join-requests/{$waiting->id}")->assertJsonPath('data.pickup_passed_min', fn ($v) => $v >= 0);
+
+        $this->travel(40)->minutes();
+        $this->assertSame(1, $svc->expirePassedPickups());
+        $this->assertSame('closed', $waiting->fresh()->status);
+        $this->assertDatabaseHas('app_notifications', ['user_id' => $waiting->rider_id, 'type' => 'carpool_request_closed']);
+    }
+
+    public function test_a_rider_is_warned_about_a_second_carpool_at_the_same_time(): void
+    {
+        $first = $this->listing(['departs_at' => now()->addMinutes(20)]);
+        $mine = $this->accepted($first, '9990005141');
+        $overlapping = $this->listing(['departs_at' => now()->addMinutes(35)]);
+        $later = $this->listing(['departs_at' => now()->addHours(6)]);
+        $body = fn () => [
+            'seats' => 1,
+            'pickup' => ['lat' => 34.0859, 'lng' => 74.7875, 'name' => 'Rajbagh'],
+            'drop' => ['lat' => 34.1159, 'lng' => 74.8225, 'name' => 'Nigeen'],
+        ];
+        Sanctum::actingAs($mine->rider);
+
+        // Not at the same time: no warning.
+        $this->postJson("/api/carpool/rides/{$later->id}/join", $body())->assertCreated();
+
+        // Overlapping: a warning, then "ask anyway" goes through.
+        $this->postJson("/api/carpool/rides/{$overlapping->id}/join", $body())->assertStatus(422)->assertJsonValidationErrors('overlap');
+        $this->assertSame(0, CarpoolRequest::query()->where('listing_id', $overlapping->id)->count());
+        $this->postJson("/api/carpool/rides/{$overlapping->id}/join", $body() + ['confirm_overlap' => true])->assertCreated();
+    }
+
+    public function test_the_heartbeat_fails_when_the_lifecycle_job_has_not_run(): void
+    {
+        $this->artisan('carpool:heartbeat')->assertFailed();
+
+        $this->artisan('carpool:lifecycle')->assertSuccessful();
+        $this->artisan('carpool:heartbeat')->assertSuccessful();
+
+        $this->travel(4)->hours();
+        $this->artisan('carpool:heartbeat')->assertFailed();
+
+        config(['carpool.kill_switch' => true]);
+        $this->artisan('carpool:heartbeat')->assertSuccessful();
+    }
+
+    public function test_deleted_chats_leave_a_note_on_the_trip(): void
+    {
+        $l = $this->listing(['status' => CarpoolListing::STATUS_COMPLETED]);
+        $r = $this->accepted($l, '9990005142');
+        $r->status = CarpoolRequest::STATUS_COMPLETED;
+        $r->dropped_at = now();
+        $r->save();
+        $chat = app(\App\Services\Carpool\CarpoolChatService::class);
+        $chat->joinGroup($r);
+        \App\Models\Carpool\CarpoolConversation::query()->where('listing_id', $l->id)->update(['ended_at' => now()->subDays(3)]);
+
+        Sanctum::actingAs($r->rider);
+        $this->getJson("/api/carpool/rides/{$l->id}")->assertOk()->assertJsonPath('data.chat_deleted', false);
+
+        $chat->prune();
+
+        $this->assertSame(0, \App\Models\Carpool\CarpoolConversation::query()->where('listing_id', $l->id)->count());
+        $this->assertNotNull($l->fresh()->chats_deleted_at);
+        $this->getJson("/api/carpool/rides/{$l->id}")->assertOk()->assertJsonPath('data.chat_deleted', true)->assertJsonPath('data.group_chat_id', null);
+        $this->asDriver();
+        $this->getJson("/api/carpool/driver/listings/{$l->id}")->assertJsonPath('data.chats_deleted', true);
     }
 }

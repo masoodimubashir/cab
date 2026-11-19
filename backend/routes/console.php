@@ -54,6 +54,11 @@ Schedule::command('carpool:lifecycle')
     ->withoutOverlapping()
     ->runInBackground();
 
+Schedule::command('carpool:expire-requests')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Dispatch fixed forming vehicles that are due.
 Schedule::command('routes:dispatch-due')
     ->everyMinute()

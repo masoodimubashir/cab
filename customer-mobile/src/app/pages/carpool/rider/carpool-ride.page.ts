@@ -207,7 +207,9 @@ export class CarpoolRidePage implements OnDestroy {
       case 'open':
         return r.status === 'in_progress' ? this.roadHead() : null;
       case 'sent':
-        return { icon: 'time-outline', cls: 'grey', text: `Waiting for ${this.first} to answer` };
+        return m?.on_road
+          ? { live: true, text: `${this.first} has left and is on the road`, small: 'Your request is still waiting for an answer.' }
+          : { icon: 'time-outline', cls: 'grey', text: `Waiting for ${this.first} to answer` };
       case 'accepted':
         return { icon: 'checkmark-circle', cls: 'ok', text: `${this.first} accepted your request` };
       case 'started':
@@ -435,14 +437,19 @@ export class CarpoolRidePage implements OnDestroy {
     this.pkMap.setZoom(16);
   }
 
-  send(): void {
+  /** Set when the server says the rider already has a carpool at about this time. */
+  overlapWarning: string | null = null;
+
+  send(confirmOverlap = false): void {
     if (!this.ride || !this.askPickup || this.sending) return;
     const s = this.ride.suggested;
     if (!s) return;
     this.sending = true;
     this.sheetError = null;
+    this.overlapWarning = null;
     this.carpool.join(this.ride.id, {
       seats: this.askSeats,
+      ...(confirmOverlap ? { confirm_overlap: true } : {}),
       pickup: { lat: this.askPickup.lat, lng: this.askPickup.lng, name: this.askPickup.name, address: this.askPickup.address },
       drop: { lat: s.drop.lat, lng: s.drop.lng, name: this.search?.to.name ?? this.ride.end.name, address: this.search?.to.address ?? null },
     }).subscribe({
@@ -457,6 +464,10 @@ export class CarpoolRidePage implements OnDestroy {
       error: (e) => {
         this.sending = false;
         const errors = e?.error?.errors ?? {};
+        if (errors.overlap) {
+          this.overlapWarning = (errors.overlap as string[])[0];
+          return;
+        }
         if (errors.photo) {
           this.photoPreview = null;
           this.sheet = 'photo';

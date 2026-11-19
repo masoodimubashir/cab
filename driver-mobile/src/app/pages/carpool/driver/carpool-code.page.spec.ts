@@ -15,7 +15,7 @@ describe('CarpoolCodePage', () => {
 
   const profile = (over: Partial<CarpoolRiderProfile> = {}): CarpoolRiderProfile => ({
     id: 9, listing_id: 4, status: 'accepted', rider: { name: 'Aamir Lone', first_name: 'Aamir', initials: 'AL' }, seats: 1, price_per_seat: 60,
-    is_free: false, total: 60, paid_marked: false, chat_id: 5, ride_state: 'waiting', picked_up_at: null, dropped_at: null, no_show_at: null,
+    is_free: false, total: 60, paid_marked: false, chat_id: 5, ride_state: 'waiting', pickup_passed_min: null, picked_up_at: null, dropped_at: null, no_show_at: null,
     code_verified: false, code_locked_until: null, pickup: { name: 'Jawahar Nagar', lat: 1, lng: 1, at: '2026-11-20T03:00:00Z' },
     drop: { name: 'University', lat: 1, lng: 1, at: '2026-11-20T03:20:00Z' }, created_at: null,
     profile: { joined: '2026-10', phone_verified: true, photo_added: true, carpools_taken: 0 },

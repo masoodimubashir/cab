@@ -18,6 +18,9 @@ export interface CarpoolConfig {
   message_max_chars?: number;
   chat_retention_days?: number;
   timezone?: string;
+  /** Tile name and picture set in Operator Settings; null means use "Carpool" and the icon. */
+  tile_name?: string | null;
+  tile_image_url?: string | null;
 }
 
 export const CARPOOL_OFF: CarpoolConfig = { enabled: false };
@@ -115,6 +118,7 @@ export interface CarpoolListing {
   riders_rode?: number;
   riders_picked_up?: number;
   group_chat_id?: number | null;
+  chats_deleted?: boolean;
 }
 
 /** A route as the driver app sends it: a simplified line plus Google's numbers (Carpool.md P5). */
@@ -208,6 +212,8 @@ export interface CarpoolMyRequest {
   no_show_at: string | null;
   /** Dropped off and not rated yet: shows Rate (customer 8f, 8g). */
   can_rate: boolean;
+  /** Waiting for an answer while the car is already on the road (requests stay open, decided 2026-11-19). */
+  on_road: boolean;
   /** While the ride is on the road: how far the car is, from the plan (no live location in v1). */
   ride: { picked_up: boolean; minutes_away: number; pickup_at: string; drop_at: string } | null;
   pickup: CarpoolRoutePoint;
@@ -318,6 +324,8 @@ export interface CarpoolRide {
   /** 4b: how soon a carpool already on the road reaches the suggested pickup (negative = probably passed). */
   on_road: { minutes_to_pickup: number; started_at: string } | null;
   group_chat_id: number | null;
+  /** The chats of this carpool were deleted after the retention time (B1, Option A). */
+  chat_deleted: boolean;
   started_at: string | null;
   completed_at: string | null;
 }
@@ -332,6 +340,8 @@ export interface CarpoolCodeCheck {
 
 export interface CarpoolJoinInput {
   seats: number;
+  /** Set when the rider chose "Ask anyway" after being told they have a carpool at the same time. */
+  confirm_overlap?: boolean;
   pickup: { lat: number; lng: number; name: string; address?: string | null };
   drop: { lat: number; lng: number; name: string; address?: string | null };
 }
@@ -352,6 +362,8 @@ export interface CarpoolJoinRequest {
   chat_id: number | null;
   /** M6: waiting, picked up, dropped or no-show, and the code check. */
   ride_state: CarpoolRideState;
+  /** Minutes the car should be past this waiting request's pickup, by the plan; null unless the ride is on the road. */
+  pickup_passed_min: number | null;
   picked_up_at: string | null;
   dropped_at: string | null;
   no_show_at: string | null;

@@ -67,7 +67,7 @@ class CarpoolListing extends Model
         'route_polyline' => 'array',
         'distance_m' => 'integer', 'duration_s' => 'integer',
         'departs_at' => 'datetime', 'cancelled_at' => 'datetime', 'changed_from_at' => 'datetime', 'changed_at' => 'datetime',
-        'started_at' => 'datetime', 'completed_at' => 'datetime',
+        'started_at' => 'datetime', 'completed_at' => 'datetime', 'chats_deleted_at' => 'datetime',
         'seats_total' => 'integer', 'seats_taken' => 'integer', 'price_per_seat' => 'integer',
         'is_free' => 'boolean', 'accepting_requests' => 'boolean', 'counts_as_ride' => 'boolean',
     ];
@@ -75,6 +75,11 @@ class CarpoolListing extends Model
     public function driver(): BelongsTo
     {
         return $this->belongsTo(Driver::class);
+    }
+
+    public function city(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\City::class);
     }
 
     public function vehicle(): BelongsTo

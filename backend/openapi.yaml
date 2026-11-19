@@ -1181,13 +1181,13 @@ paths:
     post:
       tags: [Carpool]
       summary: Ask to join. The price is copied at request time.
-      description: Needs the rider's photo at the first join (error key `photo`).
+      description: "Needs the rider's photo at the first join (error key `photo`). If the rider already has a pending or accepted carpool at about the same time the answer is 422 with error key `overlap`; send the same request with `confirm_overlap` set to true to ask anyway."
       operationId: carpool_ride_join
       parameters:
         - { name: listing, in: path, required: true, schema: { type: integer } }
       responses:
         "200": { description: OK }
-        "422": { description: Photo missing, off route, no seats, or carpool off }
+        "422": { description: Photo missing, overlap warning, off route, no seats, or carpool off }
   /carpool/join-requests/{carpoolRequest}/withdraw:
     post:
       tags: [Carpool]

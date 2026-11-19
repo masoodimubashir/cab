@@ -121,6 +121,7 @@ class RiderController extends Controller
             'can_request' => $blocked === null && ! $active,
             'blocked' => $blocked,
             'my_request' => $mine ? $this->present->riderRequest($mine, $listing, $geo) : null,
+            'chat_deleted' => $mine !== null && $listing->chats_deleted_at !== null,
             'group_chat_id' => $mine && in_array($mine->status, CarpoolRequest::SEATED, true) ? $this->present->groupChatId($listing) : null,
         ]]);
     }
@@ -128,7 +129,7 @@ class RiderController extends Controller
     public function join(Request $request, CarpoolListing $listing): JsonResponse
     {
         $seatsMax = (int) config('carpool.seats_max', 6);
-        $rules = ['seats' => ['required', 'integer', 'min:1', "max:{$seatsMax}"]];
+        $rules = ['seats' => ['required', 'integer', 'min:1', "max:{$seatsMax}"], 'confirm_overlap' => ['nullable', 'boolean']];
         foreach (['pickup', 'drop'] as $p) {
             $rules[$p] = ['required', 'array'];
             $rules["{$p}.lat"] = ['required', 'numeric', 'between:-90,90'];

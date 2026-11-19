@@ -169,4 +169,13 @@ describe('CarpoolApiService', () => {
       });
     });
   });
+
+  it('sends confirm_overlap with a join request only when the rider chose to ask anyway', () => {
+    api.post.and.returnValue(of({ data: { id: 1 } }) as any);
+    const input = { seats: 1, pickup: { lat: 1, lng: 2, name: 'A' }, drop: { lat: 3, lng: 4, name: 'B' } };
+    service.join(4, input).subscribe();
+    service.join(4, { ...input, confirm_overlap: true }).subscribe();
+    expect(api.post.calls.argsFor(0)[1]).toEqual(input);
+    expect(api.post.calls.argsFor(1)[1]).toEqual({ ...input, confirm_overlap: true });
+  });
 });

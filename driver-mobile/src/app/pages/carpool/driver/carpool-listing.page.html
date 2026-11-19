@@ -89,6 +89,7 @@
       </ng-container>
       <p class="ride-note" *ngIf="l.status === 'in_progress'">Complete ride unlocks once every rider is dropped or marked no-show.</p>
       <p class="ride-note" *ngIf="l.status === 'published' && !l.can_start">Start ride opens at {{ clock(l.start_opens_at) }}.</p>
+      <p class="keep-note" style="margin-top: 12px" *ngIf="l.chats_deleted && l.status !== 'published' && l.status !== 'in_progress'"><ion-icon name="chatbubble-outline"></ion-icon>This chat was deleted.</p>
       <p class="keep-note" style="margin-top: 12px" *ngIf="l.status === 'completed' && l.group_chat_id"><ion-icon name="time-outline"></ion-icon>Chats are deleted {{ retentionDays }} {{ retentionDays === 1 ? 'day' : 'days' }} after the trip ends.</p>
       <ng-template #noRiders>
         <div class="d-card row" style="gap: 12px">

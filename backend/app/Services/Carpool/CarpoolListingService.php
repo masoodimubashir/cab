@@ -49,6 +49,9 @@ class CarpoolListingService
         if (! CarpoolSwitch::enabled()) {
             $this->fail('Carpool is not open yet.');
         }
+        if ($user->carpool_banned_at) {
+            $this->fail('Your carpool access is paused. Contact support.');
+        }
         $driver = $this->driverFor($user);
         if (! $this->plans->canPublish($user)) {
             $this->fail('You need an active plan to publish carpools.');

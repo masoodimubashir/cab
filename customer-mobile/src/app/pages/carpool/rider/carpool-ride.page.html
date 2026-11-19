@@ -80,6 +80,8 @@
       <ion-icon name="chevron-forward-outline"></ion-icon>
     </button>
 
+    <p class="keep-note" *ngIf="ride.chat_deleted && view === 'ended'"><ion-icon name="chatbubble-outline"></ion-icon>This chat was deleted.</p>
+
     <!-- 6b: the private chat with the driver, from the moment the request is sent -->
     <div class="acts-row" *ngIf="mine?.chat_id && (view === 'sent' || view === 'accepted' || view === 'started')" style="margin-top: 12px">
       <button class="c-go line" *ngIf="ride.group_chat_id && (view === 'accepted' || view === 'started')" (click)="openGroup()"><ion-icon name="people-outline"></ion-icon>Group chat</button>
@@ -153,8 +155,13 @@
       <div class="sumrow"><span>{{ askLine }}</span><b class="total">{{ askTotal }}</b></div>
       <p class="t12 muted" style="line-height: 1.5">{{ askNote }}</p>
       <p class="sheet-err" *ngIf="sheetError" role="alert">{{ sheetError }}</p>
+      <div class="keep-note warn" *ngIf="overlapWarning" role="alert"><ion-icon name="time-outline"></ion-icon><span>{{ overlapWarning }}</span></div>
       <div style="padding-top: 14px">
-        <button class="c-go tall" *ngIf="!sent" [disabled]="sending" (click)="send()">{{ sending ? 'Sending…' : 'Send request' }}</button>
+        <button class="c-go tall" *ngIf="!sent && !overlapWarning" [disabled]="sending" (click)="send()">{{ sending ? 'Sending…' : 'Send request' }}</button>
+        <div class="acts-row" *ngIf="!sent && overlapWarning">
+          <button class="c-go tall line" [disabled]="sending" (click)="overlapWarning = null; closeSheet()">Don't ask</button>
+          <button class="c-go tall" [disabled]="sending" (click)="send(true)">{{ sending ? 'Sending…' : 'Ask anyway' }}</button>
+        </div>
         <p class="okline" *ngIf="sent" role="status"><ion-icon name="checkmark-circle"></ion-icon><span>Request sent. We'll tell you when {{ first }} answers.<small class="dest">Opening My trips</small></span></p>
       </div>
     </div>

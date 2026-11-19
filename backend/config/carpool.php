@@ -41,6 +41,16 @@ return [
     // Start ride opens this long before the departure time (our proposal, M6).
     'start_early_minutes' => 60,
 
+    // HARD-CODED, to review for admin Settings: a waiting request on a ride on the road closes this many
+    // minutes after its planned pickup time (Saqib, 2026-11-19).
+    'pending_expire_after_pickup_minutes' => 15,
+
+    // A driver's average shows only after this many ratings, so one early 1-star doesn't define them.
+    'rating_min_count' => 3,
+
+    // The hourly lifecycle job must have run within this many hours, or carpool:heartbeat fails.
+    'heartbeat_stale_hours' => 3,
+
     // Seats a carpool driver can offer (section 2, driver sign-up).
     'seats_min' => 1,
     'seats_max' => 6,

@@ -41,11 +41,19 @@ class CarpoolRequestService
         if (! CarpoolSwitch::enabled()) {
             $this->fail('Carpool is not open right now.');
         }
+        if ($rider->carpool_banned_at) {
+            $this->fail('Your carpool access is paused. Contact support.');
+        }
         if (! $rider->avatar_path) {
             $this->fail('Add a profile photo first. Drivers check it at pickup.', 'photo');
         }
         if ((int) $listing->driver?->user_id === (int) $rider->id) {
             $this->fail("You can't join your own carpool.");
+        }
+
+        if (empty($data['confirm_overlap']) && ($other = $this->overlapping($rider, $listing))) {
+            $this->fail('You already have a carpool at about this time (' . $this->route($other) . ', '
+                . $this->present->when($other->departs_at) . '). Ask anyway?', 'overlap');
         }
 
         $geo = RouteGeometry::of($listing->route_polyline ?? []);
@@ -106,6 +114,70 @@ class CarpoolRequestService
             $listing, $request, '/carpool/inbox');
 
         return $request;
+    }
+
+    /**
+     * A carpool of this rider's own (asked or accepted) that runs at the same time, or null.
+     * Only a warning: the rider can ask anyway.
+     */
+    public function overlapping(User $rider, CarpoolListing $listing): ?CarpoolListing
+    {
+        $start = $listing->departs_at;
+        $end = $listing->departs_at->copy()->addSeconds($listing->duration_s);
+
+        return CarpoolListing::query()
+            ->join('carpool_requests', 'carpool_requests.listing_id', '=', 'carpool_listings.id')
+            ->where('carpool_requests.rider_id', $rider->id)
+            ->whereIn('carpool_requests.status', CarpoolRequest::ACTIVE)
+            ->where('carpool_listings.id', '!=', $listing->id)
+            ->whereIn('carpool_listings.status', CarpoolListing::LIVE)
+            ->where('carpool_listings.departs_at', '<', $end)
+            ->whereRaw('DATE_ADD(carpool_listings.departs_at, INTERVAL carpool_listings.duration_s SECOND) > ?', [$start])
+            ->select('carpool_listings.*')
+            ->first();
+    }
+
+    /**
+     * Requests stay open while the car is on the road (decided 2026-11-19): the
+     * driver knows where they really are. A waiting request closes only once
+     * its planned pickup is this many minutes behind the car, so nobody waits
+     * at a pickup the car has passed. Runs every few minutes.
+     */
+    public function expirePassedPickups(): int
+    {
+        $grace = (int) config('carpool.pending_expire_after_pickup_minutes', 15);
+        $n = 0;
+        $waiting = CarpoolRequest::query()->where('status', CarpoolRequest::STATUS_PENDING)
+            ->whereHas('listing', fn ($q) => $q->where('status', CarpoolListing::STATUS_IN_PROGRESS))
+            ->with('listing.driver.user')->get();
+        foreach ($waiting as $r) {
+            $l = $r->listing;
+            if ($this->present->minutesPastPickup($r, $l) < $grace) {
+                continue;
+            }
+            $closed = DB::transaction(function () use ($r) {
+                $row = CarpoolRequest::query()->lockForUpdate()->find($r->id);
+                if (! $row || $row->status !== CarpoolRequest::STATUS_PENDING) {
+                    return null;
+                }
+                $row->status = CarpoolRequest::STATUS_CLOSED;
+                $row->closed_reason = CarpoolRequest::CLOSED_ENDED;
+                $row->ended_at = now();
+                $row->save();
+
+                return $row;
+            });
+            if (! $closed) {
+                continue;
+            }
+            $this->chat('endDirect', $closed);
+            $this->notify($closed->rider_id, 'carpool_request_closed', 'The car passed your pickup',
+                $this->route($l) . '. ' . $this->driverFirstName($l) . ' did not answer before reaching your pickup. You can find another carpool for this trip.',
+                $l, $closed, '/carpool/ride/' . $l->id);
+            $n++;
+        }
+
+        return $n;
     }
 
     /** Rider cancels a request the driver hasn't answered (customer 8c). */

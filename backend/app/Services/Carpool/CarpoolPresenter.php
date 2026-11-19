@@ -76,7 +76,10 @@ class CarpoolPresenter
         $row = CarpoolRating::query()->where('rated_id', $userId)->selectRaw('COUNT(*) as n, AVG(score) as a')->first();
         $count = (int) ($row->n ?? 0);
 
-        return ['avg' => $count ? round((float) $row->a, 1) : null, 'count' => $count];
+        // Shown only once there are enough ratings to mean something.
+        $enough = $count >= (int) config('carpool.rating_min_count', 3);
+
+        return ['avg' => $enough ? round((float) $row->a, 1) : null, 'count' => $count];
     }
 
     /** @return array<string, mixed>|null */
@@ -149,6 +152,7 @@ class CarpoolPresenter
             'dropped_at' => $r->dropped_at?->toIso8601String(),
             'no_show_at' => $r->no_show_at?->toIso8601String(),
             'can_rate' => $canRate,
+            'on_road' => $r->status === CarpoolRequest::STATUS_PENDING && $l->status === CarpoolListing::STATUS_IN_PROGRESS,
             'ride' => $r->status === CarpoolRequest::STATUS_ACCEPTED && $l->status === CarpoolListing::STATUS_IN_PROGRESS
                 ? $this->rideProgress($r, $l, $geo) : null,
             'pickup' => [
@@ -208,6 +212,8 @@ class CarpoolPresenter
             'total' => $r->total(),
             'paid_marked' => $r->paid_marked,
             'ride_state' => $this->rideState($r),
+            'pickup_passed_min' => $r->status === CarpoolRequest::STATUS_PENDING && $l->status === CarpoolListing::STATUS_IN_PROGRESS
+                ? max(0, $this->minutesPastPickup($r, $l)) : null,
             'picked_up_at' => $r->picked_up_at?->toIso8601String(),
             'dropped_at' => $r->dropped_at?->toIso8601String(),
             'no_show_at' => $r->no_show_at?->toIso8601String(),
@@ -263,6 +269,19 @@ class CarpoolPresenter
             ->where('kind', \App\Models\Carpool\CarpoolConversation::GROUP)->value('id');
 
         return $id ? (int) $id : null;
+    }
+
+    /**
+     * Minutes by which the car has passed this request's planned pickup (negative = still ahead),
+     * from the plan moved by a late start. No live position in v1.
+     */
+    public function minutesPastPickup(CarpoolRequest $r, CarpoolListing $l): int
+    {
+        $geo = RouteGeometry::of($l->route_polyline ?? []);
+        $shift = $l->started_at ? max(0, $l->departs_at->diffInSeconds($l->started_at, false)) : 0;
+        $at = $this->etaAt($l, $geo, $r->pickup_m)->addSeconds($shift);
+
+        return (int) floor($at->diffInSeconds(now(), false) / 60);
     }
 
     /** The private chat of this request (driver and rider only), once it exists. */

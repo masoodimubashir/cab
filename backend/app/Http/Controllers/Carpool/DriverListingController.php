@@ -198,6 +198,7 @@ class DriverListingController extends Controller
                 : [CarpoolRequest::STATUS_ACCEPTED];
             $riders = $l->requests()->whereIn('status', $statuses)->with('rider')->orderBy('pickup_m')->get();
             $out['riders'] = $riders->map(fn ($r) => $this->present->driverRequest($r, $l, $geo))->values();
+            $out['chats_deleted'] = $l->chats_deleted_at !== null;
             $out['group_chat_id'] = $this->present->groupChatId($l);
             $out['riders_rode'] = $riders->where('status', CarpoolRequest::STATUS_COMPLETED)->count();
             $out['riders_picked_up'] = $riders->filter(fn ($r) => $r->picked_up_at)->count();

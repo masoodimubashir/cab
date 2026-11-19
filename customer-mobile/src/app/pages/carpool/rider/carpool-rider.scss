@@ -245,6 +245,7 @@ ion-footer .c-dock > :only-child { max-width: 520px; margin: 0 auto; }
 .empty-plain p { margin-top: 6px; font-size: 13px; line-height: 1.6; }
 .keep-note { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--cr-tile); font-size: 12px; color: var(--cr-muted); }
 .keep-note ion-icon { flex: none; font-size: 16px; }
+.keep-note.warn { margin-bottom: 4px; background: var(--cr-warn-bg, #fff2d0); color: var(--cr-warn, #8a5a00); }
 .sk { border-radius: 8px; background: linear-gradient(90deg, #e9edf2 25%, #f4f6f9 40%, #e9edf2 60%); background-size: 300% 100%; animation: cr-shimmer 1.4s linear infinite; }
 @keyframes cr-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 .errbar { display: flex; align-items: center; gap: 10px; margin: 12px 0 0; padding: 10px 12px; border: 1px solid #f3cfd2; border-radius: 12px; background: #fdf1f2; font-size: 14px; color: var(--cr-ink); }
