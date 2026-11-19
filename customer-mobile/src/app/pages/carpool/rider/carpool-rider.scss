@@ -1,3 +1,6 @@
+/* Pickup and drop symbols (one pair in both apps, 2026-11-19): a green ring-and-dot for pickup, a navy pin for drop. */
+$ico-pickup: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='white' stroke='%23087f50' stroke-width='2'/%3E%3Ccircle cx='8' cy='8' r='2.6' fill='%23087f50'/%3E%3C/svg%3E");
+$ico-drop: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 20'%3E%3Cpath d='M8 1C4.4 1 1.5 3.8 1.5 7.3c0 4.3 4.9 10.1 5.9 11.3a.8.8 0 001.2 0c1-1.2 5.9-7 5.9-11.3C14.5 3.8 11.6 1 8 1z' fill='%230d1b2a'/%3E%3Ccircle cx='8' cy='7.3' r='2.6' fill='white'/%3E%3C/svg%3E");
 // Carpool rider screens (M4), styled from carpool-mockup.html, customer side
 // (.scr.cus): Search, Results, the carpool page and its sheets, Driver profile.
 // Copy any new style from the mockup CSS; don't invent one.
@@ -47,7 +50,7 @@ p, h1, h2, h3, h4 { margin: 0; color: inherit; font-family: inherit; letter-spac
 .ell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .center { display: grid; place-items: center; min-height: 30vh; }
 .dimmed { opacity: .55; }
-.label { display: block; font-size: 12px; font-weight: 700; color: var(--cr-muted); }
+.label { display: block; font-size: 13px; font-weight: 700; color: var(--cr-muted); }
 .dest { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--cr-muted); }
 
 .icon-btn { width: 44px; height: 44px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; font-size: 24px; color: var(--cr-ink); }
@@ -60,10 +63,10 @@ p, h1, h2, h3, h4 { margin: 0; color: inherit; font-family: inherit; letter-spac
 .live { display: inline-block; flex: none; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--cr-green-bright); box-shadow: 0 0 0 4px #12b35b2e; }
 
 // pickup → drop rail
-.rt { display: grid; grid-template-columns: 10px 1fr; column-gap: 10px; font-size: 14px; }
+.rt { display: grid; grid-template-columns: 18px 1fr; column-gap: 10px; font-size: 14px; }
 .rt .rail { grid-row: span 2; display: flex; flex-direction: column; align-items: center; padding: 6px 0; }
-.rt .rail i { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--cr-green); }
-.rt .rail i.end { border-radius: 2px; background: var(--cr-ink); }
+.rt .rail i { width: 16px; height: 16px; flex: none; background: $ico-pickup center / contain no-repeat; }
+.rt .rail i.end { height: 20px; background: $ico-drop center / contain no-repeat; }
 .rt .rail b { flex: 1; width: 2px; min-height: 10px; margin: 3px 0; background: var(--cr-line); }
 .rt > span + span { margin-top: 6px; }
 
@@ -84,8 +87,8 @@ p, h1, h2, h3, h4 { margin: 0; color: inherit; font-family: inherit; letter-spac
 .fld.on { border: 2px solid var(--cr-green); padding: 7px 13px; }
 .fld input { width: 100%; border: 0; padding: 0; background: transparent; font-size: 15px; font-weight: 600; outline: none; color: var(--cr-ink); }
 .fld input::placeholder { font-weight: 400; color: #5f6f84; }
-.fld-dot { width: 8px; height: 8px; flex: none; margin: 0 2px 0 1px; border-radius: 50%; background: var(--cr-green); }
-.fld-dot.end { border-radius: 2px; background: var(--cr-ink); }
+.fld-dot { width: 18px; height: 18px; flex: none; margin: 0 1px 0 0; background: $ico-pickup center / contain no-repeat; }
+.fld-dot.end { height: 22px; background: $ico-drop center / contain no-repeat; }
 .pair { position: relative; }
 .pair .swap { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); z-index: 1; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 1px solid var(--cr-line); border-radius: 50%; background: #fff; font-size: 18px; color: var(--cr-ink); }
 .pair .swap:active:not(:disabled) { transform: translateY(-50%) scale(.98); }
@@ -125,9 +128,9 @@ p, h1, h2, h3, h4 { margin: 0; color: inherit; font-family: inherit; letter-spac
 .c-card.slim > ion-icon { flex: none; font-size: 18px; color: var(--cr-muted); }
 .c-card .line2 { display: block; margin-top: 4px; }
 .c-card .who { margin-top: 12px; }
-.meta { display: flex; flex-wrap: wrap; gap: 4px 7px; margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--cr-muted); }
-.meta > span + span::before { content: "·"; margin-right: 7px; }
-.meta strong { color: var(--cr-ink); }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--cr-line); font-size: 13px; color: var(--cr-ink); }
+.meta .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: var(--cr-green-soft); font-weight: 600; }
+.meta .chip ion-icon { font-size: 16px; color: var(--cr-green); }
 .count-line { margin-bottom: 12px; }
 
 // buttons
@@ -207,11 +210,6 @@ ion-footer .c-dock > :only-child { max-width: 520px; margin: 0 auto; }
 .sumrow > span:first-child { color: var(--cr-muted); }
 .sumrow b { font-weight: 700; text-align: right; }
 .sumrow .total { font-size: 17px; font-weight: 800; }
-.pk { width: 100%; margin-top: 14px; overflow: hidden; border: 1px solid var(--cr-line); border-radius: 14px; background: #fff; }
-.pk .map { height: 92px; }
-.pk .in { display: flex; align-items: center; gap: 10px; padding: 10px 12px 12px; }
-.pk h4 { margin-top: 2px; font-size: 15px; font-weight: 750; }
-.pk .move { flex: none; min-height: 44px; padding: 0 12px; border: 1px solid var(--cr-line); border-radius: 12px; background: #fff; font-size: 13px; font-weight: 700; color: var(--cr-ink); }
 .okline { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 50px; color: var(--cr-green); font-size: 13px; font-weight: 700; }
 .okline ion-icon { flex: none; font-size: 20px; }
 .okline.plain { justify-content: flex-start; color: var(--cr-ink); }
@@ -271,3 +269,52 @@ ion-footer .c-dock > :only-child { max-width: 520px; margin: 0 auto; }
 .rate-stars button { display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; background: transparent; font-size: 34px; color: var(--cr-green); }
 .rate-note { width: 100%; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--cr-line); border-radius: 12px; background: #fff; font: inherit; font-size: 14px; color: var(--cr-ink); resize: none; outline: none; }
 .rate-note:focus { border: 2px solid var(--cr-green); padding: 9px 11px; }
+
+/* Results card facts (icons, one fact per place) */
+.c-card .facts { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
+.c-card .fact { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--cr-muted); }
+.c-card .fact ion-icon { font-size: 16px; color: var(--cr-green); }
+.c-card .fact.road { color: var(--cr-ink); font-weight: 600; }
+.c-card .car { display: inline-flex; align-items: center; gap: 5px; }
+.c-card .car ion-icon { font-size: 14px; }
+.c-card .seatsleft { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 999px; background: var(--cr-green-soft); color: var(--cr-green); font-size: 13px; font-weight: 700; }
+.c-card .seatsleft ion-icon { font-size: 16px; }
+
+/* Ask to join sheet */
+.drop-lbl { display: inline-flex; align-items: flex-start; gap: 10px; }
+.drop-ico { width: 16px; height: 20px; margin-top: 2px; flex: none; background: $ico-drop center / contain no-repeat; }
+.ask-note { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; background: #f4f6f9; font-size: 12px; line-height: 1.5; color: var(--cr-muted); }
+.ask-note ion-icon { flex: none; margin-top: 1px; font-size: 16px; }
+
+/* Ask to join sheet: one container per idea, 10px apart */
+.ask-when { display: flex; align-items: center; gap: 6px; margin: 4px 0 14px; font-size: 13px; color: var(--cr-muted); }
+.ask-when ion-icon { font-size: 16px; }
+.ask-card { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--cr-line); border-radius: 14px; background: #fff; }
+.ask-card .ttl { margin: 0; font-size: 12px; font-weight: 700; color: var(--cr-muted); }
+.ask-card .sub { display: flex; align-items: center; gap: 5px; margin: 2px 0 0; font-size: 12px; color: var(--cr-muted); }
+.ask-card .sub ion-icon { font-size: 14px; }
+.ask-card h4 { margin: 2px 0 0; font-size: 15px; font-weight: 750; color: var(--cr-ink); }
+.ask-card .ic { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; background: var(--cr-green-soft); color: var(--cr-green); font-size: 22px; }
+.seats-card .ttl { font-size: 15px; font-weight: 700; color: var(--cr-ink); }
+.ask-card.pk { display: block; padding: 0; overflow: hidden; }
+.ask-card.pk .map { height: 96px; }
+.ask-card.pk .pk-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px 4px; }
+.ask-card.pk .pick-ico, .ask-card .drop-ico { flex: none; width: 16px; height: 16px; margin-top: 3px; background: $ico-pickup center / contain no-repeat; }
+.ask-card .drop-ico { width: 16px; height: 20px; background: $ico-drop center / contain no-repeat; }
+.ask-card.pk .move { display: flex; align-items: center; justify-content: center; gap: 8px; width: calc(100% - 28px); min-height: 44px; margin: 10px 14px 14px; padding: 0 14px; border: 1px solid var(--cr-green); border-radius: 12px; background: var(--cr-green-soft); font-size: 14px; font-weight: 700; color: var(--cr-green); }
+.ask-card.pk .move ion-icon { font-size: 18px; }
+.ask-card.pk .move:disabled { opacity: .45; }
+.price-card .pr { display: flex; align-items: center; justify-content: space-between; width: 100%; font-size: 14px; color: var(--cr-muted); }
+.price-card .pr b { font-size: 20px; font-weight: 800; color: var(--cr-ink); }
+.ask-note { margin-top: 12px; }
+.ask-note.in-card { margin: 14px 0 0; }
+.rt { row-gap: 14px; }
+.bsheet .sheet-cta { position: sticky; bottom: calc(-18px - env(safe-area-inset-bottom)); margin: 12px -20px 0; padding: 12px 20px calc(18px + env(safe-area-inset-bottom)); border-top: 1px solid var(--cr-line); background: #fff; }
+.ask-card.pk .map { height: 84px; }
+
+.skel { display: grid; gap: 12px; padding: 16px; }
+.skel i { display: block; border-radius: 10px; background: linear-gradient(90deg, #eceff3 25%, #f6f8fa 50%, #eceff3 75%); background-size: 200% 100%; animation: skel-sh 1.4s ease-in-out infinite; }
+.skel-l { height: 16px; } .skel-l.w60 { width: 60%; } .skel-l.w40 { width: 40%; }
+.skel-c { height: 84px; border-radius: 14px; }
+@keyframes skel-sh { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skel i { animation: none; } }

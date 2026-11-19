@@ -52,12 +52,18 @@
               <span class="h3" *ngIf="!r.is_free">₹{{ r.price_per_seat }} <span class="per">/seat</span></span>
               <span class="h3 free" *ngIf="r.is_free">Free</span>
             </span>
-            <span class="t13 muted line2">{{ pickupLine(r) }}</span>
+            <span class="facts">
+              <span class="fact road" *ngIf="r.status === 'in_progress'; else pick"><ion-icon name="navigate-outline" aria-hidden="true"></ion-icon>Already on the road</span>
+              <ng-template #pick>
+                <span class="fact"><ion-icon name="time-outline" aria-hidden="true"></ion-icon>Pickup about {{ pickupClock(r) }}</span>
+                <span class="fact"><ion-icon name="walk-outline" aria-hidden="true"></ion-icon>{{ walkLabel(r) }} walk</span>
+              </ng-template>
+            </span>
             <span class="row who">
               <span class="av">{{ r.driver.initials }}</span>
-              <span class="grow"><span class="t14 b">{{ r.driver.name }}</span><br><span class="t12 muted">{{ r.car?.label }}</span></span>
+              <span class="grow"><span class="t14 b">{{ r.driver.name }}</span><br><span class="t12 muted car"><ion-icon name="car-outline" aria-hidden="true"></ion-icon>{{ r.car?.label }}</span></span>
               <span class="status muted-s" *ngIf="r.my_request; else left">{{ myLabel(r) }}</span>
-              <ng-template #left><span class="t13 b">{{ leftLabel(r) }}</span></ng-template>
+              <ng-template #left><span class="seatsleft"><ion-icon name="people-outline" aria-hidden="true"></ion-icon>{{ leftLabel(r) }}</span></ng-template>
             </span>
           </button>
           <ng-template #dim>

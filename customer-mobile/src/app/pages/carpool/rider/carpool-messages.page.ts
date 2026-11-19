@@ -159,7 +159,7 @@ export class CarpoolMessagesPage {
     const m = c.last;
     if (!m) return '';
     const d = new Date(m.created_at);
-    return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { weekday: 'short' });
+    return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { weekday: 'short' });
   }
 
   trackBox = (_: number, b: CarpoolChatBox) => b.listing.id;

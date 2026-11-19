@@ -171,9 +171,11 @@ export function placeName(at: LatLng): Promise<{ name: string; address: string }
 
 function dot(color: string, round: boolean): HTMLElement {
   const el = document.createElement('div');
-  el.style.cssText = round
-    ? `width:16px;height:16px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 1px 4px #0004`
-    : `width:14px;height:14px;border-radius:3px;background:${color};border:3px solid #fff;box-shadow:0 1px 4px #0004`;
+  // Pickup: ring-and-dot. Drop: pin (its tip sits on the point). Same pair as the screens (2026-11-19).
+  el.innerHTML = round
+    ? `<svg width="26" height="26" viewBox="0 0 16 16" aria-hidden="true" style="display:block;filter:drop-shadow(0 1px 3px #0005)"><circle cx="8" cy="8" r="6" fill="#fff" stroke="${color}" stroke-width="2"/><circle cx="8" cy="8" r="2.6" fill="${color}"/></svg>`
+    : `<svg width="28" height="34" viewBox="0 0 16 20" aria-hidden="true" style="display:block;filter:drop-shadow(0 1px 3px #0005)"><path d="M8 1C4.4 1 1.5 3.8 1.5 7.3c0 4.3 4.9 10.1 5.9 11.3a.8.8 0 001.2 0c1-1.2 5.9-7 5.9-11.3C14.5 3.8 11.6 1 8 1z" fill="${color}" stroke="#fff" stroke-width="1"/><circle cx="8" cy="7.3" r="2.6" fill="#fff"/></svg>`;
+  if (round) el.style.transform = 'translateY(50%)'; // centre the ring on the point
   return el;
 }
 

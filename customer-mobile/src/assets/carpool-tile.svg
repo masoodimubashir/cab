@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="Carpool">
+  <defs>
+    <linearGradient id="sw" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#12b35b"/>
+      <stop offset="1" stop-color="#087f50"/>
+    </linearGradient>
+  </defs>
+  <rect width="160" height="160" fill="#fff"/>
+  <!-- swoosh -->
+  <path d="M10 104C30 58 84 40 150 62c-22 4-34 14-44 34-18 38-62 50-96 8z" fill="url(#sw)"/>
+  <path d="M10 108c34 32 80 20 104-14" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".55"/>
+  <!-- two riders -->
+  <circle cx="58" cy="50" r="9" fill="#0d1b2a"/><path d="M42 74c1-12 8-16 16-16s15 4 16 16z" fill="#0d1b2a"/>
+  <circle cx="92" cy="46" r="9" fill="#cfeedd"/><path d="M76 70c1-12 8-16 16-16s15 4 16 16z" fill="#cfeedd"/>
+  <!-- car -->
+  <path d="M26 98c2-12 10-22 24-24h42c12 0 22 8 28 24 6 1 10 5 10 11v6H22v-6c0-6 2-10 4-11z" fill="#fff" stroke="#0d1b2a" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M50 80h40c8 0 14 6 18 16H44c1-8 3-12 6-16z" fill="#dff3e8"/>
+  <circle cx="52" cy="122" r="10" fill="#0d1b2a"/><circle cx="52" cy="122" r="4" fill="#fff"/>
+  <circle cx="112" cy="122" r="10" fill="#0d1b2a"/><circle cx="112" cy="122" r="4" fill="#fff"/>
+  <text x="80" y="150" text-anchor="middle" font-family="Roboto, Arial, sans-serif" font-size="17" font-weight="800" fill="#0d1b2a">Carpool</text>
+</svg>

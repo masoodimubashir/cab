@@ -5,7 +5,7 @@
 
 
   <div class="cp-wrap hm home">
-    <div class="center" *ngIf="loading && !home"><ion-spinner name="crescent"></ion-spinner></div>
+    <div class="skel" *ngIf="loading && !home"><i class="skel-l w60"></i><i class="skel-c"></i><i class="skel-c"></i><i class="skel-l w40"></i></div>
 
     <ng-container *ngIf="home && plan">
       <div class="hm-top">
@@ -74,9 +74,9 @@
               <div class="grow" style="padding-top: 5px"><p class="d-title" style="font-size: 14px">{{ r.rider.name }} wants to join</p><p class="t12 muted">{{ leavesLine(r.listing.departs_at) }}</p></div>
               <span class="status">New</span>
             </div>
-            <div class="hm-route"><span class="hm-rail"><i></i><b></b><ion-icon name="location"></ion-icon></span><span>Pickup: {{ r.pickup.name }}</span><span>Drop: {{ r.drop.name }}</span></div>
-            <p class="meta-line"><ion-icon name="people-outline"></ion-icon><span class="ell">{{ requestMeta(r) }}</span></p>
-            <p class="t12 muted" style="margin: 0 0 8px" *ngIf="r.pickup_passed_min !== null">On the road. By the plan the car {{ r.pickup_passed_min > 0 ? 'passed this pickup about ' + r.pickup_passed_min + ' min ago' : 'is reaching this pickup' }}. You can still accept.</p>
+            <div class="hm-route"><span class="hm-rail"><i></i><b></b><i class="end"></i></span><span><span class="hm-l">Pickup</span>{{ r.pickup.name }}</span><span><span class="hm-l">Drop</span>{{ r.drop.name }}</span></div>
+            <div class="hm-facts"><span class="chip"><ion-icon name="people-outline" aria-hidden="true"></ion-icon>{{ r.seats }} {{ r.seats === 1 ? 'seat' : 'seats' }}</span><span class="chip"><ion-icon name="cash-outline" aria-hidden="true"></ion-icon>{{ r.is_free ? 'Free ride' : '₹' + r.total }}</span><span class="chip route"><ion-icon name="car-outline" aria-hidden="true"></ion-icon><span class="ell">{{ r.listing.start.name }} to {{ r.listing.end.name }}</span></span></div>
+            <p class="hm-warn" *ngIf="r.pickup_passed_min !== null"><ion-icon name="time-outline" aria-hidden="true"></ion-icon><span>By the plan the car {{ r.pickup_passed_min > 0 ? 'passed this pickup about ' + r.pickup_passed_min + ' min ago' : 'is reaching this pickup' }}. You can still accept.</span></p>
             <div class="acts" *ngIf="!answered">
               <button class="d-btn line" [disabled]="!!answering" (click)="answer('decline')">Decline</button>
               <button class="d-btn" [disabled]="!!answering" (click)="answer('accept')">Accept</button>

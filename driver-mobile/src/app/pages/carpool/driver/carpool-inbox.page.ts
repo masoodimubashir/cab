@@ -55,8 +55,8 @@ interface Box {
                   <ion-icon class="chev" name="chevron-down-outline"></ion-icon>
                 </button>
                 <div class="rq-b">
-                  <div class="hm-route"><span class="hm-rail"><i></i><b></b><ion-icon name="location"></ion-icon></span><span>Pickup: {{ r.pickup.name }}</span><span>Drop: {{ r.drop.name }}</span></div>
-                  <p class="t12 muted" style="margin: 0 0 8px" *ngIf="r.pickup_passed_min !== null">On the road. By the plan the car {{ r.pickup_passed_min > 0 ? 'passed this pickup about ' + r.pickup_passed_min + ' min ago' : 'is reaching this pickup' }}. You can still accept.</p>
+                  <div class="hm-route"><span class="hm-rail"><i></i><b></b><i class="end"></i></span><span><span class="hm-l">Pickup</span>{{ r.pickup.name }}</span><span><span class="hm-l">Drop</span>{{ r.drop.name }}</span></div>
+                  <p class="hm-warn" *ngIf="r.pickup_passed_min !== null"><ion-icon name="time-outline" aria-hidden="true"></ion-icon><span>By the plan the car {{ r.pickup_passed_min > 0 ? 'passed this pickup about ' + r.pickup_passed_min + ' min ago' : 'is reaching this pickup' }}. You can still accept.</span></p>
                   <div class="row" style="gap: 10px" *ngIf="!done[r.id]">
                     <button class="d-btn line" [disabled]="busy === r.id" (click)="answer(r, 'decline')">Decline</button>
                     <button class="d-btn" [disabled]="busy === r.id" (click)="answer(r, 'accept')">Accept</button>
@@ -204,7 +204,7 @@ export class CarpoolInboxPage implements OnDestroy {
     const m = c.last;
     if (!m) return '';
     const d = new Date(m.created_at);
-    return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { weekday: 'short' });
+    return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { weekday: 'short' });
   }
 
   openChat(c: CarpoolChatRow): void {

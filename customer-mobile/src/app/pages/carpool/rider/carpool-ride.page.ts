@@ -175,13 +175,13 @@ export class CarpoolRidePage implements OnDestroy {
     return this.ride ? titleWhen(this.ride.departs_at) : '';
   }
 
-  /** "Rajbagh to Nigeen with Imran". */
+  /** "Rajbagh to Nigeen" (the driver has their own card below). */
   get subtitle(): string {
     const p = this.points;
     const from = this.view === 'open' ? this.search?.from.name : this.mine?.pickup.name;
     const to = this.view === 'open' ? this.search?.to.name : this.mine?.drop.name;
-    if (!p || !from || !to) return this.ride ? `${this.ride.start.name} to ${this.ride.end.name} with ${this.first}` : '';
-    return `${from} to ${to} with ${this.first}`;
+    if (!p || !from || !to) return this.ride ? `${this.ride.start.name} to ${this.ride.end.name}` : '';
+    return `${from} to ${to}`;
   }
 
   /** The pickup and drop shown on the page: suggested from the search, or the request's own. */

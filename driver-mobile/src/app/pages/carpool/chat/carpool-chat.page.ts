@@ -344,7 +344,7 @@ export class CarpoolChatPage implements OnInit, OnDestroy, AfterViewChecked {
     const l = this.conv?.listing;
     if (!l) return '';
     const d = new Date(l.departs_at);
-    const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const t = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     const day = this.dayLabel(l.departs_at);
     const end = l.status === 'cancelled' ? ', cancelled' : l.status === 'completed' ? ', completed' : '';
     return `${day}, ${t}${end}`;
@@ -361,7 +361,7 @@ export class CarpoolChatPage implements OnInit, OnDestroy, AfterViewChecked {
   track = (_: number, m: CarpoolChatMessage) => m.id;
 
   time(iso: string): string {
-    return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
 
   dayLabel(iso: string): string {

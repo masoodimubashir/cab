@@ -1,5 +1,5 @@
 <ion-content class="cp" (click)="menuOpen && $any($event.target).closest('.pop, .menu-btn') === null ? (menuOpen = false) : null">
-  <div class="center" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
+  <div class="skel" *ngIf="loading"><i class="skel-l w60"></i><i class="skel-c"></i><i class="skel-c"></i><i class="skel-l w40"></i></div>
 
   <ng-container *ngIf="listing as l">
     <!-- 8i: change route -->
@@ -65,7 +65,7 @@
         <ng-container *ngIf="l.status === 'published'">
           <button class="stop" *ngFor="let r of l.riders" (click)="openRider(r)">
             <span class="av">{{ r.rider.initials }}</span>
-            <span class="grow"><span class="d-title">{{ r.rider.name }}</span><span class="t12 muted"> · {{ seatWord(r.seats) }}</span><span class="pd">{{ r.pickup.name }} → {{ r.drop.name }}</span></span>
+            <span class="grow"><span class="d-title">{{ r.rider.name }}</span><span class="seatpill"><ion-icon name="people-outline" aria-hidden="true"></ion-icon>{{ seatWord(r.seats) }}</span><span class="pd">{{ r.pickup.name }} → {{ r.drop.name }}</span></span>
             <span class="t12 muted">{{ clock(r.pickup.at) }}</span>
           </button>
         </ng-container>
@@ -75,7 +75,7 @@
             <button class="stop" [class.next]="r === nextRider" [class.done]="l.status === 'completed'" [disabled]="l.status === 'completed' || r.ride_state === 'dropped' || r.ride_state === 'no_show'" (click)="openRider(r)">
               <span class="av">{{ r.rider.initials }}</span>
               <span class="grow">
-                <span class="d-title">{{ r.rider.name }}</span><span class="t12 muted"> · {{ seatWord(r.seats) }}</span>
+                <span class="d-title">{{ r.rider.name }}</span><span class="seatpill"><ion-icon name="people-outline" aria-hidden="true"></ion-icon>{{ seatWord(r.seats) }}</span>
                 <span class="pd" *ngIf="l.status === 'in_progress'">{{ r.pickup.name }} → {{ r.drop.name }}</span>
                 <span class="st ok" *ngIf="r.ride_state === 'picked_up'"><ion-icon name="checkmark-circle"></ion-icon>Picked up {{ clock(r.picked_up_at!) }}</span>
                 <span class="st ok" *ngIf="r.ride_state === 'dropped'"><ion-icon name="checkmark-circle"></ion-icon>Dropped {{ clock(r.dropped_at!) }}</span>
@@ -220,7 +220,7 @@
     </div>
     <div class="d-card" style="margin-top: 14px; padding: 12px 14px">
       <div class="rt"><span class="rail"><i></i><b></b><i class="end"></i></span><span><span class="label">Pickup</span>{{ r.pickup.name }}</span><span><span class="label">Drop</span>{{ r.drop.name }}</span></div>
-      <p class="t12 muted" style="margin-top: 10px">{{ seatWord(r.seats) }} · {{ r.is_free ? 'Free ride' : '₹' + r.total }}</p>
+      <div class="hm-facts" style="border-top: 0; margin-top: 10px; padding-top: 0"><span class="chip"><ion-icon name="people-outline" aria-hidden="true"></ion-icon>{{ seatWord(r.seats) }}</span><span class="chip"><ion-icon name="cash-outline" aria-hidden="true"></ion-icon>{{ r.is_free ? 'Free ride' : '₹' + r.total }}</span></div>
       <button class="paid" *ngIf="!r.is_free" [class.on]="r.paid_marked" role="checkbox" [attr.aria-checked]="r.paid_marked" (click)="togglePaid(r)">
         <span class="tick"></span><span class="grow">Paid ₹{{ r.total }}<small>A reminder for you. Riders don't see it.</small></span>
       </button>
@@ -285,7 +285,7 @@
       <div class="grow"><h2 id="noshow-h">Mark {{ r.rider.first_name }} as no-show?</h2><p class="t13 muted">{{ r.pickup.name }}</p></div>
     </div>
     <p class="t14" style="margin-top: 16px; line-height: 1.5">{{ r.rider.first_name }} is told about the no-show and taken off this ride. You can carry on with the other riders.</p>
-    <p class="t13 muted" style="margin-top: 8px; line-height: 1.5">Do this only after you've reached the pickup and waited. If {{ r.rider.first_name }} is running late, send a message first.</p>
+    <div class="info"><ion-icon name="information-circle-outline"></ion-icon><p>Do this only after you've reached the pickup and waited. If {{ r.rider.first_name }} is running late, send a message first.</p></div>
     <div class="errbar" role="alert" *ngIf="riderError">
       <ion-icon name="alert-circle-outline"></ion-icon>
       <span class="grow"><b>Couldn't mark the no-show</b><small>{{ riderError }}</small></span>

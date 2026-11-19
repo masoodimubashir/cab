@@ -190,7 +190,7 @@
           <span class="bh-service-art" aria-hidden="true">
             <img *ngIf="resolveHomeImageUrl(carpoolTileImage) as imageUrl; else carpoolIcon" class="bh-service-image"
               [src]="imageUrl" alt="" (error)="carpoolTileImage = null">
-            <ng-template #carpoolIcon><ion-icon name="people-outline"></ion-icon></ng-template>
+            <ng-template #carpoolIcon><img class="bh-service-image" src="assets/carpool-tile.svg" alt=""></ng-template>
           </span>
           <strong>{{ carpoolTileName }}</strong>
         </button>

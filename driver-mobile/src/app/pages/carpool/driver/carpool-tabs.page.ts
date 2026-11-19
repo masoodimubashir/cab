@@ -24,7 +24,7 @@ import { CarpoolApiService } from '../carpool-api.service';
     </ion-tabs>
   `,
   styles: [`
-    .cp-nav { --background: #fff; --border: 1px solid #e4e9ef; --color: #5a6a80; --color-selected: #087f50; height: calc(66px + var(--ion-safe-area-bottom, 0px)); padding: 8px 12px calc(10px + var(--ion-safe-area-bottom, 0px)); font-family: Roboto, "Segoe UI", system-ui, sans-serif; }
+    .cp-nav { --background: #fff; --border: 1px solid #e4e9ef; --color: #5a6a80; --color-selected: #087f50; height: auto; min-height: 0; contain: none; padding: 8px 12px calc(8px + var(--ion-safe-area-bottom, 0px)); font-family: Roboto, "Segoe UI", system-ui, sans-serif; }
     ion-tab-button { position: relative; min-height: 48px; --padding-top: 0; --padding-bottom: 0; --padding-start: 0; --padding-end: 0; --ripple-color: transparent; letter-spacing: normal; }
     ion-tab-button ion-icon { font-size: 23px; margin: 0; }
     ion-tab-button ion-label { margin: 4px 0 0; font-size: 12px; font-weight: 400; letter-spacing: normal; text-transform: none; }

@@ -117,6 +117,14 @@ export class CarpoolResultsPage implements OnInit, OnDestroy {
     return `Pickup about ${clock(r.pickup.at)}, a ${distanceLabel(r.pickup.walk_m ?? 0)} walk`;
   }
 
+  pickupClock(r: CarpoolResult): string {
+    return clock(r.pickup.at);
+  }
+
+  walkLabel(r: CarpoolResult): string {
+    return `${distanceLabel(r.pickup.walk_m ?? 0)}`;
+  }
+
   leftLabel(r: CarpoolResult): string {
     return r.seats_free <= 0 ? 'Full' : `${r.seats_free} left`;
   }
