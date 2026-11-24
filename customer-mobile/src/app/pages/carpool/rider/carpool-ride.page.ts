@@ -9,7 +9,7 @@ import { LatLng, createMap, drawRide, flat, loadRiderMaps, pathLength, pickupPin
 import { RiderSearch, fromParams, toParams, toQuery } from './rider-search';
 
 type View = 'open' | 'sent' | 'accepted' | 'started' | 'ended';
-type Sheet = 'ask' | 'photo' | 'cancel' | 'leave' | 'rate' | null;
+type Sheet = 'ask' | 'photo' | 'cancel' | 'leave' | 'rate' | 'banned' | null;
 
 /** A pickup the rider is about to ask for: a point on the route with its name and timing. */
 interface AskPoint extends LatLng {
@@ -375,9 +375,21 @@ export class CarpoolRidePage implements OnDestroy {
     this.clear = [drawRide(this.map, toPath(this.ride.route_polyline), this.points, this.view === 'ended')];
   }
 
+  // ── Carpool ban: rider ──
+
+  contactSupport(): void {
+    this.sheet = null;
+    void this.router.navigateByUrl('/customer-tabs/support');
+  }
+
   // ── Ask to join (5) ──
 
   openAsk(): void {
+    // A rider whose carpool access is paused still sees everything, and learns why only when they try to join.
+    if (this.ride?.banned) {
+      this.sheet = 'banned';
+      return;
+    }
     const s = this.ride?.suggested;
     if (!this.ride || !s) return;
     this.askSeats = Math.max(1, Math.min(this.search?.seats ?? 1, this.ride.seats_free, 6));

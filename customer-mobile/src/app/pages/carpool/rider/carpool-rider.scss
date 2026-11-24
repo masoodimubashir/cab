@@ -265,6 +265,8 @@ ion-footer .c-dock > :only-child { max-width: 520px; margin: 0 auto; }
 
 // Rate the driver (M6, mockup 8g)
 .rate-av { display: inline-grid; place-items: center; width: 64px; height: 64px; font-size: 20px; }
+/* Carpool ban: rider (mockup): a lock in a soft navy circle */
+.ban-ic { width: 64px; height: 64px; margin: 6px auto 0; display: grid; place-items: center; border-radius: 50%; background: #e9eef4; color: #0d1b2a; font-size: 30px; }
 .rate-stars { display: flex; justify-content: center; gap: 6px; margin: 16px 0 6px; }
 .rate-stars button { display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; background: transparent; font-size: 34px; color: var(--cr-green); }
 .rate-note { width: 100%; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--cr-line); border-radius: 12px; background: #fff; font: inherit; font-size: 14px; color: var(--cr-ink); resize: none; outline: none; }

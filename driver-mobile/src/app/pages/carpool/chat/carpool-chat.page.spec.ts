@@ -130,4 +130,112 @@ describe('CarpoolChatPage', () => {
     open({ conversation: conv({ is_driver: false }) });
     expect(page.proposalWord(card(2, 'rider'), true)).toBe('Waiting for Imran');
   });
+
+  // ── Header and trip card (v4 preview, 2026-11-20) ──
+
+  const trip = (over: Partial<NonNullable<CarpoolChatConversation['trip']>> = {}): NonNullable<CarpoolChatConversation['trip']> => ({
+    state: 'accepted', seats: 2, price_per_seat: 60, is_free: false, paid_marked: true, rider_first_name: 'Sana',
+    pickup: { name: 'Rajbagh', at: '2026-11-20T03:12:00Z' }, drop: { name: 'Nigeen', at: '2026-11-20T03:30:00Z' }, ...over,
+  });
+
+  it('puts the person first in a private chat and the route first in a group, with one quiet line', () => {
+    open({ conversation: conv({ is_driver: false, other_first_name: 'Imran', car_label: 'White Maruti Swift', trip: trip() }) });
+    expect(page.headName).toBe('Imran');
+    expect(page.headSub).toBe('Driver · White Maruti Swift');
+
+    open({ conversation: conv({ is_driver: true, other_first_name: 'Sana', trip: trip() }) });
+    expect(page.headName).toBe('Sana');
+    expect(page.headSub).toBe('Rider · 2 seats · Paid');
+
+    open({ conversation: conv({ kind: 'group', request_id: null, trip: null, member_names: ['Imran', 'Sana', 'You'] }) });
+    expect(page.headName).toBe('Bemina to University');
+    expect(page.headSub).toBe('Imran, Sana, You');
+  });
+
+  it('adds Read only to the quiet line and drops the Report circle once the chat is read only', () => {
+    open({ conversation: conv({ is_driver: false, trip: trip() }), writable: false });
+    expect(page.headSub).toContain('Read only');
+    expect(fixture.nativeElement.querySelector('.icon-btn.report')).toBeNull();
+    open({ conversation: conv({ is_driver: false, trip: trip() }), writable: true });
+    expect(fixture.nativeElement.querySelector('.icon-btn.report')).not.toBeNull();
+  });
+
+  it('shows the rider\'s own pickup time and stops in a private chat, and the departure time in the group', () => {
+    open({ conversation: conv({ is_driver: false, trip: trip() }) });
+    expect(page.tripTime).toBe(page.time('2026-11-20T03:12:00Z'));
+    expect(page.tripLabel.startsWith('Your pickup')).toBeTrue();
+    expect(page.pillStops).toEqual({ from: 'Rajbagh', to: 'Nigeen' });
+    expect(page.tripMeta).toContain('₹60 a seat');
+
+    open({ conversation: conv({ is_driver: true, trip: trip() }) });
+    expect(page.tripLabel.startsWith("Sana's pickup")).toBeTrue();
+    expect(page.tripMeta).not.toContain('₹');
+
+    open({ conversation: conv({ kind: 'group', request_id: null, trip: null }) });
+    expect(page.tripTime).toBe(page.time(listing.departs_at));
+    expect(page.pillStops).toBeNull();
+    expect(page.tripMeta).toBe('2 seats left · ₹60 a seat');
+  });
+
+  it('says where a request stands, and shows the state instead of the stops once the trip is over', () => {
+    open({ conversation: conv({ is_driver: false, trip: trip({ state: 'sent' }) }) });
+    expect(page.tripStatus).toEqual({ text: 'Request sent', kind: 'sent' });
+    expect(page.tripLabel).toContain('about');
+    expect(page.pillStops).not.toBeNull();
+
+    open({ conversation: conv({ is_driver: false, trip: trip({ state: 'started' }) }) });
+    expect(page.tripStatus).toEqual({ text: 'Live', kind: 'live' });
+
+    open({ conversation: conv({ is_driver: false, trip: trip({ state: 'cancelled' }) }) });
+    expect(page.tripStatus).toEqual({ text: 'Cancelled', kind: 'cancel' });
+    expect(page.pillStops).toBeNull();
+
+    open({ conversation: conv({ kind: 'group', request_id: null, trip: null, listing: { ...listing, status: 'in_progress' } }) });
+    expect(page.tripStatus).toEqual({ text: 'Live', kind: 'live' });
+  });
+
+  it('has a status word for every way a request can end, and shows it in the pill instead of the stops', () => {
+    const words: Record<string, [string, string]> = {
+      accepted: ['Accepted', 'ok'], completed: ['Completed', 'done'], declined: ['Declined', 'cancel'], removed: ['Removed', 'cancel'],
+      filled: ['Carpool full', 'cancel'], no_show: ['No-show', 'cancel'], withdrawn: ['Withdrawn', 'done'], left: ['You left', 'done'], ended: ['Ended', 'done'],
+    };
+    for (const [state, [text, kind]] of Object.entries(words)) {
+      open({ conversation: conv({ is_driver: false, trip: trip({ state }) }) });
+      expect(page.tripStatus).toEqual({ text, kind: kind as 'ok' | 'done' | 'cancel' });
+    }
+    // The pill keeps the stops while the trip is going ahead and switches to the status once it is over.
+    for (const state of ['sent', 'accepted', 'started']) {
+      open({ conversation: conv({ trip: trip({ state }) }) });
+      expect(page.pillStops).not.toBeNull();
+    }
+    for (const state of ['completed']) {
+      open({ conversation: conv({ trip: trip({ state }) }) });
+      expect(page.pillStops).not.toBeNull();
+    }
+    for (const state of ['cancelled', 'declined', 'removed', 'filled', 'no_show', 'withdrawn', 'left', 'ended']) {
+      open({ conversation: conv({ trip: trip({ state }) }) });
+      expect(page.pillStops).toBeNull();
+    }
+    // The driver sees "Rider left" where the rider sees "You left".
+    open({ conversation: conv({ is_driver: true, trip: trip({ state: 'left' }) }) });
+    expect(page.tripStatus?.text).toBe('Rider left');
+  });
+
+  it('keeps the card docked while the chat is short, makes the pill when messages would go behind it, and leaves an opened card alone', () => {
+    open({ conversation: conv({ trip: trip() }) });
+    page.chooseMode(true, 200);
+    expect(page.tripMode).toBe('docked');
+    expect(page.threadPad).toBe(220);
+
+    page.chooseMode(false, 200);
+    expect(page.tripMode).toBe('compact');
+    expect(page.threadPad).toBe(64);
+
+    page.openPeek();
+    page.chooseMode(true, 200);
+    expect(page.tripMode).toBe('peek');
+
+    page.closePeek();
+    expect(page.tripMode).toBe('compact');
+  });
 });

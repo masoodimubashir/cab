@@ -42,6 +42,10 @@ import { dayOf, clock } from './rider-format';
               <span class="grow"><span class="nm">{{ name(c) }}<span class="role" *ngIf="c.conversation.kind === 'direct'"> driver</span><span class="n" *ngIf="c.unread">{{ c.unread }}</span></span><span class="pv ell">{{ preview(c) }}</span></span>
               <span class="t11 muted">{{ stamp(c) }}</span>
             </button>
+            <div class="crow gone" *ngIf="b.chats_deleted">
+              <span class="av m"><ion-icon name="time-outline"></ion-icon></span>
+              <span class="grow"><span class="nm">This chat was deleted</span><span class="pv">Chats are deleted {{ retention }} {{ retention === 1 ? 'day' : 'days' }} after the trip ends. The trip is still in My trips.</span></span>
+            </div>
           </div>
           <div class="box-f"><button class="link" (click)="seeTrip(b)">See trip<ion-icon name="chevron-forward-outline"></ion-icon></button></div>
         </div>
@@ -71,6 +75,8 @@ import { dayOf, clock } from './rider-format';
     .crow .t11 { flex: none; font-size: 11px; }
     .crow .av { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; background: #e6ecf2; color: #33445a; font-size: 13px; font-weight: 700; }
     .crow .av.grp { background: var(--cr-green-soft); color: var(--cr-green); font-size: 20px; }
+    .crow.gone .av { background: #f2f4f7; color: var(--cr-muted); font-size: 20px; }
+    .crow.gone .nm { color: var(--cr-muted); }
     .box { border: 1px solid var(--cr-line); border-radius: 14px; background: #fff; margin-top: 12px; }
     .box-h { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 8px 12px 8px 14px; border: 0; border-radius: 14px; background: transparent; text-align: left; color: var(--cr-ink); }
     .box-h .t { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; }
@@ -92,6 +98,8 @@ export class CarpoolMessagesPage {
   pastBoxes: CarpoolChatBox[] = [];
   loaded = false;
   error = false;
+  /** Days a chat is kept after the trip ends, for the "This chat was deleted" row. */
+  retention = 1;
   private closed = new Set<number>();
   private openPast = new Set<number>();
   private seen = false;
@@ -112,6 +120,7 @@ export class CarpoolMessagesPage {
       next: (c) => {
         this.active = c.active;
         this.pastBoxes = c.past;
+        this.retention = c.retention_days ?? 1;
         this.loaded = true;
         // Containers with unread messages start open; the rest closed (mockup 6).
         if (!this.seen) c.active.filter((b) => !b.unread).forEach((b) => this.closed.add(b.listing.id));

@@ -144,6 +144,8 @@ export type CarpoolEditInput = Partial<Pick<CarpoolPublishInput, 'route' | 'depa
 
 /** GET /api/carpool/driver/home. "Waiting for you": the soonest request in full, then the rest as a count. */
 export interface CarpoolDriverHome {
+  /** The driver's carpool access is paused: Home shows "Carpool access paused" instead of Publish (mockup "Carpool ban: driver"). */
+  banned?: boolean;
   next: CarpoolListing | null;
   requests_on: boolean;
   has_live: boolean;
@@ -320,6 +322,8 @@ export interface CarpoolRide {
   suggested: { pickup: CarpoolRoutePoint; drop: CarpoolRoutePoint } | null;
   can_request: boolean;
   blocked: CarpoolBlocked;
+  /** The rider's carpool access is paused: Request to join shows the ban sheet (mockup "Carpool ban: rider"). */
+  banned?: boolean;
   my_request: CarpoolMyRequest | null;
   /** 4b: how soon a carpool already on the road reaches the suggested pickup (negative = probably passed). */
   on_road: { minutes_to_pickup: number; started_at: string } | null;
@@ -407,6 +411,19 @@ export interface CarpoolRiderProfile extends CarpoolJoinRequest {
 export type CarpoolChatKind = 'group' | 'direct';
 export type CarpoolReportReason = 'spam' | 'harassment' | 'unsafe' | 'photo' | 'other';
 
+/** One rider's own trip, for the card in their private chat: their pickup, their drop, seats and price. */
+export interface CarpoolChatTrip {
+  /** sent, accepted, started, completed, cancelled, declined, removed ... (CarpoolPresenter::riderState). */
+  state: string;
+  seats: number;
+  price_per_seat: number;
+  is_free: boolean;
+  paid_marked: boolean;
+  rider_first_name: string;
+  pickup: { name: string; at: string };
+  drop: { name: string; at: string };
+}
+
 export interface CarpoolChatConversation {
   id: number;
   kind: CarpoolChatKind;
@@ -419,6 +436,11 @@ export interface CarpoolChatConversation {
   other_user_id: number | null;
   driver_first_name: string;
   pickup_name: string | null;
+  car_label?: string | null;
+  /** Private chats only: the rider's own trip. The group chat has none and shows the whole carpool. */
+  trip?: CarpoolChatTrip | null;
+  /** Group chats only: first names, the driver first and "You" last. */
+  member_names?: string[] | null;
   listing: CarpoolListingSummary;
   members: number;
 }
@@ -465,6 +487,8 @@ export interface CarpoolChatBox {
   listing: CarpoolListingSummary;
   unread: number;
   conversations: CarpoolChatRow[];
+  /** The chats of this trip were deleted after the retention time; the trip stays under Past (B1, Option A). */
+  chats_deleted?: boolean;
 }
 
 export interface CarpoolChatInbox {

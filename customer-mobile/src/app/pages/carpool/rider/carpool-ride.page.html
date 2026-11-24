@@ -178,6 +178,21 @@
   </div>
 </ng-container>
 
+<!-- Carpool ban: rider. Shown instead of the Ask to join sheet when a paused rider taps Request to join. -->
+<ng-container *ngIf="sheet === 'banned'">
+  <div class="scrim" (click)="closeSheet()"></div>
+  <div class="bsheet" role="dialog" aria-modal="true" aria-labelledby="ban-h">
+    <div class="grab"></div>
+    <div class="sheet-in" style="padding-top: 10px; text-align: center">
+      <div class="ban-ic"><ion-icon name="lock-closed-outline"></ion-icon></div>
+      <h2 id="ban-h" style="margin-top: 12px; font-size: 19px">You can't join carpools right now</h2>
+      <p class="t14 muted" style="margin-top: 6px; line-height: 1.5">Your carpool access was paused after a report. You can still book Private, Fixed and Shuttle rides.</p>
+      <button class="c-go tall" style="margin-top: 20px" (click)="closeSheet()">OK</button>
+      <button class="c-go tall line" style="margin-top: 10px" (click)="contactSupport()">Contact support</button>
+    </div>
+  </div>
+</ng-container>
+
 <!-- 5a. Add a profile photo -->
 <ng-container *ngIf="sheet === 'photo'">
   <div class="scrim" (click)="cancelPhoto()"></div>
