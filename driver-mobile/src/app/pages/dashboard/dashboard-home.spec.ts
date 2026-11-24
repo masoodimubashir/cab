@@ -154,6 +154,47 @@ describe('Driver reference Home safeguards', () => {
     expect(f.nativeElement.querySelector('ion-alert')).toBeNull();
   });
 
+  it('shows configured city artwork and falls back to the icon for missing or failed images', () => {
+    const f = setup({ city_id: 7, is_online: true, service_modes: ['private', 'fixed'] });
+    const page: any = f.componentInstance;
+    api.get.and.callFake((url: string) => of({ scopes: [{ modes: url.startsWith('/pricing/')
+      ? [{ mode: 'private', name: 'Private', image_url: '/storage/private.png' }]
+      : [{ mode: 'private', name: 'Private', display_name: 'Private Ride', image_url: null },
+         { mode: 'fixed', name: 'Book A Seat', image_url: null }] }] }));
+    page.loadServiceCatalog();
+    f.detectChanges();
+    const tiles = f.nativeElement.querySelectorAll('.home-service-tiles button');
+    expect(tiles[0].textContent).toContain('Private Ride');
+    expect(tiles[0].querySelector('img').src).toContain('/storage/private.png');
+    expect(tiles[1].querySelector('img')).toBeNull();
+    expect(tiles[1].querySelector('ion-icon')).toBeTruthy();
+    tiles[0].querySelector('img').dispatchEvent(new Event('error'));
+    f.detectChanges();
+    expect(tiles[0].querySelector('img')).toBeNull();
+    expect(tiles[0].querySelector('ion-icon')).toBeTruthy();
+    expect(page.approvedServiceModes).toEqual(['private', 'fixed']);
+  });
+
+  it('renders artwork for an approved service omitted from enabled scopes', () => {
+    const f = setup({ city_id: 7, is_online: true, service_modes: ['private', 'fixed'] });
+    const page: any = f.componentInstance;
+    api.get.and.returnValue(of({ scopes: [], service_artwork: [
+      { mode: 'private', name: 'Private', image_url: '/storage/private.png' },
+    ] }));
+    page.loadServiceCatalog();
+    f.detectChanges();
+    expect(f.nativeElement.querySelector('.home-service-tiles img').src).toContain('/storage/private.png');
+    expect(page.approvedServiceModes).toEqual(['private', 'fixed']);
+  });
+
+  it('retains catalogue images when the city artwork request fails', () => {
+    const page: any = setup({ city_id: 7, service_modes: ['private', 'fixed'] }).componentInstance;
+    api.get.and.callFake((url: string) => url.startsWith('/pricing/') ? throwError(() => new Error('offline'))
+      : of({ scopes: [{ modes: [{ mode: 'private', name: 'Private', image_url: '/storage/operator.png' }] }] }));
+    page.loadServiceCatalog();
+    expect(page.serviceCatalog.private.imageUrl).toContain('/storage/operator.png');
+  });
+
   it('keeps the active mode until the driver explicitly applies a different approved service', async () => {
     const f = setup({ is_online: true, service_modes: ['private', 'fixed', 'shuttle'] });
     const page = f.componentInstance;

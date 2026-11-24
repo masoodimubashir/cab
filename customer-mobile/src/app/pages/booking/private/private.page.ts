@@ -19,6 +19,8 @@ interface VehicleType {
   images?: any;
 }
 
+interface CarouselVehicle { id: number | null; name: string; image_url?: string | null; }
+
 interface Estimate {
   estimated_fare?: number;
   time_min?: number;
@@ -63,10 +65,86 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   readonly total = 5;
 
   vehicleTypes: VehicleType[] = [];
+  vehicleQuery = '';
+  readonly anyVehicle: CarouselVehicle = { id: null, name: 'Any car', image_url: 'assets/illustrations/any-car-collection.png' };
+  private swipeStart: { x: number; y: number; id: number } | null = null;
+  carouselDrag = 0;
+  carouselDragging = false;
+  private ignoreCarouselClickUntil = 0;
+  get carouselVehicles(): CarouselVehicle[] { return [this.anyVehicle, ...this.vehicleTypes]; }
+  get carouselIndex(): number { return Math.max(0, this.carouselVehicles.findIndex(v => v.id === this.vehicleTypeId)); }
+  get carouselSlots(): { vehicle: CarouselVehicle; offset: number }[] {
+    const vehicles = this.carouselVehicles;
+    const offsets = vehicles.length >= 5 ? [-2, -1, 0, 1, 2]
+      : vehicles.length === 4 ? [-1, 0, 1, 2] : vehicles.length === 3 ? [-1, 0, 1] : vehicles.length === 2 ? [0, 1] : [0];
+    return offsets.map(offset => ({ vehicle: vehicles[(this.carouselIndex + offset + vehicles.length) % vehicles.length], offset }));
+  }
+  get vehicleSearchResults(): CarouselVehicle[] {
+    const query = this.vehicleQuery.trim().toLowerCase();
+    return this.carouselVehicles.filter(vehicle => vehicle.name.toLowerCase().includes(query));
+  }
+  trackCarouselSlot(_index: number, slot: { vehicle: CarouselVehicle }): string { return String(slot.vehicle.id); }
+  moveCarousel(direction: number): void {
+    const vehicles = this.carouselVehicles;
+    if (vehicles.length < 2) return;
+    this.vehicleQuery = '';
+    this.chooseVehicle(vehicles[(this.carouselIndex + direction + vehicles.length) % vehicles.length].id);
+  }
+  selectCarouselVehicle(id: number | null): void {
+    if (performance.now() < this.ignoreCarouselClickUntil) return;
+    this.vehicleQuery = '';
+    if (this.vehicleTypeId !== id) this.chooseVehicle(id);
+  }
+  startCarouselSwipe(event: PointerEvent): void {
+    if (!event.isPrimary || event.button !== 0) return;
+    this.swipeStart = { x: event.clientX, y: event.clientY, id: event.pointerId };
+    this.carouselDrag = 0;
+    this.carouselDragging = false;
+  }
+  moveCarouselSwipe(event: PointerEvent): void {
+    const start = this.swipeStart;
+    if (!start || start.id !== event.pointerId) return;
+    const dx = event.clientX - start.x, dy = event.clientY - start.y;
+    if (!this.carouselDragging && (Math.abs(dx) < 5 || Math.abs(dx) <= Math.abs(dy) * 1.25)) return;
+    this.carouselDragging = true;
+    this.ignoreCarouselClickUntil = performance.now() + 350;
+    // Follow the gesture directly, with resistance past one card's travel.
+    this.carouselDrag = Math.sign(dx) * (Math.abs(dx) <= 115 ? Math.abs(dx) : 115 + (Math.abs(dx) - 115) * .18);
+  }
+  finishCarouselSwipe(event: PointerEvent): void {
+    const start = this.swipeStart;
+    this.swipeStart = null;
+    this.carouselDrag = 0;
+    this.carouselDragging = false;
+    if (!start || start.id !== event.pointerId) return;
+    const dx = event.clientX - start.x, dy = event.clientY - start.y;
+    if (Math.abs(dx) >= 35 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+      this.ignoreCarouselClickUntil = performance.now() + 350;
+      this.moveCarousel(dx < 0 ? 1 : -1);
+    }
+  }
+  cancelCarouselSwipe(): void { this.swipeStart = null; this.carouselDrag = 0; this.carouselDragging = false; }
+  carouselKey(event: KeyboardEvent): void {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    this.moveCarousel(event.key === 'ArrowLeft' ? -1 : 1);
+  }
+  get filteredVehicleTypes(): VehicleType[] {
+    const query = this.vehicleQuery.trim().toLowerCase();
+    return this.vehicleTypes.filter(vehicle => vehicle.name.toLowerCase().includes(query));
+  }
+  vehicleIcon(name: string): string {
+    if (/bike|motorcycle/i.test(name)) return 'bicycle-outline';
+    if (/bus|tempo|traveller|shuttle/i.test(name)) return 'bus-outline';
+    return 'car-sport-outline';
+  }
   /** null = "Any car" — the trip stays open to every driver. */
   vehicleTypeId: number | null = null;
   estimate: Estimate | null = null;
   estimating = false;
+  vehicleUnavailable = false;
+  availabilityMessage = '';
+  private estimateRequest = 0;
 
   offer: number | null = null;
   minFare = 0;
@@ -252,7 +330,10 @@ export class PrivateBookPage implements OnInit, OnDestroy {
     if (!pickup || !drop || !cityId) return;
 
     this.estimating = true;
-    this.error = null;
+    const request = ++this.estimateRequest;
+    this.estimate = null;
+    this.vehicleUnavailable = false;
+    this.availabilityMessage = '';
     this.error = null;
     this.cdr.markForCheck();
 
@@ -268,14 +349,36 @@ export class PrivateBookPage implements OnInit, OnDestroy {
           drop_lng: drop.lng,
         })
         .toPromise();
+      if (request !== this.estimateRequest) return;
       this.estimate = res ?? null;
-    } catch {
+      if (res?.available === false || !Number.isFinite(res?.estimated_fare) || Number(res?.estimated_fare) <= 0) {
+        this.setVehicleUnavailable();
+      }
+    } catch (failure: any) {
+      if (request !== this.estimateRequest) return;
       this.estimate = null;
-      this.error = 'We couldn\'t price this trip. Try again.';
+      const message = failure?.error?.message;
+      if (failure?.status === 404 && ['No matching vehicle for this booking.', 'Pricing rule not set for this vehicle.'].includes(message)) {
+        this.setVehicleUnavailable();
+      } else if (failure?.status === 422 && typeof message === 'string' && message.startsWith('Destination is outside the service area')) {
+        this.setVehicleUnavailable('We don’t offer rides to this destination yet. Please choose a different destination.');
+      } else {
+        this.error = 'We couldn’t check the fare. Please try again.';
+      }
     } finally {
-      this.estimating = false;
-      this.cdr.markForCheck();
+      if (request === this.estimateRequest) {
+        this.estimating = false;
+        this.cdr.markForCheck();
+      }
     }
+  }
+
+  private setVehicleUnavailable(message?: string): void {
+    this.estimate = null;
+    this.vehicleUnavailable = true;
+    this.availabilityMessage = message || (this.vehicleTypeId === null
+      ? 'A fare isn’t available for “Any car” on this journey. Please choose a specific vehicle.'
+      : 'This vehicle isn’t available for your journey. Please choose another vehicle.');
   }
 
   get estimatedFare(): number | null {
@@ -283,6 +386,7 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   }
 
   goToPrice(): void {
+    if (this.estimating || !this.estimatedFare || this.vehicleUnavailable) return;
     this.step = 'price';
     this.cdr.markForCheck();
   }
