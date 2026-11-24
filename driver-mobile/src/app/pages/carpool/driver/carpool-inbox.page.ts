@@ -99,6 +99,11 @@ interface Box {
                 <span class="grow"><span class="nm">{{ chatName(c) }}</span><span class="pv ell">{{ preview(c) }}</span></span>
                 <span class="t11 muted">{{ stamp(c) }}</span>
               </button>
+              <button class="crow gone" *ngIf="b.chats_deleted" (click)="openTrip(b)">
+                <span class="av m"><ion-icon name="time-outline"></ion-icon></span>
+                <span class="grow"><span class="nm">This chat was deleted</span><span class="pv">Chats are deleted {{ retention }} {{ retention === 1 ? 'day' : 'days' }} after the trip ends. Tap to open the carpool.</span></span>
+                <ion-icon name="chevron-forward-outline"></ion-icon>
+              </button>
             </div>
           </div>
           <div class="empty-plain" *ngIf="loaded && !pastBoxes.length">
@@ -127,6 +132,8 @@ export class CarpoolInboxPage implements OnDestroy {
   openPast = new Set<number>();
   readonly whenLabel = whenLabel;
   error = false;
+  /** Days a chat is kept after the trip ends, for the "This chat was deleted" row. */
+  retention = 1;
   /** Containers the driver closed; all start open, since each holds waiting requests. */
   closed = new Set<number>();
   openRq = new Set<number>();
@@ -157,6 +164,7 @@ export class CarpoolInboxPage implements OnDestroy {
       next: ({ inbox, chats }) => {
         this.boxes = this.merge(inbox.active, chats.active);
         this.pastBoxes = chats.past;
+        this.retention = chats.retention_days ?? 1;
         this.loaded = true;
         this.done = {};
         this.errors = {};
@@ -186,6 +194,11 @@ export class CarpoolInboxPage implements OnDestroy {
       byId.set(c.listing.id, box);
     }
     return [...byId.values()].sort((a, b) => Number(!!b.requests.length) - Number(!!a.requests.length) || a.listing.departs_at.localeCompare(b.listing.departs_at));
+  }
+
+  /** A trip whose chats are deleted opens its carpool page instead (B1, Option A). */
+  openTrip(b: CarpoolChatBox): void {
+    void this.nav.navigateForward(`/carpool/listing/${b.listing.id}`);
   }
 
   chatName(c: CarpoolChatRow): string {

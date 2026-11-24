@@ -18,6 +18,17 @@
         <button class="icon-btn ring" aria-label="Notifications" routerLink="/notifications"><ion-icon name="notifications-outline"></ion-icon></button>
       </div>
 
+      <!-- Mockup "Carpool ban: driver": a plain card replaces the Publish banner and the requests; the tab bar stays. -->
+      <ng-container *ngIf="home.banned; else normalHome">
+        <div class="ban-card">
+          <div class="ec-i"><ion-icon name="lock-closed-outline"></ion-icon></div>
+          <h2>Carpool access paused</h2>
+          <p>Your account was paused after a report, so you can't publish or take requests. Your upcoming carpools were cancelled and riders were told.</p>
+          <button class="d-go" style="margin-top: 16px" (click)="support()">Contact support</button>
+        </div>
+        <p class="t13 muted" style="margin-top: 14px; text-align: center">Past carpools are still in the Carpools tab.</p>
+      </ng-container>
+      <ng-template #normalHome>
       <div class="hm-hero">
         <svg class="hm-art" viewBox="0 0 190 150" aria-hidden="true">
           <path d="M0 150C40 108 100 96 190 104V150Z" fill="#ffffff22"/>
@@ -115,6 +126,7 @@
           <p *ngIf="plan.can_publish">Publish the trip you're already making, and riders along your route can ask to join.</p>
           <p *ngIf="!plan.can_publish">With a plan, publish the trip you're already making, and riders along your route can ask to join.</p>
         </div>
+      </ng-template>
       </ng-template>
     </ng-container>
   </div>

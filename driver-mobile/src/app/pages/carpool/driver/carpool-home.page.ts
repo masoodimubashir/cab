@@ -117,6 +117,11 @@ export class CarpoolHomePage implements OnDestroy {
     void this.nav.navigateForward('/carpool-signup/plans');
   }
 
+  /** "Contact support" on the paused-access card. */
+  support(): void {
+    void this.nav.navigateForward('/support');
+  }
+
   open(l: CarpoolListing): void {
     void this.nav.navigateForward(`/carpool/listing/${l.id}`);
   }
