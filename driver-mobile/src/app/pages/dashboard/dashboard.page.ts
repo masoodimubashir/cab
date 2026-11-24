@@ -7,7 +7,7 @@ import { DocumentRequirement, DocumentRequirementsModalComponent } from '../../s
 import { AfterViewInit, Component, ElementRef, HostListener, OnDestroy, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertController, ModalController } from '@ionic/angular';
-import { firstValueFrom, interval, Subscription } from 'rxjs';
+import { catchError, firstValueFrom, forkJoin, interval, of, Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { DriverServiceAccess } from '../../core/driver-service-access';
 import { AuthService, AuthUser } from '../../core/auth.service';
@@ -711,18 +711,33 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     if (!cityId || this.approvedServiceModes.length < 2 || this.serviceCatalogCity === cityId) return;
     this.serviceCatalogCity = cityId;
     this.serviceCatalog = {};
-    this.api.get<{
+    type ServiceArtwork = {
       scopes: { modes: { mode: ServiceMode; name: string; display_name?: string | null; image_url?: string | null }[] }[];
-    }>(`/catalog/cities/${cityId}/driver-ride-products`).subscribe({
-      next: ({ scopes }) => {
+      service_artwork?: { mode: ServiceMode; name: string; display_name?: string | null; image_url?: string | null }[];
+    };
+    forkJoin({
+      catalog: this.api.get<ServiceArtwork>(`/catalog/cities/${cityId}/driver-ride-products`),
+      // Pricing resolves city/vehicle-family artwork as well as operator images.
+      // This metadata only decorates the already-approved service tiles.
+      artwork: this.api.get<ServiceArtwork>(`/pricing/cities/${cityId}/products`).pipe(catchError(() => of(null))),
+    }).subscribe({
+      next: ({ catalog, artwork }) => {
         if (this.serviceCatalogCity !== cityId) return;
-        for (const scope of scopes ?? []) {
+        for (const scope of [...(artwork?.scopes ?? []), ...(catalog.scopes ?? [])]) {
           for (const item of scope.modes) {
+            const image = artwork?.scopes?.map(s => s.modes.find(mode => mode.mode === item.mode && mode.image_url?.trim()))
+              .find(mode => !!mode)?.image_url;
             this.serviceCatalog[item.mode] = {
               label: item.display_name || item.name,
-              imageUrl: this.resolveBannerImageUrl(item.image_url),
+              imageUrl: this.resolveBannerImageUrl(image || item.image_url),
             };
           }
+        }
+        for (const item of catalog.service_artwork ?? []) {
+          this.serviceCatalog[item.mode] = {
+            label: item.display_name || item.name,
+            imageUrl: this.resolveBannerImageUrl(item.image_url) || this.serviceCatalog[item.mode]?.imageUrl || '',
+          };
         }
       },
       error: () => {
