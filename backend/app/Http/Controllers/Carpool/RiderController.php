@@ -120,6 +120,8 @@ class RiderController extends Controller
             'on_road' => $onRoad,
             'can_request' => $blocked === null && ! $active,
             'blocked' => $blocked,
+            // A paused rider can open everything but, on Request to join, sees the ban sheet instead (mockup "Carpool ban: rider").
+            'banned' => (bool) $user->carpool_banned_at,
             'my_request' => $mine ? $this->present->riderRequest($mine, $listing, $geo) : null,
             'chat_deleted' => $mine !== null && $listing->chats_deleted_at !== null,
             'group_chat_id' => $mine && in_array($mine->status, CarpoolRequest::SEATED, true) ? $this->present->groupChatId($listing) : null,

@@ -259,6 +259,40 @@ class CarpoolChatTest extends TestCase
         $this->getJson("/api/carpool/chats/{$direct}")->assertJsonPath('retention_days', 3);
     }
 
+    public function test_private_chat_carries_the_riders_own_trip_and_the_group_carries_none(): void
+    {
+        $l = $this->listing();
+        $rider = $this->rider('9990005120', 'Sana Mir');
+        $id = $this->join($rider, $l);
+
+        // Before the driver answers: the request is "sent".
+        Sanctum::actingAs($rider);
+        $direct = CarpoolConversation::query()->where('request_id', $id)->firstOrFail()->id;
+        $trip = $this->getJson("/api/carpool/chats/{$direct}")->assertOk()
+            ->assertJsonPath('conversation.car_label', 'White Maruti Swift')
+            ->assertJsonPath('conversation.trip.state', 'sent')
+            ->assertJsonPath('conversation.trip.pickup.name', 'Rajbagh')
+            ->assertJsonPath('conversation.trip.drop.name', 'Nigeen')
+            ->assertJsonPath('conversation.trip.seats', 2)
+            ->assertJsonPath('conversation.trip.rider_first_name', 'Sana')
+            ->assertJsonPath('conversation.trip.paid_marked', false)
+            ->json('conversation.trip');
+        $this->assertNotEmpty($trip['pickup']['at']);
+        $this->assertNotEmpty($trip['drop']['at']);
+
+        // The driver sees the same rider's stops, and the group chat has no trip block.
+        $this->asDriver();
+        $this->postJson("/api/carpool/driver/join-requests/{$id}/accept")->assertOk();
+        $this->getJson("/api/carpool/chats/{$direct}")
+            ->assertJsonPath('conversation.trip.state', 'accepted')
+            ->assertJsonPath('conversation.trip.pickup.name', 'Rajbagh');
+        $group = CarpoolConversation::query()->where('kind', 'group')->firstOrFail()->id;
+        $this->getJson("/api/carpool/chats/{$group}")->assertOk()->assertJsonPath('conversation.trip', null)
+            ->assertJsonPath('conversation.member_names', ['Sana', 'You']);
+        Sanctum::actingAs($rider);
+        $this->getJson("/api/carpool/chats/{$group}")->assertJsonPath('conversation.member_names', ['Imran', 'You']);
+    }
+
     public function test_masked_messages_are_flagged(): void
     {
         CarpoolBannedWord::query()->create(['word' => 'badword']);
@@ -289,6 +323,36 @@ class CarpoolChatTest extends TestCase
         CarpoolConversation::query()->update(['ended_at' => now()->subDays(2)]);
         $this->artisan('carpool:prune-chats')->assertSuccessful();
         $this->assertSame(0, CarpoolConversation::query()->count());
+    }
+
+    public function test_a_trip_whose_chats_were_deleted_stays_under_past_for_its_driver_and_rider_only(): void
+    {
+        $l = $this->listing();
+        $rider = $this->rider('9990005130');
+        $stranger = $this->rider('9990005131', 'Aamir Lone');
+        $this->accepted($l, $rider);
+        $l->status = CarpoolListing::STATUS_COMPLETED;
+        $l->save();
+
+        // Before the clean-up: a normal Past box with its chats.
+        Sanctum::actingAs($rider);
+        $this->getJson('/api/carpool/chats')->assertJsonPath('past.0.listing.id', $l->id)->assertJsonCount(2, 'past.0.conversations')
+            ->assertJsonMissingPath('past.0.chats_deleted');
+
+        $this->artisan('carpool:prune-chats')->assertSuccessful();
+        CarpoolConversation::query()->update(['ended_at' => now()->subDays(2)]);
+        $this->artisan('carpool:prune-chats')->assertSuccessful();
+        $this->assertSame(0, CarpoolConversation::query()->count());
+
+        // After: the same trip, with no chats and a deleted marker, for the rider and for the driver.
+        $this->getJson('/api/carpool/chats')->assertJsonCount(1, 'past')
+            ->assertJsonPath('past.0.listing.id', $l->id)->assertJsonPath('past.0.chats_deleted', true)->assertJsonCount(0, 'past.0.conversations');
+        $this->asDriver();
+        $this->getJson('/api/carpool/chats')->assertJsonPath('past.0.listing.id', $l->id)->assertJsonPath('past.0.chats_deleted', true);
+
+        // Someone who was never part of it sees nothing.
+        Sanctum::actingAs($stranger);
+        $this->getJson('/api/carpool/chats')->assertJsonCount(0, 'past');
     }
 
     public function test_leaving_removes_the_rider_from_the_group(): void

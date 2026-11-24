@@ -42,6 +42,8 @@ class DriverListingController extends Controller
         $rest = $pending->slice(1);
 
         return response()->json([
+            // A paused driver sees the "Carpool access paused" card instead of Publish and requests (mockup "Carpool ban: driver").
+            'banned' => (bool) $request->user()->carpool_banned_at,
             'next' => $next ? $this->shape($next) : null,
             'requests_on' => $this->listings->requestsOn($driver),
             'has_live' => CarpoolListing::query()->where('driver_id', $driver->id)

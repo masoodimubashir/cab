@@ -1244,7 +1244,7 @@ paths:
   /carpool/chats/{conversation}:
     get:
       tags: [Carpool]
-      summary: A conversation with its messages (pass after=lastMessageId for newer ones only)
+      summary: A conversation with its messages (pass after=lastMessageId for newer ones only). The conversation carries car_label, member_names (group only) and trip (private chat only, the rider's own pickup, drop, seats, price and request state)
       operationId: carpool_chat_show
       parameters:
         - { name: conversation, in: path, required: true, schema: { type: integer } }

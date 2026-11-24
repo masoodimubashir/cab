@@ -123,6 +123,29 @@ class CarpoolPresenter
     }
 
     /**
+     * One rider's own trip, for the card at the top of their private chat:
+     * their pickup (with the planned time), their drop, seats and price. The
+     * group chat gets no such block: it shows the whole carpool instead.
+     *
+     * @return array<string, mixed>
+     */
+    public function chatTrip(CarpoolRequest $r, CarpoolListing $l): array
+    {
+        $geo = RouteGeometry::of($l->route_polyline ?? []);
+
+        return [
+            'state' => $this->riderState($r, $l),
+            'seats' => $r->seats,
+            'price_per_seat' => $r->price_per_seat,
+            'is_free' => $r->is_free,
+            'paid_marked' => (bool) $r->paid_marked,
+            'rider_first_name' => $this->firstName($this->name($r->rider, 'Rider')),
+            'pickup' => ['name' => $r->pickup_name, 'at' => $this->etaAt($l, $geo, $r->pickup_m)->toIso8601String()],
+            'drop' => ['name' => $r->drop_name, 'at' => $this->etaAt($l, $geo, $r->drop_m)->toIso8601String()],
+        ];
+    }
+
+    /**
      * A request as its rider sees it on the carpool page and in My trips.
      *
      * @return array<string, mixed>

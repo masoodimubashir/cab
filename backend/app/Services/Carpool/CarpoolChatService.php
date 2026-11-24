@@ -113,6 +113,15 @@ class CarpoolChatService
         $past = $boxes->reject(fn ($b) => in_array($b['listing']['status'], CarpoolListing::LIVE, true))
             ->sortByDesc(fn ($b) => $b['listing']['departs_at'])->values();
 
+        // Trips whose chats are already deleted stay under Past with a note (B1, Option A): the driver's own carpools and the ones the rider asked to join.
+        $seen = $boxes->map(fn ($b) => $b['listing']['id'])->all();
+        $asked = CarpoolRequest::query()->where('rider_id', $user->id)->pluck('listing_id');
+        $gone = CarpoolListing::query()->with('driver.user')->whereNotNull('chats_deleted_at')->whereNotIn('id', $seen)
+            ->where(fn ($q) => $q->whereIn('id', $asked)->orWhereHas('driver', fn ($d) => $d->where('user_id', $user->id)))
+            ->orderByDesc('departs_at')->limit(50)->get()
+            ->map(fn (CarpoolListing $l) => ['listing' => $this->present->listingSummary($l), 'unread' => 0, 'conversations' => [], 'chats_deleted' => true]);
+        $past = $past->concat($gone)->sortByDesc(fn ($b) => $b['listing']['departs_at'])->values();
+
         return ['active' => $active->all(), 'past' => $past->all(), 'unread' => (int) $active->sum('unread'), 'retention_days' => $this->retentionDays()];
     }
 
@@ -591,9 +600,26 @@ class CarpoolChatService
             'other_user_id' => $c->kind === CarpoolConversation::GROUP ? null : ($mineIsDriver ? $c->rider_id : $l->driver?->user_id),
             'driver_first_name' => $this->present->firstName($this->present->name($l->driver?->user, 'Driver')),
             'pickup_name' => $c->request?->pickup_name,
+            'car_label' => $this->present->car($l->vehicle)['label'] ?? null,
+            'trip' => $c->kind !== CarpoolConversation::GROUP && $c->request ? $this->present->chatTrip($c->request, $l) : null,
             'listing' => $this->present->listingSummary($l),
             'members' => CarpoolConversationMember::query()->where('conversation_id', $c->id)->whereNull('left_at')->count(),
+            'member_names' => $c->kind === CarpoolConversation::GROUP ? $this->memberNames($c, $viewer) : null,
         ];
+    }
+
+    /** First names of everyone still in a group chat, the driver first and "You" last (the chat header). */
+    private function memberNames(CarpoolConversation $c, User $viewer): array
+    {
+        $ids = CarpoolConversationMember::query()->where('conversation_id', $c->id)->whereNull('left_at')->pluck('user_id');
+        $driverId = (int) $c->listing->driver?->user_id;
+        $names = User::query()->whereIn('id', $ids)->orderBy('id')->get()
+            ->reject(fn (User $u) => (int) $u->id === (int) $viewer->id)
+            ->sortBy(fn (User $u) => (int) $u->id === $driverId ? 0 : 1)
+            ->map(fn (User $u) => $this->present->firstName($this->present->name($u, 'Member')))
+            ->values()->all();
+
+        return [...$names, 'You'];
     }
 
     private function fail(string $message, string $field = 'message'): never

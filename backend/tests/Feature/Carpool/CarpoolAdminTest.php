@@ -151,9 +151,15 @@ class CarpoolAdminTest extends TestCase
         // Banned: cannot publish again. Restore clears the ban but does not bring carpools back.
         Sanctum::actingAs($this->driverUser, ['act-as:driver']);
         $this->postJson('/api/carpool/driver/listings', [])->assertStatus(422);
+        // The app learns about it, so Home can show "Carpool access paused" instead of Publish.
+        Sanctum::actingAs($this->driverUser->fresh(), ['act-as:driver']);
+        $this->getJson('/api/carpool/driver/home')->assertOk()->assertJsonPath('banned', true);
         Sanctum::actingAs($this->admin, ['act-as:admin']);
         $this->postJson("/api/admin/carpool/users/{$this->driverUser->id}/restore")->assertOk();
         $this->assertNull($this->driverUser->fresh()->carpool_banned_at);
+        Sanctum::actingAs($this->driverUser->fresh(), ['act-as:driver']);
+        $this->getJson('/api/carpool/driver/home')->assertOk()->assertJsonPath('banned', false);
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
         $this->assertSame('cancelled', $a->fresh()->status);
     }
 
@@ -184,6 +190,13 @@ class CarpoolAdminTest extends TestCase
 
         $this->assertNotNull(User::find($in->rider_id)->carpool_banned_at);
         $this->assertNull(User::find($in->rider_id)->suspended_at); // normal rides are not affected
+
+        // The rider's carpool page tells the app, which then shows the ban sheet on Request to join.
+        Sanctum::actingAs(User::find($in->rider_id));
+        $this->getJson("/api/carpool/rides/{$other->id}")->assertOk()->assertJsonPath('data.banned', true);
+        $other2 = $this->listing(['departs_at' => now()->addDays(2)]);
+        Sanctum::actingAs(\App\Models\User::factory()->create(['phone' => '9990009998']));
+        $this->getJson("/api/carpool/rides/{$other2->id}")->assertOk()->assertJsonPath('data.banned', false);
     }
 
     public function test_blocking_deactivating_or_deleting_a_carpool_driver_cancels_upcoming_carpools(): void
