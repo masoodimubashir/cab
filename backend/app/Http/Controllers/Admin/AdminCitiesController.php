@@ -53,6 +53,10 @@ class AdminCitiesController
 
     public function destroy(City $city)
     {
+        // W2 (A-11): not while carpool plans drivers bought, carpool drivers or upcoming carpools depend on the city.
+        if ($blocked = \App\Services\Carpool\CarpoolDeleteGuard::cityBlocker($city)) {
+            return response()->json(['message' => $blocked], 409);
+        }
         $city->delete();
         return response()->json(['message' => 'City deleted.']);
     }

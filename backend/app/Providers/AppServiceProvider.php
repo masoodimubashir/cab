@@ -34,12 +34,12 @@ class AppServiceProvider extends ServiceProvider
             return [Limit::perMinute(5)->by($key)];
         });
 
-        // Carpool (HARD-CODED, to review for admin Settings): actions that create things, per person.
+        // Carpool: actions that create things, per person. The numbers live in config/carpool.php.
         RateLimiter::for('carpool-write', function (Request $request) {
-            return [Limit::perMinute(20)->by('carpool-write:' . ($request->user()?->id ?: $request->ip()))];
+            return [Limit::perMinute((int) config('carpool.rate_limit_write_per_minute', 20))->by('carpool-write:' . ($request->user()?->id ?: $request->ip()))];
         });
         RateLimiter::for('carpool-search', function (Request $request) {
-            return [Limit::perMinute(60)->by('carpool-search:' . ($request->user()?->id ?: $request->ip()))];
+            return [Limit::perMinute((int) config('carpool.rate_limit_search_per_minute', 60))->by('carpool-search:' . ($request->user()?->id ?: $request->ip()))];
         });
 
         RateLimiter::for('booking', function (Request $request) {

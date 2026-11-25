@@ -67,7 +67,8 @@ class AccountController extends Controller
             $account->tokens()->delete();
             // Foreign keys remove role/profile, saved-contact, location, booking
             // and other account-owned rows. Independent accounting ledgers remain.
-            $account->delete();
+            // Carpool records are kept (anonymised) when the person has any; otherwise a normal delete (W8, D-26).
+            app(\App\Services\Carpool\CarpoolAnonymiser::class)->retire($account, '[DELETED] account deleted by the user');
         });
 
         return response()->json(['ok' => true]);

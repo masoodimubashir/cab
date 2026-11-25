@@ -259,6 +259,9 @@ class AdminDriversController
         }
 
         $driver->save();
+        if ($driver->approval_status === 'rejected') {
+            $this->endCarpools($driver); // W5 (C-02): a rejected carpool driver loses upcoming carpools
+        }
 
         if ($driver->user_id) {
             try {
@@ -617,6 +620,7 @@ class AdminDriversController
 
         return [
             'plan_active_until' => $plan?->expires_at,
+            'total' => (clone $listings)->count(),
             'published' => (clone $listings)->where('status', \App\Models\Carpool\CarpoolListing::STATUS_PUBLISHED)->count(),
             'completed' => (clone $listings)->where('status', \App\Models\Carpool\CarpoolListing::STATUS_COMPLETED)->count(),
             'rating_avg' => $rating['avg'],
@@ -698,7 +702,8 @@ class AdminDriversController
         $driver->save();
         $this->endCarpools($driver); // A30
 
-        $user->delete();
+        // Carpool records are kept (anonymised) when the person has any; otherwise a normal delete (W8, D-26).
+        app(\App\Services\Carpool\CarpoolAnonymiser::class)->retire($user, '[DELETED] ' . $data['reason'], $request->user());
 
         return response()->json(['message' => 'Driver deleted.']);
     }

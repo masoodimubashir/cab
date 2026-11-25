@@ -192,6 +192,10 @@ class AdminContactDriversController
         switch ($to) {
             case 'active':
                 $query->whereNull('deactivated_at');
+                // Carpool: "active" means approved to carpool (not waiting or rejected). Commercial unchanged.
+                if ($audience === 'carpool') {
+                    $query->where('approval_status', 'approved');
+                }
                 break;
 
             case 'deactivated':

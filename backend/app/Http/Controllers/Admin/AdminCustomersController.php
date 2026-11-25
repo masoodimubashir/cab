@@ -338,6 +338,7 @@ class AdminCustomersController
         $user->suspended_reason = $data['reason'];
         $user->suspended_at = now();
         $user->save();
+        app(\App\Services\Carpool\CarpoolAdminService::class)->closeOpenCarpoolsOf($user); // W5: upcoming carpools and seats end
 
         return response()->json(['message' => 'Customer blocked.', 'customer' => $user->fresh()]);
     }
@@ -365,7 +366,8 @@ class AdminCustomersController
         $user->suspended_reason = '[DELETED] ' . $data['reason'];
         $user->suspended_at = now();
         $user->save();
-        $user->delete();
+        // Carpool records are kept (anonymised) when the person has any; otherwise a normal delete (W8, D-26).
+        app(\App\Services\Carpool\CarpoolAnonymiser::class)->retire($user, '[DELETED] ' . $data['reason'], $request->user());
 
         return response()->json(['message' => 'Customer deleted.']);
     }

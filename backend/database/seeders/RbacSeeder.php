@@ -114,6 +114,7 @@ class RbacSeeder extends Seeder
                 ['customers', 'Customers', 'Open and manage customers.'],
                 ['drivers', 'Drivers', 'Open and manage drivers, approvals and document catalog.'],
                 ['carpool', 'Carpool', 'Open carpool listings, reports and settings, and pause carpool access.'],
+                ['carpool_settings', 'Carpool settings', 'Change carpool settings, switch carpool on or off, and edit banned words.'],
                 ['manual_dispatch', 'Manual Dispatch', 'Book rides on behalf of customers from the admin panel.'],
                 ['contact_drivers', 'Contact Drivers', 'Send messages to drivers.'],
                 ['safety', 'Safety', 'Open SOS and safety events.'],

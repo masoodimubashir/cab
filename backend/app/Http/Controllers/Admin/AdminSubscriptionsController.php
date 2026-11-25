@@ -151,6 +151,10 @@ class AdminSubscriptionsController
 
     public function globalDestroy(SubscriptionPlan $plan)
     {
+        // W2 (A-11): a carpool plan that drivers bought is turned off, not deleted. Commercial plans are unchanged.
+        if ($blocked = \App\Services\Carpool\CarpoolDeleteGuard::planBlocker($plan)) {
+            return response()->json(['message' => $blocked], 409);
+        }
         $plan->delete();
         return response()->json(['message' => 'Subscription plan deleted.']);
     }
@@ -212,6 +216,11 @@ class AdminSubscriptionsController
             'available_to' => ['nullable', 'date', 'after_or_equal:available_from'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
+
+        // W2 (A-12): a plan's type never changes after it is created (drivers bought it under that type).
+        if ($plan && isset($data['audience']) && $data['audience'] !== $plan->audience) {
+            abort(422, "A plan's type can't be changed. Create a new plan instead.");
+        }
 
         $audience = $data['audience'] ?? $plan?->audience ?? SubscriptionPlan::AUDIENCE_COMMERCIAL;
         if ($audience === SubscriptionPlan::AUDIENCE_CARPOOL) {
