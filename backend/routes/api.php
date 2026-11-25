@@ -334,9 +334,16 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     // ── Carpool (Carpool.md section 10) ─────────────────────────────
     Route::prefix('admin/carpool')->middleware('permission:carpool')->group(function () {
         $c = \App\Http\Controllers\Admin\AdminCarpoolController::class;
+        $people = \App\Http\Controllers\Admin\AdminCarpoolPeopleController::class;
+        $plans = \App\Http\Controllers\Admin\AdminCarpoolPlansController::class;
+        $overview = \App\Http\Controllers\Admin\AdminCarpoolOverviewController::class;
+        Route::get('/overview', [$overview, 'index']);
         Route::get('/listings', [$c, 'listings']);
         Route::get('/listings/{listing}', [$c, 'listing']);
         Route::post('/listings/{listing}/cancel', [$c, 'cancelListing']);
+        Route::post('/listings/{listing}/end', [$c, 'endRide']);
+        Route::post('/requests/{carpoolRequest}/remove', [$c, 'removeRider']);
+        Route::post('/requests/{carpoolRequest}/outcome', [$c, 'correctOutcome']);
         Route::get('/reports', [$c, 'reports']);
         Route::get('/reports/{report}', [$c, 'report']);
         Route::post('/reports/{report}/remove-message', [$c, 'removeMessage']);
@@ -344,11 +351,23 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::get('/users/{user}/ban-impact', [$c, 'banImpact']);
         Route::post('/users/{user}/ban', [$c, 'ban']);
         Route::post('/users/{user}/restore', [$c, 'restore']);
+        Route::get('/people', [$people, 'index']);
+        Route::get('/people/{user}', [$people, 'show']);
+        Route::patch('/drivers/{driver}/car', [$c, 'editCar']);
+        Route::get('/plans', [$plans, 'index']);
+        Route::post('/plans', [$plans, 'store']);
+        Route::patch('/plans/{plan}', [$plans, 'update']);
+        Route::post('/plans/{plan}/active', [$plans, 'setActive']);
+        Route::delete('/plans/{plan}', [$plans, 'destroy']);
         Route::get('/settings', [$c, 'settings']);
-        Route::patch('/settings', [$c, 'updateSettings']);
-        Route::post('/banned-words', [$c, 'addWord']);
-        Route::patch('/banned-words/{word}', [$c, 'updateWord']);
-        Route::delete('/banned-words/{word}', [$c, 'deleteWord']);
+        // Changing settings, the on/off switch and banned words needs carpool_settings too (Admin-Audit.md D-02).
+        Route::middleware('permission:carpool_settings')->group(function () use ($c) {
+            Route::patch('/settings', [$c, 'updateSettings']);
+            Route::post('/banned-words', [$c, 'addWord']);
+            Route::post('/banned-words/bulk', [$c, 'addWords']);
+            Route::patch('/banned-words/{word}', [$c, 'updateWord']);
+            Route::delete('/banned-words/{word}', [$c, 'deleteWord']);
+        });
     });
 
     // ── Customer Management ─────────────────────────────────────────

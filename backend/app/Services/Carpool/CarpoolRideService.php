@@ -26,9 +26,6 @@ use Illuminate\Validation\ValidationException;
  */
 class CarpoolRideService
 {
-    /** @var Collection<int, CarpoolRequest> riders closed by the last auto-complete, to be told after the commit */
-    private Collection $autoClosed;
-
     public function __construct(
         private CarpoolListingService $listings,
         private CarpoolRequestService $requests,
@@ -41,7 +38,7 @@ class CarpoolRideService
     public function start(User $user, CarpoolListing $listing): CarpoolListing
     {
         $this->listings->owned($user, $listing);
-        $early = (int) config('carpool.start_early_minutes', 60);
+        $early = CarpoolSetting::number('start_early_minutes');
         $l = DB::transaction(function () use ($listing, $early) {
             $l = CarpoolListing::query()->lockForUpdate()->findOrFail($listing->id);
             if ($l->status !== CarpoolListing::STATUS_PUBLISHED) {
@@ -91,7 +88,13 @@ class CarpoolRideService
                 return ['ok' => true, 'tries_left' => $max, 'locked_until' => null];
             }
             if ($r->code_locked_until && $r->code_locked_until->isFuture()) {
-                throw ValidationException::withMessages(['code' => 'Too many wrong codes. Try again at ' . CarpoolClock::local($r->code_locked_until)->format('g:i A') . '.']);
+                $msg = 'Too many wrong codes. Try again at ' . CarpoolClock::local($r->code_locked_until)->format('g:i A') . '.';
+                // Same 422 shape as before, plus the lock end, so the app never has to guess how long the lock is.
+                throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                    'message' => $msg,
+                    'errors' => ['code' => [$msg]],
+                    'locked_until' => $r->code_locked_until->toIso8601String(),
+                ], 422));
             }
             if (hash_equals((string) $r->code, $code)) {
                 $r->code_verified_at = now();
@@ -214,43 +217,11 @@ class CarpoolRideService
     public function autoComplete(): int
     {
         $hours = max(1, (int) CarpoolSetting::current()->auto_complete_hours);
-        $this->autoClosed = collect();
         $due = CarpoolListing::query()->where('status', CarpoolListing::STATUS_IN_PROGRESS)
             ->where('started_at', '<=', now()->subHours($hours))->pluck('id');
         $n = 0;
         foreach ($due as $id) {
-            $l = DB::transaction(function () use ($id) {
-                $l = CarpoolListing::query()->lockForUpdate()->find($id);
-                if (! $l || $l->status !== CarpoolListing::STATUS_IN_PROGRESS) {
-                    return null;
-                }
-                $closed = collect();
-                foreach ($this->accepted($l) as $r) {
-                    if ($r->picked_up_at) {
-                        $r->status = CarpoolRequest::STATUS_COMPLETED;
-                        $r->dropped_at = now();
-                    } else {
-                        $r->status = CarpoolRequest::STATUS_NO_SHOW;
-                        $r->no_show_at = now();
-                    }
-                    $r->ended_at = now();
-                    $r->save();
-                    $closed->push($r);
-                }
-                $this->autoClosed = $closed;
-
-                return $this->finish($l, 'auto');
-            });
-            if ($l) {
-                $this->afterFinish($l);
-                $driver = $this->present->firstName($this->present->name($l->driver?->user, 'your driver'));
-                foreach ($this->autoClosed as $r) {
-                    if ($r->status === CarpoolRequest::STATUS_COMPLETED) {
-                        $this->notify($r->rider_id, 'carpool_dropped', 'Your ride has ended', "How was your ride with {$driver}? Tap to rate.", $l, $r);
-                    } else {
-                        $this->notify($r->rider_id, 'carpool_no_show', 'Your carpool ended without you', $this->route($l) . '. You were not picked up.', $l, $r);
-                    }
-                }
+            if ($this->endNow((int) $id, 'auto')) {
                 $n++;
             }
         }
@@ -258,11 +229,65 @@ class CarpoolRideService
         return $n;
     }
 
-    /** Scheduled: a carpool not started by the end of its departure day is cancelled (A10). */
+    /**
+     * Ends a carpool that is on the road, now (auto-complete, or an admin's "End this ride").
+     * Riders already in the car count as dropped; riders the driver never picked up are closed as
+     * "not confirmed" (status no_show, closed_reason not_confirmed), so they are not confused with a
+     * no-show the driver tapped himself (Admin-Audit.md B-05). Returns the listing, or null if it was
+     * not on the road any more.
+     */
+    public function endNow(int $listingId, string $by): ?CarpoolListing
+    {
+        $closed = collect();
+        $l = DB::transaction(function () use ($listingId, $by, &$closed) {
+            $l = CarpoolListing::query()->lockForUpdate()->find($listingId);
+            if (! $l || $l->status !== CarpoolListing::STATUS_IN_PROGRESS) {
+                return null;
+            }
+            foreach ($this->accepted($l) as $r) {
+                if ($r->picked_up_at) {
+                    $r->status = CarpoolRequest::STATUS_COMPLETED;
+                    $r->dropped_at = now();
+                } else {
+                    $r->status = CarpoolRequest::STATUS_NO_SHOW;
+                    $r->no_show_at = now();
+                    $r->closed_reason = CarpoolRequest::CLOSED_NOT_CONFIRMED;
+                }
+                $r->ended_at = now();
+                $r->save();
+                $closed->push($r);
+            }
+
+            return $this->finish($l, $by);
+        });
+        if (! $l) {
+            return null;
+        }
+        $this->afterFinish($l);
+        $driver = $this->present->firstName($this->present->name($l->driver?->user, 'your driver'));
+        foreach ($closed as $r) {
+            if ($r->status === CarpoolRequest::STATUS_COMPLETED) {
+                $this->notify($r->rider_id, 'carpool_dropped', 'Your ride has ended', "How was your ride with {$driver}? Tap to rate.", $l, $r);
+            } else {
+                $this->notify($r->rider_id, 'carpool_no_show', 'Your carpool has ended',
+                    $this->route($l) . ". The driver didn't confirm your pickup.", $l, $r);
+            }
+        }
+
+        return $l;
+    }
+
+    /**
+     * Scheduled: a carpool not started by the end of its departure day is cancelled (A10). The admin can
+     * give one more day (missed_departure_days = 1): then it is cancelled at the end of the next day.
+     */
     public function cancelMissed(): int
     {
+        $days = CarpoolSetting::missedDepartureDays();
+        // Anything departing before the start of (today minus the extra days) has run out of time.
+        $before = CarpoolClock::startOfDay(CarbonImmutable::parse(CarpoolClock::today())->subDays($days)->toDateString());
         $due = CarpoolListing::query()->where('status', CarpoolListing::STATUS_PUBLISHED)
-            ->where('departs_at', '<', CarpoolClock::startOfDay(CarpoolClock::today()))->pluck('id');
+            ->where('departs_at', '<', $before)->pluck('id');
 
         return $this->cancelListings($due, CarpoolListing::CANCEL_MISSED);
     }
@@ -292,7 +317,7 @@ class CarpoolRideService
                 continue;
             }
             $lastDay = CarpoolClock::dateOf(CarbonImmutable::parse($last));
-            $cutoff = CarpoolClock::endOfDay(CarbonImmutable::parse($lastDay, CarpoolClock::timezone())->addDay()->toDateString());
+            $cutoff = CarpoolClock::endOfDay(CarbonImmutable::parse($lastDay, CarpoolClock::timezone())->addDays(CarpoolSetting::number('plan_grace_days'))->toDateString());
             foreach ($rows as $l) {
                 if ($l->departs_at->gt($cutoff)) {
                     $due->push($l->id);
@@ -373,7 +398,7 @@ class CarpoolRideService
             });
             if ($l) {
                 $this->requests->listingCancelled($l);
-                $why = $reason === CarpoolListing::CANCEL_MISSED ? " It wasn't started by the end of the day." : ' Your plan has ended.';
+                $why = $reason === CarpoolListing::CANCEL_MISSED ? " It wasn't started in time." : ' Your plan has ended.';
                 $this->notify($l->driver?->user_id, 'carpool_cancelled', 'Your carpool was cancelled',
                     $this->route($l) . ', ' . $this->present->when($l->departs_at) . '.' . $why, $l, null);
                 $n++;

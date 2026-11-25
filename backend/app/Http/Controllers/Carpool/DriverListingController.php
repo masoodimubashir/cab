@@ -43,7 +43,7 @@ class DriverListingController extends Controller
 
         return response()->json([
             // A paused driver sees the "Carpool access paused" card instead of Publish and requests (mockup "Carpool ban: driver").
-            'banned' => (bool) $request->user()->carpool_banned_at,
+            'banned' => \App\Services\Carpool\CarpoolAccess::blocked($request->user()),
             'next' => $next ? $this->shape($next) : null,
             'requests_on' => $this->listings->requestsOn($driver),
             'has_live' => CarpoolListing::query()->where('driver_id', $driver->id)
@@ -131,7 +131,8 @@ class DriverListingController extends Controller
     {
         $req = $publish ? 'required' : 'sometimes';
         $seatsMax = (int) config('carpool.seats_max', 6);
-        $priceMax = (int) config('carpool.price_max', 5000);
+        // No business cap on the price (not ours to set). Only the database column's own limit.
+        $priceMax = 4294967295;
         $rules = [
             'departs_at' => [$req, 'date'],
             'seats' => [$req, 'integer', 'min:1', "max:{$seatsMax}"],
@@ -188,8 +189,8 @@ class DriverListingController extends Controller
             'completed_by' => $l->completed_by,
             'counts_as_ride' => $l->counts_as_ride,
             'can_start' => $l->status === CarpoolListing::STATUS_PUBLISHED
-                && now()->gte($l->departs_at->copy()->subMinutes((int) config('carpool.start_early_minutes', 60))),
-            'start_opens_at' => $l->departs_at->copy()->subMinutes((int) config('carpool.start_early_minutes', 60))->toIso8601String(),
+                && now()->gte($l->departs_at->copy()->subMinutes(\App\Models\Carpool\CarpoolSetting::number('start_early_minutes'))),
+            'start_opens_at' => $l->departs_at->copy()->subMinutes(\App\Models\Carpool\CarpoolSetting::number('start_early_minutes'))->toIso8601String(),
         ];
         if ($full) {
             $out['route_polyline'] = $l->route_polyline;

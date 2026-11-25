@@ -48,7 +48,7 @@ class RiderController extends Controller
      */
     public function show(Request $request, CarpoolListing $listing): JsonResponse
     {
-        $q = $request->validate($this->pointRules(false) + ['seats' => ['nullable', 'integer', 'min:1', 'max:6']]);
+        $q = $request->validate($this->pointRules(false) + ['seats' => ['nullable', 'integer', 'min:1', 'max:' . (int) config('carpool.seats_max', 6)]]);
         $user = $request->user();
         $listing->loadMissing(['driver.user', 'vehicle']);
         $mine = CarpoolRequest::query()->where('listing_id', $listing->id)->where('rider_id', $user->id)
@@ -62,7 +62,7 @@ class RiderController extends Controller
         $suggested = null;
         if (isset($q['from_lat'], $q['from_lng'], $q['to_lat'], $q['to_lng'])) {
             $m = $geo->match((float) $q['from_lat'], (float) $q['from_lng'], (float) $q['to_lat'], (float) $q['to_lng'],
-                (float) CarpoolSetting::current()->search_distance_m, CarpoolRequestService::MIN_RIDE_M);
+                (float) CarpoolSetting::current()->search_distance_m, CarpoolRequestService::minRideM());
             if ($m) {
                 $suggested = $this->search->result($listing, $geo, $m, (int) ($q['seats'] ?? 1), null);
                 $suggested = ['pickup' => $suggested['pickup'], 'drop' => $suggested['drop']];
@@ -95,6 +95,7 @@ class RiderController extends Controller
             'id' => $listing->id,
             'status' => $listing->status,
             'departs_at' => $listing->departs_at->toIso8601String(),
+            'start_opens_at' => $listing->departs_at->copy()->subMinutes(CarpoolSetting::number('start_early_minutes'))->toIso8601String(),
             'day' => CarpoolClock::daysFromToday($listing->departs_at),
             'start' => $this->present->place($listing, 'start'),
             'end' => $this->present->place($listing, 'end'),
@@ -110,7 +111,7 @@ class RiderController extends Controller
             'cancel_note' => $listing->cancel_note,
             'started_at' => $listing->started_at?->toIso8601String(),
             'completed_at' => $listing->completed_at?->toIso8601String(),
-            'changed' => $listing->changed_kind && $listing->changed_at?->gt(now()->subDay()) ? [
+            'changed' => $listing->changed_kind && $listing->changed_at?->gt(now()->subHours((int) config('carpool.changed_notice_hours', 24))) ? [
                 'kind' => $listing->changed_kind,
                 'was_at' => $listing->changed_from_at?->toIso8601String(),
             ] : null,
@@ -121,7 +122,7 @@ class RiderController extends Controller
             'can_request' => $blocked === null && ! $active,
             'blocked' => $blocked,
             // A paused rider can open everything but, on Request to join, sees the ban sheet instead (mockup "Carpool ban: rider").
-            'banned' => (bool) $user->carpool_banned_at,
+            'banned' => \App\Services\Carpool\CarpoolAccess::blocked($user),
             'my_request' => $mine ? $this->present->riderRequest($mine, $listing, $geo) : null,
             'chat_deleted' => $mine !== null && $listing->chats_deleted_at !== null,
             'group_chat_id' => $mine && in_array($mine->status, CarpoolRequest::SEATED, true) ? $this->present->groupChatId($listing) : null,
@@ -198,7 +199,7 @@ class RiderController extends Controller
     /** The profile photo asked for at the first join request (customer 5a, P12, A20). */
     public function photo(Request $request): JsonResponse
     {
-        $request->validate(['photo' => ['required', 'file', 'image', 'max:4096']]);
+        $request->validate(['photo' => ['required', 'file', 'image', 'max:' . (int) config('carpool.photo_max_kb', 4096)]]);
         $user = $request->user();
         $old = $user->avatar_path;
         $user->avatar_path = $request->file('photo')->store('avatars', 'public');

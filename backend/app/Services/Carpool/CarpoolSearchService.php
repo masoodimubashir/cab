@@ -42,7 +42,7 @@ class CarpoolSearchService
             throw ValidationException::withMessages(['search' => 'Carpool is not open right now.']);
         }
         $today = CarpoolClock::today();
-        $horizon = (int) config('carpool.publish_horizon_days', 30);
+        $horizon = CarpoolSetting::number('publish_horizon_days');
         $last = CarbonImmutable::parse($today, CarpoolClock::timezone())->addDays($horizon)->toDateString();
         if ($q['date'] < $today || $q['date'] > $last) {
             throw ValidationException::withMessages(['date' => "Pick a day from today to {$horizon} days ahead."]);
@@ -68,7 +68,8 @@ class CarpoolSearchService
             ->with(['driver.user', 'vehicle'])
             ->whereIn('status', CarpoolListing::LIVE)
             ->whereBetween('departs_at', [$from, $to])
-            ->whereHas('driver', fn (Builder $d) => $d->where('approval_status', 'approved')->whereNull('deactivated_at'))
+            ->whereHas('driver', fn (Builder $d) => $d->where('approval_status', 'approved')->whereNull('deactivated_at')
+                ->whereHas('user', fn (Builder $u) => $u->where('is_suspended', false)->whereNull('carpool_banned_at')))
             ->when($own->isNotEmpty(), fn (Builder $b) => $b->whereNotIn('driver_id', $own));
         foreach ([[$q['from_lat'], $q['from_lng']], [$q['to_lat'], $q['to_lng']]] as [$lat, $lng]) {
             $dLat = $maxM / 111320.0;
@@ -98,7 +99,7 @@ class CarpoolSearchService
                 continue;
             }
             $geo = RouteGeometry::of($l->route_polyline ?? []);
-            $m = $geo->match((float) $q['from_lat'], (float) $q['from_lng'], (float) $q['to_lat'], (float) $q['to_lng'], $maxM, CarpoolRequestService::MIN_RIDE_M);
+            $m = $geo->match((float) $q['from_lat'], (float) $q['from_lng'], (float) $q['to_lat'], (float) $q['to_lng'], $maxM, CarpoolRequestService::minRideM());
             if (! $m) {
                 continue;
             }
@@ -177,7 +178,7 @@ class CarpoolSearchService
                 continue;
             }
             $geo = RouteGeometry::of($l->route_polyline ?? []);
-            if (! $geo->match((float) $q['from_lat'], (float) $q['from_lng'], (float) $q['to_lat'], (float) $q['to_lng'], $maxM, CarpoolRequestService::MIN_RIDE_M)) {
+            if (! $geo->match((float) $q['from_lat'], (float) $q['from_lng'], (float) $q['to_lat'], (float) $q['to_lng'], $maxM, CarpoolRequestService::minRideM())) {
                 continue;
             }
             $date = CarpoolClock::dateOf($l->departs_at);

@@ -76,6 +76,6 @@ class CarpoolClock
             return false;
         }
 
-        return self::daysFromToday($departsAt) <= (int) config('carpool.publish_horizon_days', 30);
+        return self::daysFromToday($departsAt) <= \App\Models\Carpool\CarpoolSetting::number('publish_horizon_days');
     }
 }

@@ -68,7 +68,38 @@ class CarpoolSwitchTest extends TestCase
             ->assertJsonPath('enabled', true)
             ->assertJsonPath('search_distance_m', 2000)
             ->assertJsonPath('publish_horizon_days', 30)
+            ->assertJsonPath('start_early_minutes', 60)
+            ->assertJsonPath('pending_expire_minutes', 15)
+            ->assertJsonPath('plan_grace_days', 1)
+            ->assertJsonPath('missed_departure_days', 0)
             ->assertJsonPath('timezone', 'Asia/Kolkata');
+    }
+
+    public function test_config_follows_a_changed_timing_setting_and_keeps_every_older_field(): void
+    {
+        $this->enable(true);
+        CarpoolSetting::current()->update(['publish_horizon_days' => 45, 'start_early_minutes' => 20, 'pending_expire_minutes' => 30, 'plan_grace_days' => 0, 'missed_departure_days' => 1]);
+
+        $r = $this->getJson('/api/carpool/config')->assertOk()
+            ->assertJsonPath('publish_horizon_days', 45)->assertJsonPath('start_early_minutes', 20)
+            ->assertJsonPath('pending_expire_minutes', 30)->assertJsonPath('plan_grace_days', 0)->assertJsonPath('missed_departure_days', 1);
+
+        // Apps already in the field read these; none may disappear or change name (additive only).
+        foreach (['enabled', 'driver_signup', 'search_distance_m', 'publish_horizon_days', 'seats_max', 'message_max_chars', 'chat_retention_days', 'timezone', 'tile_name', 'tile_image_url'] as $key) {
+            $this->assertArrayHasKey($key, $r->json(), $key);
+        }
+    }
+
+    public function test_config_tells_the_apps_how_far_the_delay_button_moves_the_carpool(): void
+    {
+        $this->enable(true);
+        $this->getJson('/api/carpool/config')->assertOk()->assertJsonPath('delay_minutes', 10);
+
+        config(['carpool.delay_minutes' => 15]);
+        $this->getJson('/api/carpool/config')->assertJsonPath('delay_minutes', 15);
+
+        config(['carpool.delay_minutes' => 0]);
+        $this->getJson('/api/carpool/config')->assertJsonPath('delay_minutes', 1);
     }
 
     public function test_saving_settings_clears_the_cache(): void

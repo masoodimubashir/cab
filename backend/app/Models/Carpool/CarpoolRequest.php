@@ -50,6 +50,10 @@ class CarpoolRequest extends Model
 
     public const CLOSED_FILLED = 'filled';
     public const CLOSED_ENDED = 'ended';
+    /** The ride ended (auto-complete or an admin) and the driver never confirmed the pickup. */
+    public const CLOSED_NOT_CONFIRMED = 'not_confirmed';
+    /** An admin corrected the outcome or removed the rider. */
+    public const CLOSED_ADMIN = 'admin';
 
     /** Still waiting for an answer, or in the carpool. */
     public const ACTIVE = [self::STATUS_PENDING, self::STATUS_ACCEPTED];

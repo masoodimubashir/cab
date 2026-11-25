@@ -39,7 +39,7 @@ class RegisterCarpoolDriverRequest extends FormRequest
             'dob' => ['nullable', 'date', 'before:-18 years'],
             'address' => ['nullable', 'string', 'max:255'],
             // Profile photo is required (section 2). Not re-sent once on file.
-            'photo' => [$hasAvatar ? 'nullable' : 'required', 'image', 'max:4096'],
+            'photo' => [$hasAvatar ? 'nullable' : 'required', 'image', 'max:' . (int) config('carpool.photo_max_kb', 4096)],
             'city_id' => ['required', 'integer', 'exists:cities,id'],
             'make' => ['required', 'string', 'max:60'],
             'model' => ['required', 'string', 'max:60'],
@@ -47,8 +47,8 @@ class RegisterCarpoolDriverRequest extends FormRequest
             'plate' => ['required', 'string', 'max:20', 'regex:' . self::PLATE_PATTERN],
             'seats' => ['required', 'integer', 'min:' . config('carpool.seats_min'), 'max:' . config('carpool.seats_max')],
             // Front of the car with the plate visible is required; interior is optional.
-            'front_photo' => [$hasFrontPhoto ? 'nullable' : 'required', 'image', 'max:6144'],
-            'interior_photo' => ['nullable', 'image', 'max:6144'],
+            'front_photo' => [$hasFrontPhoto ? 'nullable' : 'required', 'image', 'max:' . (int) config('carpool.car_photo_max_kb', 6144)],
+            'interior_photo' => ['nullable', 'image', 'max:' . (int) config('carpool.car_photo_max_kb', 6144)],
             'app_version' => ['nullable', 'string', 'max:32'],
             'os_version' => ['nullable', 'string', 'max:32'],
             'device_type' => ['nullable', 'string', 'max:64'],

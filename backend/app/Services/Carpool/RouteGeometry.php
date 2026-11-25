@@ -16,6 +16,9 @@ final class RouteGeometry
 {
     private const M_PER_DEG = 111320.0;
 
+    /** Used only when a caller passes no value; the apps and services always pass config carpool.min_ride_m. */
+    public const FALLBACK_MIN_RIDE_M = 300.0;
+
     /** @var list<array{0: float, 1: float}> */
     private array $path;
 
@@ -107,7 +110,7 @@ final class RouteGeometry
      *
      * @return array{pickup: array{distance_m: float, along_m: float, lat: float, lng: float}, drop: array{distance_m: float, along_m: float, lat: float, lng: float}}|null
      */
-    public function match(float $aLat, float $aLng, float $bLat, float $bLng, float $maxM, float $minRideM = 300.0): ?array
+    public function match(float $aLat, float $aLng, float $bLat, float $bLng, float $maxM, float $minRideM = self::FALLBACK_MIN_RIDE_M): ?array
     {
         if (! $this->isUsable()) {
             return null;

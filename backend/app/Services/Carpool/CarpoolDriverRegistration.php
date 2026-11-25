@@ -23,6 +23,8 @@ class CarpoolDriverRegistration
      */
     public function register(User $user, array $data, array $files): Driver
     {
+        CarpoolAccess::assertAllowed($user); // a paused number cannot come back through a new sign-up (B-02)
+
         return DB::transaction(function () use ($user, $data, $files) {
             $user = User::query()->lockForUpdate()->findOrFail($user->id);
             $existing = Driver::query()->where('user_id', $user->id)->lockForUpdate()->first();
@@ -85,7 +87,7 @@ class CarpoolDriverRegistration
     }
 
     /** One plate, one driver, across both driver types (section 2). Commercial plates may hold spaces. */
-    private function assertPlateFree(string $plate, ?Driver $self): void
+    public function assertPlateFree(string $plate, ?Driver $self): void
     {
         $taken = Driver::query()
             ->when($self, fn ($q) => $q->where('id', '!=', $self->id))

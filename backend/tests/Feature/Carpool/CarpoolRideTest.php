@@ -161,8 +161,10 @@ class CarpoolRideTest extends TestCase
         $this->postJson("/api/carpool/driver/join-requests/{$r->id}/check-code", ['code' => $wrong])->assertJsonPath('data.tries_left', 1);
         $this->postJson("/api/carpool/driver/join-requests/{$r->id}/check-code", ['code' => $wrong])
             ->assertJsonPath('data.tries_left', 0)->assertJsonPath('data.ok', false);
-        // Even the right code is refused while locked.
-        $this->postJson("/api/carpool/driver/join-requests/{$r->id}/check-code", ['code' => $r->code])->assertStatus(422);
+        // Even the right code is refused while locked, and the answer says until when (the app no longer guesses).
+        $locked = $this->postJson("/api/carpool/driver/join-requests/{$r->id}/check-code", ['code' => $r->code])
+            ->assertStatus(422)->assertJsonValidationErrors('code')->assertJsonStructure(['message', 'errors' => ['code'], 'locked_until']);
+        $this->assertEqualsWithDelta(now()->addMinutes(5)->timestamp, \Carbon\CarbonImmutable::parse($locked->json('locked_until'))->timestamp, 5);
 
         // After the lock runs out the right code works.
         $this->travel(6)->minutes();
@@ -547,5 +549,85 @@ class CarpoolRideTest extends TestCase
         $this->getJson("/api/carpool/rides/{$l->id}")->assertOk()->assertJsonPath('data.chat_deleted', true)->assertJsonPath('data.group_chat_id', null);
         $this->asDriver();
         $this->getJson("/api/carpool/driver/listings/{$l->id}")->assertJsonPath('data.chats_deleted', true);
+    }
+
+    public function test_plan_grace_days_setting_moves_the_cutoff_after_a_plan_ends(): void
+    {
+        // The plan ran out 2 days ago (India day D). With 3 grace days D+1, D+2 and D+3 continue; D+4 is removed.
+        $this->plan('32', '-2', true);
+        CarpoolSetting::current()->update(['plan_grace_days' => 3]);
+        $day = fn (int $n) => CarpoolClock::now()->addDays($n)->setTime(9, 0)->utc();
+        $soon = $this->listing(['departs_at' => now()->addMinutes(30)]);
+        $tomorrow = $this->listing(['departs_at' => $day(1)]);
+        $gone = $this->listing(['departs_at' => $day(2)]);
+
+        // Today is D+2 and tomorrow D+3: both stay. The day after tomorrow (D+4) goes.
+        $this->assertSame(1, app(CarpoolRideService::class)->applyGrace());
+        $this->assertSame('published', $soon->fresh()->status);
+        $this->assertSame('published', $tomorrow->fresh()->status);
+        $this->assertSame('plan_ended', $gone->fresh()->cancel_reason);
+    }
+
+    public function test_plan_grace_days_zero_stops_carpools_after_the_last_plan_day(): void
+    {
+        // The plan runs out later today (India day D). With 0 grace days only D itself continues.
+        $this->plan('29', '0', false);
+        DriverSubscription::query()->update(['expires_at' => now()->subMinutes(5), 'status' => DriverSubscription::STATUS_EXPIRED]);
+        CarpoolSetting::current()->update(['plan_grace_days' => 0]);
+        $next = $this->listing(['departs_at' => CarpoolClock::now()->addDay()->setTime(8, 0)->utc()]);
+        $sameDay = $this->listing(['departs_at' => now()->addMinutes(10)]);
+
+        $this->assertSame(1, app(CarpoolRideService::class)->applyGrace());
+        $this->assertSame('plan_ended', $next->fresh()->cancel_reason);
+        $this->assertSame('published', $sameDay->fresh()->status);
+    }
+
+    public function test_missed_departure_days_setting_gives_one_more_day_before_an_unstarted_carpool_is_cancelled(): void
+    {
+        $this->travelTo(CarpoolClock::now()->setTime(12, 0)->utc());
+        $today = $this->listing(['departs_at' => now()->subHours(4)]);
+        $yesterday = $this->listing(['departs_at' => now()->subDay()]);
+        $twoDaysAgo = $this->listing(['departs_at' => now()->subDays(2)]);
+
+        // Default 0, end of the departure day: yesterday's and the older one have run out of time; today's stays.
+        $this->assertSame(2, app(CarpoolRideService::class)->cancelMissed());
+        $this->assertSame('missed_departure', $yesterday->fresh()->cancel_reason);
+        $this->assertSame('missed_departure', $twoDaysAgo->fresh()->cancel_reason);
+        $this->assertSame('published', $today->fresh()->status);
+
+        // 1, end of the next day: yesterday's carpool still has until tonight, the one from two days ago does not.
+        $yesterday2 = $this->listing(['departs_at' => now()->subDay()]);
+        $twoDaysAgo2 = $this->listing(['departs_at' => now()->subDays(2)]);
+        CarpoolSetting::current()->update(['missed_departure_days' => 1]);
+        $this->assertSame(1, app(CarpoolRideService::class)->cancelMissed());
+        $this->assertSame('cancelled', $twoDaysAgo2->fresh()->status);
+        $this->assertSame('published', $yesterday2->fresh()->status);
+        $this->assertSame('published', $today->fresh()->status);
+
+        // The next morning the carpool that left yesterday has run out of time too.
+        $this->travelTo(CarpoolClock::now()->addDay()->setTime(1, 0)->utc());
+        $this->assertSame(1, app(CarpoolRideService::class)->cancelMissed());
+        $this->assertSame('cancelled', $yesterday2->fresh()->status);
+    }
+
+    public function test_waiting_request_expiry_minutes_setting_decides_when_a_request_on_the_road_closes(): void
+    {
+        $l = $this->listing([
+            'status' => CarpoolListing::STATUS_IN_PROGRESS, 'started_at' => now()->subMinutes(30), 'departs_at' => now()->subMinutes(30),
+        ]);
+        $r = $this->accepted($l, '9990005190');
+        $r->status = CarpoolRequest::STATUS_PENDING;
+        $r->save();
+        $service = app(\App\Services\Carpool\CarpoolRequestService::class);
+
+        // The car passed this pickup about 26 minutes ago: not yet old enough for a 60 minute limit...
+        CarpoolSetting::current()->update(['pending_expire_minutes' => 60]);
+        $this->assertSame(0, $service->expirePassedPickups());
+        $this->assertSame('pending', $r->fresh()->status);
+
+        // ...but past the default 15 minutes.
+        CarpoolSetting::current()->update(['pending_expire_minutes' => 15]);
+        $this->assertSame(1, $service->expirePassedPickups());
+        $this->assertSame('closed', $r->fresh()->status);
     }
 }

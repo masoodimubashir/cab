@@ -13,6 +13,9 @@ class DevHubController
 {
     public function __construct(private DevHub $hub)
     {
+        // Second lock behind the route registration in bootstrap/app.php: outside a local
+        // environment with DEV_HUB=true this controller answers 404 even if a route were added.
+        DevHub::guard();
     }
 
     public function state(): JsonResponse

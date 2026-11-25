@@ -32,7 +32,7 @@ class PlanController extends Controller
         $user = $request->user();
         $active = $this->plans->activePlan($user);
         $queued = $this->plans->queuedPlan($user);
-        $warnDays = (int) config('carpool.plan_warning_days', 3);
+        $warnDays = \App\Models\Carpool\CarpoolSetting::number('plan_warning_days');
 
         return response()->json([
             'plan' => $active ? $this->shapeSub($active) : null,

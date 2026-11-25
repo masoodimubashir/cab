@@ -416,4 +416,50 @@ class CarpoolJoinTest extends TestCase
         $this->assertNotNull($this->getJson("/api/carpool/rides/{$l->id}")->json('data.changed'));
         $this->assertFalse(AppNotification::query()->where('user_id', $other->id)->where('type', 'carpool_changed')->exists());
     }
+
+    public function test_the_seat_limit_and_the_start_ride_time_come_from_settings_not_from_typed_in_numbers(): void
+    {
+        $l = $this->listing();
+        Sanctum::actingAs($this->rider('9990004190'));
+        $url = fn (int $seats) => "/api/carpool/rides/{$l->id}?" . http_build_query(self::FROM + self::TO + ['seats' => $seats]);
+
+        // Start ride opens `start_early_minutes` before departure, and the rider is told when.
+        $departs = $l->fresh()->departs_at;
+        $opens = fn () => \Carbon\CarbonImmutable::parse($this->getJson($url(1))->assertOk()->json('data.start_opens_at'))->timestamp;
+        $this->assertSame($departs->copy()->subMinutes(60)->timestamp, $opens());
+        CarpoolSetting::current()->update(['start_early_minutes' => 30]);
+        $this->assertSame($departs->copy()->subMinutes(30)->timestamp, $opens());
+
+        // The most seats one rider can ask for is `seats_max`, on the carpool page and in search.
+        config(['carpool.seats_max' => 3]);
+        $this->getJson($url(3))->assertOk();
+        $this->getJson($url(4))->assertStatus(422)->assertJsonValidationErrors('seats');
+        $this->getJson($this->searchUrl(['seats' => 4]))->assertStatus(422)->assertJsonValidationErrors('seats');
+        config(['carpool.seats_max' => 6]);
+        $this->getJson($url(5))->assertOk();
+    }
+
+    public function test_the_changed_notice_window_and_the_photo_size_limit_come_from_config(): void
+    {
+        $l = $this->listing();
+        $rider = $this->rider('9990004160');
+        $this->join($rider, $l);
+        $this->asDriver();
+        $this->postJson("/api/carpool/driver/listings/{$l->id}/delay")->assertOk();
+
+        // "The driver changed this carpool" shows for `changed_notice_hours`.
+        config(['carpool.changed_notice_hours' => 1]);
+        Sanctum::actingAs($rider);
+        $this->assertNotNull($this->getJson("/api/carpool/rides/{$l->id}")->json('data.changed'));
+        $this->travel(2)->hours();
+        $this->assertNull($this->getJson("/api/carpool/rides/{$l->id}")->json('data.changed'));
+
+        // The rider photo size limit (kilobytes).
+        Storage::fake('public');
+        config(['carpool.photo_max_kb' => 50]);
+        Sanctum::actingAs($this->rider('9990004161', 'Sara Dar', photo: false));
+        $this->postJson('/api/carpool/rider/photo', ['photo' => \Illuminate\Http\UploadedFile::fake()->image('big.jpg')->size(200)])
+            ->assertStatus(422)->assertJsonValidationErrors('photo');
+        $this->postJson('/api/carpool/rider/photo', ['photo' => \Illuminate\Http\UploadedFile::fake()->image('small.jpg')->size(10)])->assertOk();
+    }
 }

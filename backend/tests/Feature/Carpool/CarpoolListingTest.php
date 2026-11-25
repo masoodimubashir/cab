@@ -287,4 +287,12 @@ class CarpoolListingTest extends TestCase
         config(['carpool.kill_switch' => true]);
         $this->getJson('/api/carpool/driver/home')->assertNotFound();
     }
+
+    public function test_there_is_no_price_cap_and_config_does_not_advertise_one(): void
+    {
+        $this->postJson('/api/carpool/driver/listings', $this->payload(['price_per_seat' => 9000]))
+            ->assertCreated()->assertJsonPath('data.price_per_seat', 9000);
+        $this->postJson('/api/carpool/driver/listings', $this->payload(['price_per_seat' => 0]))->assertStatus(422);
+        $this->getJson('/api/carpool/config')->assertOk()->assertJsonMissingPath('price_max');
+    }
 }

@@ -231,7 +231,7 @@ class CarpoolChatService
         if (! $hit) {
             $this->fail("Pick a spot on the driver's route.", 'pickup');
         }
-        if ($hit['along_m'] + CarpoolRequestService::MIN_RIDE_M > $r->drop_m) {
+        if ($hit['along_m'] + CarpoolRequestService::minRideM() > $r->drop_m) {
             $this->fail("The pickup must come before the rider's drop.", 'pickup');
         }
 
@@ -289,8 +289,8 @@ class CarpoolChatService
         if ((int) $user->id !== $answererId) {
             abort(404);
         }
-        if ($user->carpool_banned_at) {
-            $this->fail('Your carpool access is paused.');
+        if ($reason = CarpoolAccess::reason($user)) {
+            $this->fail($reason);
         }
         if ($p->status !== 'pending') {
             $this->fail('This pickup request was already answered or replaced.');
@@ -412,7 +412,7 @@ class CarpoolChatService
 
     public function writable(CarpoolConversation $c, User $user): bool
     {
-        if ($user->carpool_banned_at || $c->ended_at) {
+        if (CarpoolAccess::blocked($user) || $c->ended_at) {
             return false;
         }
         $l = $c->listing;
@@ -430,8 +430,8 @@ class CarpoolChatService
     private function assertCanWrite(User $user, CarpoolConversation $c): void
     {
         $this->memberOf($user, $c);
-        if ($user->carpool_banned_at) {
-            $this->fail('Your carpool access is paused.');
+        if ($reason = CarpoolAccess::reason($user)) {
+            $this->fail($reason);
         }
         if (! $this->writable($c, $user)) {
             $this->fail('This chat is read only now.');

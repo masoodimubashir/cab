@@ -21,8 +21,11 @@ use Illuminate\Validation\ValidationException;
  */
 class CarpoolRequestService
 {
-    /** A ride shorter than this along the route isn't worth matching. */
-    public const MIN_RIDE_M = 300.0;
+    /** A ride shorter than this along the route isn't worth matching: shortest ride in metres (config carpool.min_ride_m, default 300). */
+    public static function minRideM(): float
+    {
+        return (float) config('carpool.min_ride_m', RouteGeometry::FALLBACK_MIN_RIDE_M);
+    }
 
     public function __construct(
         private NotificationCenter $notes,
@@ -41,8 +44,8 @@ class CarpoolRequestService
         if (! CarpoolSwitch::enabled()) {
             $this->fail('Carpool is not open right now.');
         }
-        if ($rider->carpool_banned_at) {
-            $this->fail('Your carpool access is paused. Contact support.');
+        if ($reason = CarpoolAccess::reason($rider)) {
+            $this->fail($reason);
         }
         if (! $rider->avatar_path) {
             $this->fail('Add a profile photo first. Drivers check it at pickup.', 'photo');
@@ -62,7 +65,7 @@ class CarpoolRequestService
         if (! $pickup) {
             $this->fail("Pick a pickup on the driver's route.", 'pickup');
         }
-        $drop = $geo->nearest((float) $data['drop']['lat'], (float) $data['drop']['lng'], $max, $pickup['along_m'] + self::MIN_RIDE_M);
+        $drop = $geo->nearest((float) $data['drop']['lat'], (float) $data['drop']['lng'], $max, $pickup['along_m'] + self::minRideM());
         if (! $drop) {
             $this->fail('Your drop must come after your pickup on this route.', 'drop');
         }
@@ -145,7 +148,7 @@ class CarpoolRequestService
      */
     public function expirePassedPickups(): int
     {
-        $grace = (int) config('carpool.pending_expire_after_pickup_minutes', 15);
+        $grace = \App\Models\Carpool\CarpoolSetting::number('pending_expire_minutes');
         $n = 0;
         $waiting = CarpoolRequest::query()->where('status', CarpoolRequest::STATUS_PENDING)
             ->whereHas('listing', fn ($q) => $q->where('status', CarpoolListing::STATUS_IN_PROGRESS))
@@ -385,14 +388,14 @@ class CarpoolRequestService
         $title = match ($listing->cancel_reason) {
             CarpoolListing::CANCEL_PLAN_ENDED => "Carpool cancelled: the driver's plan has ended",
             CarpoolListing::CANCEL_ADMIN => 'Carpool cancelled by Dream Cabs',
-            CarpoolListing::CANCEL_MISSED => "Carpool cancelled: it wasn't started that day",
+            CarpoolListing::CANCEL_MISSED => "Carpool cancelled: it wasn't started",
             default => $this->driverFirstName($listing) . ' cancelled the carpool',
         };
         try {
             app(CarpoolChatService::class)->listingCancelled($listing, 'Cancelled: ' . lcfirst(match ($listing->cancel_reason) {
                 CarpoolListing::CANCEL_PLAN_ENDED => "the driver's plan has ended",
                 CarpoolListing::CANCEL_ADMIN => 'by Dream Cabs',
-                CarpoolListing::CANCEL_MISSED => "it wasn't started that day",
+                CarpoolListing::CANCEL_MISSED => "it wasn't started",
                 default => 'by the driver',
             }));
         } catch (\Throwable $e) {

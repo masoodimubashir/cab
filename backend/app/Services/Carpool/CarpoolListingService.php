@@ -3,6 +3,7 @@
 namespace App\Services\Carpool;
 
 use App\Models\Carpool\CarpoolListing;
+use App\Models\Carpool\CarpoolSetting;
 use App\Models\Driver;
 use App\Models\User;
 use App\Services\GeoService;
@@ -49,8 +50,8 @@ class CarpoolListingService
         if (! CarpoolSwitch::enabled()) {
             $this->fail('Carpool is not open yet.');
         }
-        if ($user->carpool_banned_at) {
-            $this->fail('Your carpool access is paused. Contact support.');
+        if ($reason = CarpoolAccess::reason($user)) {
+            $this->fail($reason);
         }
         $driver = $this->driverFor($user);
         if (! $this->plans->canPublish($user)) {
@@ -68,6 +69,9 @@ class CarpoolListingService
         $listing = new CarpoolListing();
         $listing->driver_id = $driver->id;
         $listing->vehicle_id = $driver->carpoolVehicle->id;
+        // The car as it is today, kept with the carpool so its record never changes if the car is edited later.
+        $listing->car_plate = $driver->carpoolVehicle->plate;
+        $listing->car_label = trim($driver->carpoolVehicle->make . ' ' . $driver->carpoolVehicle->model . ', ' . $driver->carpoolVehicle->colour, ' ,');
         $listing->city_id = $driver->city_id;
         $listing->fill([
             'start_lat' => $data['start']['lat'], 'start_lng' => $data['start']['lng'],
@@ -350,7 +354,7 @@ class CarpoolListingService
             $this->fail('Pick a time that is still to come.', 'departs_at');
         }
         if (! CarpoolClock::withinPublishHorizon($at->addSecond())) {
-            $days = (int) config('carpool.publish_horizon_days', 30);
+            $days = CarpoolSetting::number('publish_horizon_days');
             $this->fail("You can publish up to {$days} days ahead.", 'departs_at');
         }
 
@@ -368,7 +372,7 @@ class CarpoolListingService
         if (! $plan) {
             $this->fail('You need an active plan to publish carpools.');
         }
-        $lastDay = CarbonImmutable::parse(CarpoolClock::dateOf($plan->expires_at), CarpoolClock::timezone())->addDay();
+        $lastDay = CarbonImmutable::parse(CarpoolClock::dateOf($plan->expires_at), CarpoolClock::timezone())->addDays(CarpoolSetting::number('plan_grace_days'));
         if (CarpoolClock::dateOf($departs) > $lastDay->toDateString()) {
             $this->fail('Your plan ends on ' . CarpoolClock::local($plan->expires_at)->format('j M')
                 . '. Pick a day up to ' . $lastDay->format('j M') . ', or buy your next plan first.', 'departs_at');

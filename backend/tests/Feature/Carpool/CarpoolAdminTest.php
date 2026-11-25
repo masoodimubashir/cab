@@ -250,17 +250,35 @@ class CarpoolAdminTest extends TestCase
         $this->postJson("/api/admin/carpool/reports/{$rep->id}/close")->assertJsonPath('status', 'actioned');
     }
 
+
+    /** PATCH the settings the way the admin screen does: with the version it loaded (unless the body names one). */
+    private function patchSettings(array $body): \Illuminate\Testing\TestResponse
+    {
+        if (! array_key_exists('version', $body)) {
+            $body['version'] = $this->getJson('/api/admin/carpool/settings')->json('data.version');
+        }
+
+        return $this->patchJson('/api/admin/carpool/settings', $body);
+    }
+
+    public function test_a_save_without_the_version_is_refused_and_changes_nothing(): void
+    {
+        $this->patchJson('/api/admin/carpool/settings', ['plan_grace_days' => 4])->assertStatus(422)->assertJsonValidationErrors('version');
+        $this->patchJson('/api/admin/carpool/settings', ['version' => '', 'plan_grace_days' => 4])->assertStatus(422)->assertJsonValidationErrors('version');
+        $this->assertSame(1, CarpoolSetting::current()->plan_grace_days);
+    }
+
     public function test_settings_and_banned_words(): void
     {
         $this->getJson('/api/admin/carpool/settings')->assertOk()->assertJsonPath('data.enabled', true);
-        $this->patchJson('/api/admin/carpool/settings', ['search_distance_km' => 5, 'auto_complete_hours' => 6, 'chat_retention_days' => 3, 'enabled' => false])->assertOk()
+        $this->patchSettings(['search_distance_km' => 5, 'auto_complete_hours' => 6, 'chat_retention_days' => 3, 'enabled' => false])->assertOk()
             ->assertJsonPath('data.search_distance_km', 5)->assertJsonPath('data.enabled', false);
         $s = CarpoolSetting::current();
         $this->assertSame(5000, (int) $s->search_distance_m);
         $this->assertSame(6, (int) $s->auto_complete_hours);
-        $this->patchJson('/api/admin/carpool/settings', ['search_distance_km' => 11])->assertStatus(422);
-        $this->patchJson('/api/admin/carpool/settings', ['auto_complete_hours' => 49])->assertStatus(422);
-        $this->patchJson('/api/admin/carpool/settings', ['chat_retention_days' => 0])->assertStatus(422);
+        $this->patchSettings(['search_distance_km' => 11])->assertStatus(422);
+        $this->patchSettings(['auto_complete_hours' => 49])->assertStatus(422);
+        $this->patchSettings(['chat_retention_days' => 0])->assertStatus(422);
 
         $id = $this->postJson('/api/admin/carpool/banned-words', ['word' => ' Idiot '])->assertCreated()->json('data.id');
         $this->assertDatabaseHas('carpool_banned_words', ['word' => 'idiot', 'active' => true]);
@@ -269,6 +287,54 @@ class CarpoolAdminTest extends TestCase
         $this->patchJson("/api/admin/carpool/banned-words/{$id}", ['active' => false])->assertOk();
         $this->deleteJson("/api/admin/carpool/banned-words/{$id}")->assertOk();
         $this->assertSame(0, CarpoolBannedWord::query()->count());
+    }
+
+    public function test_many_banned_words_can_be_pasted_at_once(): void
+    {
+        CarpoolBannedWord::query()->create(['word' => 'idiot', 'active' => true]);
+
+        $r = $this->postJson('/api/admin/carpool/banned-words/bulk', [
+            'words' => "Fool, STUPID;idiot\n  dumb   head \n\n,a,fool\n" . str_repeat('x', 61),
+        ])->assertOk();
+
+        // idiot was there already, fool is pasted twice, "a" and the 61-letter word are not allowed.
+        $this->assertSame(['dumb head', 'fool', 'stupid'], collect($r->json('data.added'))->pluck('word')->sort()->values()->all());
+        $this->assertSame(1, $r->json('data.already_there'));
+        $this->assertSame(2, $r->json('data.skipped_count'));
+        $this->assertContains('a', $r->json('data.skipped'));
+        $this->assertSame(0, $r->json('data.over_limit'));
+        $this->assertSame(4, $r->json('data.total'));
+        $this->assertSame(CarpoolBannedWord::MAX_WORDS, $r->json('data.max'));
+        $this->assertSame(4, CarpoolBannedWord::query()->count());
+        $this->assertSame(1, (int) CarpoolBannedWord::query()->where('word', 'fool')->value('active'));
+
+        // Pasting the same text again adds nothing.
+        $again = $this->postJson('/api/admin/carpool/banned-words/bulk', ['words' => 'fool, stupid'])->assertOk();
+        $this->assertSame([], $again->json('data.added'));
+        $this->assertSame(2, $again->json('data.already_there'));
+
+        $this->postJson('/api/admin/carpool/banned-words/bulk', ['words' => ''])->assertStatus(422);
+        $this->postJson('/api/admin/carpool/banned-words/bulk', ['words' => str_repeat('a, ', 4000)])->assertStatus(422);
+        $this->assertSame(CarpoolBannedWord::MAX_WORDS, $this->getJson('/api/admin/carpool/settings')->json('data.banned_words_max'));
+    }
+
+    public function test_the_banned_word_list_stops_at_its_limit(): void
+    {
+        $rows = [];
+        for ($i = 0; $i < CarpoolBannedWord::MAX_WORDS - 2; $i++) {
+            $rows[] = ['word' => 'word' . $i, 'active' => true, 'created_at' => now(), 'updated_at' => now()];
+        }
+        CarpoolBannedWord::query()->insert($rows);
+
+        $r = $this->postJson('/api/admin/carpool/banned-words/bulk', ['words' => 'one, two, three, four'])->assertOk();
+        $this->assertSame(2, count($r->json('data.added')));
+        $this->assertSame(2, $r->json('data.over_limit'));
+        $this->assertSame(CarpoolBannedWord::MAX_WORDS, CarpoolBannedWord::query()->count());
+
+        // A single word is refused too, but one already on the list still answers fine.
+        $this->postJson('/api/admin/carpool/banned-words', ['word' => 'extra'])->assertStatus(422);
+        $this->postJson('/api/admin/carpool/banned-words', ['word' => 'one'])->assertOk();
+        $this->assertSame(CarpoolBannedWord::MAX_WORDS, CarpoolBannedWord::query()->count());
     }
 
     public function test_only_people_with_the_carpool_permission_get_in(): void
@@ -375,5 +441,118 @@ class CarpoolAdminTest extends TestCase
         }
         $this->assertContains(429, $codes);
         $this->assertNotContains(429, array_slice($codes, 0, 20));
+    }
+
+    public function test_the_settings_answer_carries_every_value_its_limits_and_a_version(): void
+    {
+        $d = $this->getJson('/api/admin/carpool/settings')->assertOk()->json('data');
+
+        $this->assertSame(30, $d['publish_horizon_days']);
+        $this->assertSame(60, $d['start_early_minutes']);
+        $this->assertSame(15, $d['pending_expire_minutes']);
+        $this->assertSame(1, $d['plan_grace_days']);
+        $this->assertSame(0, $d['missed_departure_days']);
+        $this->assertSame(40, strlen($d['version']));
+        $this->assertSame(['min' => 1, 'max' => 90, 'default' => 30, 'unit' => 'days', 'nullable' => false], $d['limits']['publish_horizon_days']);
+        $this->assertSame(['min' => 0, 'max' => 1, 'default' => 0, 'unit' => 'days', 'nullable' => false], $d['limits']['missed_departure_days']);
+        $this->assertArrayHasKey('upcoming_carpools', $d);
+        $this->assertArrayHasKey('carpools_on_the_road', $d);
+        $this->assertArrayHasKey('waiting_requests', $d);
+        // Every default in the limits is what a fresh row holds.
+        foreach (['search_distance_km' => 2, 'auto_complete_hours' => 12, 'chat_retention_days' => 1] as $k => $v) {
+            $this->assertSame($v, $d['limits'][$k]['default'], $k);
+            $this->assertSame($v, $d[$k], $k);
+        }
+    }
+
+    public function test_each_new_setting_is_saved_and_reaches_the_places_that_read_it(): void
+    {
+        $this->patchSettings([
+            'publish_horizon_days' => 45, 'start_early_minutes' => 30, 'pending_expire_minutes' => 40, 'plan_grace_days' => 2, 'missed_departure_days' => 1,
+        ])->assertOk()->assertJsonPath('data.publish_horizon_days', 45)->assertJsonPath('data.missed_departure_days', 1);
+
+        $this->assertSame(45, CarpoolSetting::number('publish_horizon_days'));
+        $this->assertSame(30, CarpoolSetting::number('start_early_minutes'));
+        $this->assertSame(40, CarpoolSetting::number('pending_expire_minutes'));
+        $this->assertSame(2, CarpoolSetting::number('plan_grace_days'));
+        $this->assertSame(1, CarpoolSetting::missedDepartureDays());
+
+        // 0 puts missed departure back to "the end of the departure day".
+        $this->patchSettings(['missed_departure_days' => 0])->assertOk()->assertJsonPath('data.missed_departure_days', 0);
+        $this->assertSame(0, CarpoolSetting::missedDepartureDays());
+    }
+
+    public function test_values_outside_their_limits_are_refused_and_nothing_is_saved(): void
+    {
+        $bad = [
+            ['publish_horizon_days' => 0], ['publish_horizon_days' => 91],
+            ['start_early_minutes' => 4], ['start_early_minutes' => 721],
+            ['pending_expire_minutes' => 0], ['pending_expire_minutes' => 181],
+            ['plan_grace_days' => -1], ['plan_grace_days' => 8],
+            ['missed_departure_days' => -1], ['missed_departure_days' => 2], ['missed_departure_days' => null],
+            ['publish_horizon_days' => 'abc'], ['plan_grace_days' => 1.5],
+        ];
+        $before = CarpoolSetting::current()->version();
+        foreach ($bad as $body) {
+            $this->patchSettings($body)->assertStatus(422)->assertJsonValidationErrors(array_key_first($body));
+        }
+        // The edges themselves are fine.
+        $this->patchSettings(['publish_horizon_days' => 1, 'start_early_minutes' => 720, 'plan_grace_days' => 0, 'missed_departure_days' => 1])->assertOk();
+        CarpoolSetting::current()->update(['publish_horizon_days' => 30, 'start_early_minutes' => 60, 'plan_grace_days' => 1, 'missed_departure_days' => 0]);
+        $this->assertSame($before, CarpoolSetting::current()->version());
+    }
+
+    public function test_only_the_fields_sent_change_and_a_save_with_no_change_leaves_the_row_alone(): void
+    {
+        CarpoolSetting::current()->update(['chat_retention_days' => 5, 'search_distance_m' => 2500]);
+        $this->patchSettings(['plan_grace_days' => 3])->assertOk();
+
+        $s = CarpoolSetting::current();
+        $this->assertSame(3, $s->plan_grace_days);
+        $this->assertSame(5, $s->chat_retention_days);
+        // An untouched search distance is not rounded to whole kilometres (the old page sent everything every time).
+        $this->assertSame(2500, (int) $s->search_distance_m);
+
+        $version = $s->version();
+        $this->patchSettings(['plan_grace_days' => 3])->assertOk()->assertJsonPath('data.version', $version);
+        $this->patchSettings([])->assertOk()->assertJsonPath('data.version', $version);
+    }
+
+    public function test_a_save_from_an_out_of_date_page_is_refused_with_409_and_changes_nothing(): void
+    {
+        $opened = $this->getJson('/api/admin/carpool/settings')->json('data.version');
+
+        // Another admin saves first.
+        $this->patchSettings(['version' => $opened, 'chat_retention_days' => 7])->assertOk();
+
+        // Our page still holds the old version.
+        $stale = $this->patchSettings(['version' => $opened, 'plan_grace_days' => 4])
+            ->assertStatus(409)->assertJsonPath('data.chat_retention_days', 7);
+        $this->assertStringContainsString('Reload', $stale->json('message'));
+        $this->assertSame(1, CarpoolSetting::current()->plan_grace_days);
+
+        // After reloading it works, and the new version is what the answer carries.
+        $fresh = $this->getJson('/api/admin/carpool/settings')->json('data.version');
+        $this->assertNotSame($opened, $fresh);
+        $this->patchSettings(['version' => $fresh, 'plan_grace_days' => 4])->assertOk()->assertJsonPath('data.plan_grace_days', 4);
+        $this->assertSame(4, CarpoolSetting::current()->plan_grace_days);
+    }
+
+    public function test_changing_a_setting_is_seen_by_the_next_request_without_waiting_for_the_cache(): void
+    {
+        $this->getJson('/api/admin/carpool/settings')->assertOk();       // fills the cache
+        $this->assertSame(30, CarpoolSetting::number('publish_horizon_days'));
+        $this->patchSettings(['publish_horizon_days' => 60])->assertOk();
+        $this->assertSame(60, CarpoolSetting::number('publish_horizon_days'));
+    }
+
+    public function test_the_new_settings_need_the_carpool_permission_too(): void
+    {
+        $role = ManagerRole::query()->create(['slug' => 'support_only_2', 'name' => 'Support 2', 'is_system' => false]);
+        $other = User::factory()->create(['manager_role_id' => $role->id, 'manager_all_cities' => true]);
+        $other->addRole('admin');
+        Sanctum::actingAs($other, ['act-as:admin']);
+        $this->patchSettings(['plan_grace_days' => 5])->assertStatus(403);
+        $this->assertSame(1, CarpoolSetting::current()->plan_grace_days);
     }
 }

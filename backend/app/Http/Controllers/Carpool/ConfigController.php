@@ -29,9 +29,15 @@ class ConfigController extends Controller
             'enabled' => true,
             'driver_signup' => $signup,
             'search_distance_m' => $settings->search_distance_m,
-            'publish_horizon_days' => (int) config('carpool.publish_horizon_days'),
+            'publish_horizon_days' => CarpoolSetting::number('publish_horizon_days'),
+            'start_early_minutes' => CarpoolSetting::number('start_early_minutes'),
+            'pending_expire_minutes' => CarpoolSetting::number('pending_expire_minutes'),
+            'plan_grace_days' => CarpoolSetting::number('plan_grace_days'),
+            // 0 = an unstarted carpool is cancelled at the end of its departure day, 1 = at the end of the next day.
+            'missed_departure_days' => CarpoolSetting::missedDepartureDays(),
             'seats_max' => (int) config('carpool.seats_max'),
-            'price_max' => (int) config('carpool.price_max'),
+            // How far the driver's "delay" button moves the departure (the button label shows it).
+            'delay_minutes' => max(1, (int) config('carpool.delay_minutes')),
             'message_max_chars' => (int) config('carpool.message_max_chars'),
             'chat_retention_days' => max(1, (int) $settings->chat_retention_days),
             'timezone' => (string) config('carpool.timezone'),
