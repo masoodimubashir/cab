@@ -30,6 +30,8 @@ export interface CarpoolConfig {
   /** Tile name and picture set in Operator Settings; null means use "Carpool" and the icon. */
   tile_name?: string | null;
   tile_image_url?: string | null;
+  /** The reasons offered when reporting (admin-editable). Missing on an older server: the app keeps its built-in list. */
+  report_reasons?: { key: string; label: string; applies_to: 'person' | 'message' | 'both' }[];
 }
 
 export const CARPOOL_OFF: CarpoolConfig = { enabled: false };
@@ -303,6 +305,8 @@ export interface CarpoolSearchAnswer {
   /** Only when the chosen day has nothing (customer mockup 3b). */
   other_days: { date: string; day: number; count: number; first_at: string }[];
   distance_m: number;
+  /** The day has more carpools than the search looked at; the earliest are shown (S12). */
+  truncated?: boolean;
 }
 
 /** The carpool page for a rider (GET /api/carpool/rides/{id}). */
@@ -420,7 +424,8 @@ export interface CarpoolRiderProfile extends CarpoolJoinRequest {
 /* ── M5: chat ── */
 
 export type CarpoolChatKind = 'group' | 'direct';
-export type CarpoolReportReason = 'spam' | 'harassment' | 'unsafe' | 'photo' | 'other';
+/** A report reason key. The five built-ins (spam, harassment, unsafe, photo, other) plus any the admin adds. */
+export type CarpoolReportReason = string;
 
 /** One rider's own trip, for the card in their private chat: their pickup, their drop, seats and price. */
 export interface CarpoolChatTrip {
@@ -505,6 +510,8 @@ export interface CarpoolChatBox {
 export interface CarpoolChatInbox {
   active: CarpoolChatBox[];
   past: CarpoolChatBox[];
+  /** There are older trips whose chats were deleted: ask for the next page (S12). */
+  past_more?: boolean;
   unread: number;
   /** Days a chat is kept after the trip ends (admin setting). */
   retention_days: number;
@@ -514,6 +521,8 @@ export interface CarpoolChatThread {
   conversation: CarpoolChatConversation;
   messages: CarpoolChatMessage[];
   writable: boolean;
+  /** There are messages older than the first one returned: offer "Show earlier messages" (S12). */
+  has_more_before?: boolean;
   /** Where this person had read up to when the chat opened (for the unread divider, mockup 14). */
   last_read_message_id: number;
   /** The saved route, thinned, for the mini map on pickup cards. */

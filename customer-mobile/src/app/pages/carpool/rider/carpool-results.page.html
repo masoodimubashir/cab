@@ -45,6 +45,7 @@
     <ng-container *ngIf="!loading && answer">
       <ng-container *ngIf="results.length; else none">
         <p class="t12 muted count-line">{{ countLine }}</p>
+        <p class="keep-note warn" *ngIf="answer?.truncated" role="status"><ion-icon name="alert-circle-outline"></ion-icon>Many carpools match this day. These are the earliest ones; narrow your search to see the rest.</p>
         <ng-container *ngFor="let r of results; trackBy: trackResult">
           <button class="c-card" *ngIf="r.can_request || r.my_request; else dim" (click)="open(r)">
             <span class="split">

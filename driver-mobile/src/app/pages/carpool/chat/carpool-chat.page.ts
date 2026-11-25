@@ -18,6 +18,11 @@ const MESSAGE_REASONS: { key: CarpoolReportReason; label: string }[] = [
   { key: 'other', label: 'Something else' },
 ];
 
+/** The reasons the server offers for this kind of report, or none (then the built-in list stays). */
+function reasonsFor(all: { key: string; label: string; applies_to: string }[] | undefined, context: 'person' | 'message'): { key: CarpoolReportReason; label: string }[] {
+  return (all ?? []).filter((r) => r.applies_to === 'both' || r.applies_to === context).map((r) => ({ key: r.key, label: r.label }));
+}
+
 /** Gap above and below the floating trip card, and the room the thread keeps free under the pill. */
 const TRIP_GAP = 10;
 const PILL_SPACE = 64;
@@ -64,6 +69,7 @@ type StatusKind = 'live' | 'ok' | 'sent' | 'cancel' | 'done';
             <div class="center" *ngIf="!conv && !error"><ion-spinner name="crescent"></ion-spinner></div>
             <div class="errline" *ngIf="error && !conv" role="alert">Couldn't load this chat. <button (click)="load()">Try again</button></div>
 
+            <button type="button" class="more-btn" *ngIf="conv && hasMoreBefore" [disabled]="loadingOlder" (click)="loadOlder()">{{ loadingOlder ? 'Loading…' : 'Show earlier messages' }}</button>
             <p class="sys" *ngIf="conv && conv.kind === 'direct' && !messages.length">Only you and {{ conv.other_first_name }} can see this chat</p>
             <ng-container *ngFor="let m of messages; let i = index; trackBy: track">
               <span class="day" *ngIf="newDay(i)">{{ dayLabel(m.created_at) }}</span>
@@ -398,12 +404,35 @@ export class CarpoolChatPage implements OnInit, AfterViewInit, OnDestroy, AfterV
     if (el && this.stick) el.scrollTop = el.scrollHeight;
   }
 
+  hasMoreBefore = false;
+  loadingOlder = false;
+
+  /** Older messages, one page at a time (S12); the thread keeps its place instead of jumping to the bottom. */
+  loadOlder(): void {
+    const first = this.messages.find((m) => m.id > 0)?.id;
+    if (!first || this.loadingOlder) return;
+    this.loadingOlder = true;
+    this.stick = false;
+    const el = this.threadEl?.nativeElement;
+    const before = el?.scrollHeight ?? 0;
+    this.carpool.chat(this.id, 0, first).subscribe({
+      next: (t) => {
+        this.messages = [...t.messages, ...this.messages];
+        this.hasMoreBefore = !!t.has_more_before;
+        this.loadingOlder = false;
+        setTimeout(() => { if (el) el.scrollTop = el.scrollHeight - before; });
+      },
+      error: () => (this.loadingOlder = false),
+    });
+  }
+
   load(): void {
     this.error = false;
     this.carpool.chat(this.id).subscribe({
       next: (t) => {
         this.conv = t.conversation;
         this.messages = t.messages;
+        this.hasMoreBefore = !!t.has_more_before;
         this.writable = t.writable;
         this.routeLine = t.route ?? [];
         this.retention = t.retention_days ?? 1;
@@ -786,7 +815,14 @@ export class CarpoolChatPage implements OnInit, AfterViewInit, OnDestroy, AfterV
   openReport(message: CarpoolChatMessage | null): void {
     if (message && (message.removed || message.type === 'system')) return;
     this.sheet = { message };
-    this.reasons = message ? MESSAGE_REASONS : PERSON_REASONS;
+    this.reasons = message ? MESSAGE_REASONS : PERSON_REASONS; // until the server's list arrives
+    this.carpool.config().subscribe({
+      next: (c) => {
+        const list = reasonsFor(c.report_reasons, message ? 'message' : 'person');
+        if (list.length && this.sheet) this.reasons = list;
+      },
+      error: () => {},
+    });
     this.reason = null;
     this.details = '';
     this.reported = false;

@@ -72,7 +72,7 @@ type Preset = '7' | '30' | '90' | 'custom';
           <div class="lead__item">
             <span class="lead__n">{{ pct(d.seats.filled, d.seats.offered) }}</span>
             <span class="lead__l">of seats filled</span>
-            <span class="lead__s">{{ d.seats.filled }} of {{ d.seats.offered }} offered</span>
+            <span class="lead__s">{{ d.seats.filled }} of {{ d.seats.offered }} seats on finished carpools</span>
           </div>
           <div class="lead__item">
             <span class="lead__n">{{ d.carpools.cancelled }}</span>

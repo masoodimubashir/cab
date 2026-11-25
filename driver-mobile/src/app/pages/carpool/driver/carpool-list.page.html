@@ -29,6 +29,8 @@
         </span>
       </button>
 
+      <button type="button" class="more-btn" *ngIf="more" [disabled]="loadingMore" (click)="loadMore()">{{ loadingMore ? 'Loading…' : 'Show older carpools' }}</button>
+
       <div class="empty-plain" *ngIf="!items.length && !error">
         <div class="ec-i"><ion-icon name="car-outline"></ion-icon></div>
         <h2>No carpools here</h2>

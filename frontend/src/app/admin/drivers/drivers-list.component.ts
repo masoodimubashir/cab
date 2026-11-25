@@ -3050,7 +3050,7 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
   exportCsv(): void {
     if (this.legacyStand) return;
     this.exporting = true;
-    const params = new URLSearchParams({ state: this.state });
+    const params = new URLSearchParams({ state: this.state, type: this.driverType });
     if (this.search.trim()) params.set('q', this.search.trim());
     if (this.dateFrom) params.set('date_from', this.dateFrom);
     if (this.dateTo) params.set('date_to', this.dateTo);

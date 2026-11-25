@@ -213,6 +213,43 @@ describe('CarpoolSettingsComponent', () => {
     expect(c.f.plan_grace_days).toBe(4);
     expect(c.dirty).toBeTrue();
   });
+  describe('report reasons', () => {
+    const reason = (id: number, key: string, active = true) => ({ id, key, label: key, applies_to: 'both', active, reports: 0 });
+
+    it('adds a reason and shows it at the end of the list', () => {
+      open(settings({ report_reasons: [reason(1, 'spam')] }));
+      api.post.and.returnValue(of({ data: reason(2, 'smoke') }) as any);
+      c.newReason = '  Smelled of smoke ';
+      c.addReason();
+      expect(api.post).toHaveBeenCalledWith('/admin/carpool/report-reasons', { label: 'Smelled of smoke', applies_to: 'both' });
+      expect(c.reasons.map((r) => r.key)).toEqual(['spam', 'smoke']);
+      expect(c.newReason).toBe('');
+    });
+
+    it('does not send a label that is too short', () => {
+      open(settings({ report_reasons: [] }));
+      c.newReason = 'ab';
+      c.addReason();
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it('turns a reason off, and puts the switch back when the server refuses', () => {
+      open(settings({ report_reasons: [reason(1, 'spam'), reason(2, 'other')] }));
+      api.patch.and.returnValue(of({ data: { ...reason(1, 'spam'), active: false } }) as any);
+      const box = { checked: false } as HTMLInputElement;
+      c.toggleReason(c.reasons[0], { target: box } as unknown as Event);
+      expect(api.patch).toHaveBeenCalledWith('/admin/carpool/report-reasons/1', { active: false });
+      expect(c.reasons[0].active).toBeFalse();
+
+      api.patch.and.returnValue(throwError(() => ({ error: { message: 'Keep at least one reason on.' } })));
+      const last = { checked: false } as HTMLInputElement;
+      c.toggleReason(c.reasons[1], { target: last } as unknown as Event);
+      expect(c.reasons[1].active).toBeTrue();
+      expect(last.checked).toBeTrue();
+      expect(toast.error).toHaveBeenCalledWith('Keep at least one reason on.');
+    });
+  });
+
   describe('banned words', () => {
     const word = (id: number, w: string, active = true) => ({ id, word: w, active });
     const bulk = (over: Record<string, unknown> = {}) => ({

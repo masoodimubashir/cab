@@ -178,4 +178,39 @@ describe('CarpoolApiService', () => {
     expect(api.post.calls.argsFor(0)[1]).toEqual(input);
     expect(api.post.calls.argsFor(1)[1]).toEqual({ ...input, confirm_overlap: true });
   });
+
+  describe('paging (S12)', () => {
+    it('asks for a page of trips and reads whether there are more', (done) => {
+      api.get.and.returnValue(of({ data: [{ id: 1 }], meta: { has_more: true } }) as any);
+      service.myTripsPage(2).subscribe((r) => {
+        expect(api.get).toHaveBeenCalledWith('/carpool/trips?page=2');
+        expect(r.data.length).toBe(1);
+        expect(r.has_more).toBeTrue();
+        done();
+      });
+    });
+
+    it('treats an older server answer without meta as the last page', (done) => {
+      api.get.and.returnValue(of({ data: [{ id: 1 }] }) as any);
+      service.myListingsPage('past', 1).subscribe((r) => {
+        expect(api.get).toHaveBeenCalledWith('/carpool/driver/listings?filter=past&page=1');
+        expect(r.has_more).toBeFalse();
+        done();
+      });
+    });
+
+    it('asks for older trips in the inbox and older messages in a chat', () => {
+      api.get.and.returnValue(of({}) as any);
+      service.chats().subscribe();
+      expect(api.get).toHaveBeenCalledWith('/carpool/chats');
+      service.chats(3).subscribe();
+      expect(api.get).toHaveBeenCalledWith('/carpool/chats?gone_page=3');
+      service.chat(5).subscribe();
+      expect(api.get).toHaveBeenCalledWith('/carpool/chats/5');
+      service.chat(5, 10).subscribe();
+      expect(api.get).toHaveBeenCalledWith('/carpool/chats/5?after=10');
+      service.chat(5, 0, 7).subscribe();
+      expect(api.get).toHaveBeenCalledWith('/carpool/chats/5?before_id=7');
+    });
+  });
 });

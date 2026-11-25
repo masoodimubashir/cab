@@ -22,6 +22,9 @@ export class CarpoolListPage implements OnDestroy {
   ];
   filter: CarpoolListFilter = 'upcoming';
   items: CarpoolListing[] = [];
+  more = false;
+  page = 1;
+  loadingMore = false;
   loading = true;
   error = false;
 
@@ -64,10 +67,12 @@ export class CarpoolListPage implements OnDestroy {
     this.loading = true;
     this.error = false;
     const asked = this.filter;
-    this.carpool.myListings(asked).subscribe({
-      next: (items) => {
+    this.carpool.myListingsPage(asked, 1).subscribe({
+      next: (res) => {
         if (asked !== this.filter) return;
-        this.items = items;
+        this.items = res.data;
+        this.more = res.has_more;
+        this.page = 1;
         this.loading = false;
         this.error = false;
         done?.();
@@ -79,6 +84,23 @@ export class CarpoolListPage implements OnDestroy {
         this.error = true;
         done?.();
       },
+    });
+  }
+
+  /** Older past carpools, one page at a time (S12). */
+  loadMore(): void {
+    if (this.loadingMore || !this.more) return;
+    const asked = this.filter;
+    this.loadingMore = true;
+    this.carpool.myListingsPage(asked, this.page + 1).subscribe({
+      next: (res) => {
+        this.loadingMore = false;
+        if (asked !== this.filter) return;
+        this.items = [...this.items, ...res.data];
+        this.more = res.has_more;
+        this.page += 1;
+      },
+      error: () => (this.loadingMore = false),
     });
   }
 

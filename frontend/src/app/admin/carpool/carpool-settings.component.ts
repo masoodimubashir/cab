@@ -38,6 +38,8 @@ type Key = keyof Values;
 
 interface Job { job: string; label: string; finished_at: string | null; error: string | null; late: boolean }
 
+interface Reason { id: number; key: string; label: string; applies_to: 'person' | 'message' | 'both'; active: boolean; reports: number }
+
 interface Settings extends Values {
   version: string;
   enabled: boolean;
@@ -48,6 +50,7 @@ interface Settings extends Values {
   kill_switch: boolean;
   banned_words: Word[];
   banned_words_max: number;
+  report_reasons?: Reason[];
   /** False for staff without the carpool_settings permission: the page is read only. */
   can_edit: boolean;
   jobs: Job[];
@@ -217,13 +220,45 @@ const TIMING: Key[] = ['publish_horizon_days', 'start_early_minutes', 'pending_e
             </div>
           </section>
 
+          <section class="panel" id="report-reasons">
+            <div class="panel__head">
+              <div>
+                <h2 class="panel__title">Report reasons</h2>
+                <p class="panel__desc">What riders and drivers can pick when they report someone. Turn a reason off instead of deleting it: old reports keep their label. At least one reason must stay on for people and one for messages.</p>
+              </div>
+            </div>
+            <div class="panel__body">
+              <form class="rr-add" (ngSubmit)="addReason()">
+                <input name="rlabel" class="rr-input" [(ngModel)]="newReason" maxlength="60" placeholder="New reason, for example: Asked for extra money" aria-label="New report reason" />
+                <select name="rapplies" class="sel" [(ngModel)]="newApplies" aria-label="Where it is offered">
+                  <option value="both">On people and messages</option>
+                  <option value="person">On people only</option>
+                  <option value="message">On messages only</option>
+                </select>
+                <tm-button type="submit" variant="ink" size="sm" [loading]="addingReason" [disabled]="newReason.trim().length < 3">Add reason</tm-button>
+              </form>
+              <ul class="reasons">
+                <li *ngFor="let r of reasons" [class.is-off]="!r.active">
+                  <input class="rr-input" [value]="r.label" maxlength="60" (change)="renameReason(r, $any($event.target))" [attr.aria-label]="'Label for ' + r.label" />
+                  <select class="sel" [ngModel]="r.applies_to" (ngModelChange)="changeApplies(r, $event)" [attr.aria-label]="'Where ' + r.label + ' is offered'">
+                    <option value="both">People and messages</option>
+                    <option value="person">People only</option>
+                    <option value="message">Messages only</option>
+                  </select>
+                  <span class="rr-used">{{ r.reports }} {{ r.reports === 1 ? 'report' : 'reports' }}</span>
+                  <label class="mini"><input type="checkbox" [checked]="r.active" (change)="toggleReason(r, $event)" /> On</label>
+                </li>
+              </ul>
+            </div>
+          </section>
+
           </fieldset>
 
           <section class="panel" id="history">
             <div class="panel__head">
               <div>
                 <h2 class="panel__title">History</h2>
-                <p class="panel__desc">The last 20 changes to settings and banned words, with who made them.</p>
+                <p class="panel__desc">The last 20 changes to settings, banned words and report reasons, with who made them.</p>
               </div>
             </div>
             <div class="panel__body">
@@ -342,6 +377,13 @@ const TIMING: Key[] = ['publish_horizon_days', 'start_early_minutes', 'pending_e
     .bw-link { margin-left: auto; border: 0; background: transparent; font: inherit; font-size: 13px; font-weight: 700; color: var(--tm-green); cursor: pointer; padding: 4px 0; }
     .bw-link:hover { text-decoration: underline; }
     .hint { margin: 0; font-size: 13px; color: var(--tm-text-muted); }
+    .rr-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+    .rr-input { flex: 1 1 260px; min-width: 200px; padding: 8px 10px; border: 1px solid var(--tm-line-2); border-radius: 8px; font: inherit; color: var(--tm-text); background: var(--tm-surface); }
+    .reasons { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .reasons li { display: grid; grid-template-columns: minmax(0, 1fr) 165px 64px 52px; gap: 10px; align-items: center; }
+    .reasons li .rr-input { min-width: 0; }
+    .reasons li.is-off .rr-input { opacity: .55; }
+    .rr-used { font-size: 12px; color: var(--tm-text-muted); min-width: 72px; }
     .words { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
     .words li { display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border: 1px solid var(--tm-line-2); border-radius: 999px; font-size: 13px; color: var(--tm-text); }
     .words li span { white-space: nowrap; }
@@ -361,6 +403,11 @@ export class CarpoolSettingsComponent implements OnInit, OnDestroy {
   /** What the admin has typed; `s` is what the server holds. */
   f: Values = {} as Values;
   word = '';
+  newReason = '';
+  newApplies: 'person' | 'message' | 'both' = 'both';
+  addingReason = false;
+
+  get reasons(): Reason[] { return this.s?.report_reasons ?? []; }
   adding = false;
   wordFilter = '';
   /** What the last Add words did, in plain words. */
@@ -411,6 +458,7 @@ export class CarpoolSettingsComponent implements OnInit, OnDestroy {
     { id: 'on-the-day', label: 'On the day' },
     { id: 'drivers-chats', label: 'Plans, chats and reports' },
     { id: 'banned-words', label: 'Banned words' },
+    { id: 'report-reasons', label: 'Report reasons' },
     { id: 'history', label: 'History' },
   ];
   active = 'jobs';
@@ -645,5 +693,50 @@ export class CarpoolSettingsComponent implements OnInit, OnDestroy {
       next: () => { if (this.s) this.s.banned_words = this.s.banned_words.filter((x) => x.id !== w.id); },
       error: (e) => this.toast.error(e?.error?.message || 'Could not remove.'),
     });
+  }
+
+  addReason(): void {
+    const label = this.newReason.trim();
+    if (label.length < 3 || this.addingReason) return;
+    this.addingReason = true;
+    this.api.post<{ data: Reason }>('/admin/carpool/report-reasons', { label, applies_to: this.newApplies }).subscribe({
+      next: (r) => {
+        this.addingReason = false;
+        this.newReason = '';
+        if (this.s) this.s.report_reasons = [...this.reasons, r.data];
+        this.toast.success('Reason added.');
+      },
+      error: (e) => { this.addingReason = false; this.toast.error(e?.error?.message || 'Could not add the reason.'); },
+    });
+  }
+
+  private saveReason(r: Reason, body: Partial<Reason>, undo: () => void): void {
+    this.api.patch<{ data: Reason }>(`/admin/carpool/report-reasons/${r.id}`, body).subscribe({
+      next: (res) => Object.assign(r, res.data),
+      error: (e) => { undo(); this.toast.error(e?.error?.message || 'Could not change the reason.'); },
+    });
+  }
+
+  renameReason(r: Reason, el: HTMLInputElement): void {
+    const label = el.value.trim();
+    if (label === r.label) return;
+    if (label.length < 3) { this.toast.error('A reason needs at least 3 letters.'); el.value = r.label; return; }
+    const before = r.label;
+    r.label = label;
+    this.saveReason(r, { label }, () => (r.label = before));
+  }
+
+  changeApplies(r: Reason, value: 'person' | 'message' | 'both'): void {
+    const before = r.applies_to;
+    r.applies_to = value;
+    this.saveReason(r, { applies_to: value }, () => (r.applies_to = before));
+  }
+
+  toggleReason(r: Reason, ev: Event): void {
+    const box = ev.target as HTMLInputElement;
+    const active = box.checked;
+    const before = r.active;
+    r.active = active;
+    this.saveReason(r, { active }, () => { r.active = before; box.checked = before; });
   }
 }

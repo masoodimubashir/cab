@@ -99,6 +99,12 @@ export class CarpoolApiService {
     return this.api.get<CarpoolDriverHome>('/carpool/driver/home');
   }
 
+  /** The Carpools tab one page at a time; only Past is paged (S12). */
+  myListingsPage(filter: CarpoolListFilter, page = 1): Observable<{ data: CarpoolListing[]; has_more: boolean }> {
+    return this.api.get<{ data: CarpoolListing[]; meta?: { has_more?: boolean } }>(`/carpool/driver/listings?filter=${filter}&page=${page}`)
+      .pipe(map((r) => ({ data: r?.data ?? [], has_more: !!r?.meta?.has_more })));
+  }
+
   /** The Carpools tab: Upcoming, Today or Past (driver app). */
   myListings(filter: CarpoolListFilter): Observable<CarpoolListing[]> {
     return this.api.get<{ data: CarpoolListing[] }>(`/carpool/driver/listings?filter=${filter}`).pipe(map((r) => r?.data ?? []));
@@ -225,6 +231,12 @@ export class CarpoolApiService {
     return this.api.get<{ data: CarpoolTrip[] }>('/carpool/trips').pipe(map((r) => r?.data ?? []));
   }
 
+  /** My trips one page at a time (S12). */
+  myTripsPage(page = 1): Observable<{ data: CarpoolTrip[]; has_more: boolean }> {
+    return this.api.get<{ data: CarpoolTrip[]; meta?: { has_more?: boolean } }>(`/carpool/trips?page=${page}`)
+      .pipe(map((r) => ({ data: r?.data ?? [], has_more: !!r?.meta?.has_more })));
+  }
+
   /** The profile photo asked for at the first join request. */
   uploadPhoto(photo: Blob, fileName = 'photo.jpg'): Observable<{ avatar_path: string; avatar_url: string | null }> {
     const form = new FormData();
@@ -234,8 +246,9 @@ export class CarpoolApiService {
 
   /* ── M5: chat (both apps) ── */
 
-  chats(): Observable<CarpoolChatInbox> {
-    return this.api.get<CarpoolChatInbox>('/carpool/chats');
+  chats(gonePage = 1): Observable<CarpoolChatInbox> {
+    // Page two and on bring only the older trips whose chats were deleted (S12).
+    return this.api.get<CarpoolChatInbox>(gonePage > 1 ? `/carpool/chats?gone_page=${gonePage}` : '/carpool/chats');
   }
 
   /** Unread messages, for the badges. */
@@ -244,8 +257,10 @@ export class CarpoolApiService {
   }
 
   /** A conversation; pass the last message id seen to get only newer ones. */
-  chat(id: number, after = 0): Observable<CarpoolChatThread> {
-    return this.api.get<CarpoolChatThread>(`/carpool/chats/${id}${after ? `?after=${after}` : ''}`);
+  chat(id: number, after = 0, before = 0): Observable<CarpoolChatThread> {
+    // before: the id of the oldest message on screen; the answer holds the page of messages older than it (S12).
+    const qs = [after ? `after=${after}` : '', before ? `before_id=${before}` : ''].filter(Boolean).join('&');
+    return this.api.get<CarpoolChatThread>(`/carpool/chats/${id}${qs ? `?${qs}` : ''}`);
   }
 
   sendMessage(id: number, body: string): Observable<CarpoolChatMessage> {

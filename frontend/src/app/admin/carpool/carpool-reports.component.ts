@@ -22,7 +22,7 @@ interface Row {
   reported_person: string | null;
   reported_person_phone: string | null;
   reported_user_id: number;
-  reason: string;
+  reason: string; reason_label?: string | null;
   listing_id: number | null;
   status: string;
 }
@@ -37,7 +37,7 @@ interface Detail extends Row {
   reported_banned: boolean;
   reported_ban_reason: string | null;
   earlier_reports: number;
-  earlier: { id: number; created_at: string; reason: string; status: string; listing_id: number | null }[];
+  earlier: { id: number; created_at: string; reason: string; reason_label?: string | null; status: string; listing_id: number | null }[];
   listing: { id: number; route: string; departs_at: string } | null;
   suggested_outcome: 'actioned' | 'dismissed' | null;
   history: HistoryEntry[];
@@ -79,7 +79,7 @@ interface Detail extends Row {
         <tm-column key="type" label="Type" width="90px"><ng-template let-row>{{ row.type === 'message' ? 'Message' : 'Person' }}</ng-template></tm-column>
         <tm-column key="reported_by" label="Reported by" [wrap]="true"><ng-template let-row>{{ row.reported_by || '—' }}<span class="sub">{{ row.reported_by_phone }}</span></ng-template></tm-column>
         <tm-column key="reported_person" label="Reported person" [wrap]="true"><ng-template let-row>{{ row.reported_person || '—' }}<span class="sub">{{ row.reported_person_phone }}</span></ng-template></tm-column>
-        <tm-column key="reason" label="Reason" width="160px"><ng-template let-row>{{ reason(row.reason) }}</ng-template></tm-column>
+        <tm-column key="reason" label="Reason" width="160px"><ng-template let-row>{{ reason(row.reason, row.reason_label) }}</ng-template></tm-column>
         <tm-column key="listing_id" label="Carpool" width="90px"><ng-template let-row>{{ row.listing_id ? '#' + row.listing_id : '—' }}</ng-template></tm-column>
         <tm-column key="status" label="Status" width="120px">
           <ng-template let-row><tm-status-pill [tone]="row.status === 'open' ? 'warning' : row.status === 'actioned' ? 'success' : 'neutral'">{{ statusLabel(row.status) }}</tm-status-pill></ng-template>
@@ -91,7 +91,7 @@ interface Detail extends Row {
       <ng-container slot="body" *ngIf="detail as d">
         <dl class="kv">
           <dt>Status</dt><dd>{{ statusLabel(d.status) }}</dd>
-          <dt>Reason</dt><dd>{{ reason(d.reason) }}</dd>
+          <dt>Reason</dt><dd>{{ reason(d.reason, d.reason_label) }}</dd>
           <dt>Details</dt><dd>{{ d.details || '—' }}</dd>
           <dt>Reported by</dt>
           <dd><a class="linkish" [routerLink]="['/carpool/people']" [queryParams]="{ open: d.reporter_user_id }">{{ d.reported_by || 'Deleted user' }}</a> <span class="muted-inline">{{ d.reported_by_phone }}</span></dd>
@@ -128,7 +128,7 @@ interface Detail extends Row {
           <tr><th>#</th><th>Sent</th><th>Reason</th><th>Status</th></tr>
           <tr *ngFor="let e of d.earlier">
             <td><button type="button" class="linkish" (click)="open(e.id)">#{{ e.id }}</button></td>
-            <td>{{ when(e.created_at) }}</td><td>{{ reason(e.reason) }}</td><td>{{ statusLabel(e.status) }}</td>
+            <td>{{ when(e.created_at) }}</td><td>{{ reason(e.reason, e.reason_label) }}</td><td>{{ statusLabel(e.status) }}</td>
           </tr>
         </table>
 
@@ -237,8 +237,12 @@ export class CarpoolReportsComponent implements OnInit {
     if (this.cityId) p.set('city_id', this.cityId);
     if (this.dateFrom) p.set('date_from', this.dateFrom);
     if (this.dateTo) p.set('date_to', this.dateTo);
-    this.api.get<{ data: Row[]; meta: { total: number } }>(`/admin/carpool/reports?${p}`).subscribe({
-      next: (r) => { this.rows = r.data; this.total = r.meta.total; this.loading = false; },
+    this.api.get<{ data: Row[]; meta: { total: number }; reason_labels?: Record<string, string> }>(`/admin/carpool/reports?${p}`).subscribe({
+      next: (r) => {
+        this.rows = r.data; this.total = r.meta.total; this.loading = false;
+        // The admin edits the reasons (S9), so the filter lists the current ones, including any turned off.
+        if (r.reason_labels) this.reasonOptions = Object.entries(r.reason_labels).map(([value, label]) => ({ value, label }));
+      },
       error: (e) => { this.loading = false; this.toast.error(e?.error?.message || 'Could not load reports.'); },
     });
   }
@@ -287,6 +291,6 @@ export class CarpoolReportsComponent implements OnInit {
   }
 
   when(iso: string): string { return inTime(iso); }
-  reason(k: string): string { return reasonLabel(k); }
+  reason(k: string, label?: string | null): string { return label || reasonLabel(k); }
   statusLabel(s: string): string { return ({ open: 'Open', actioned: 'Actioned', dismissed: 'Dismissed' } as Record<string, string>)[s] ?? s; }
 }

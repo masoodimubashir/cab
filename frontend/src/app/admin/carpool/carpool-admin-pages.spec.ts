@@ -198,6 +198,14 @@ describe('Carpool admin pages', () => {
       expect(c.planText({ active_until: null, waiting: false, waiting_starts: null })).toBe('No running plan');
       expect(c.approval('pending')).toBe('Waiting for approval');
     });
+
+    it('asks the server for every carpool when Show all is pressed', () => {
+      const c = TestBed.runInInjectionContext(() => new CarpoolPeopleComponent(api, toast, route, router));
+      c.person = { id: 7, as_rider: [], as_driver: [], as_driver_total: 80 } as any;
+      api.get.calls.reset();
+      c.showAll();
+      expect(api.get).toHaveBeenCalledWith('/admin/carpool/people/7?all=1');
+    });
   });
 
   describe('Access card', () => {
@@ -215,6 +223,31 @@ describe('Carpool admin pages', () => {
       c.restore();
       expect(api.post).toHaveBeenCalledWith('/admin/carpool/users/12/restore', { note: 'Checked ID' });
       expect(c.banned).toBeFalse();
+    });
+  });
+
+  describe('Pause choice (S10)', () => {
+    it('sends the choice about upcoming carpools and explains it', () => {
+      const auth = jasmine.createSpyObj<AuthService>('AuthService', ['hasPermission']);
+      auth.hasPermission.and.returnValue(true);
+      const c = TestBed.runInInjectionContext(() => new CarpoolAccessComponent(api, toast, auth));
+      c.userId = 9;
+      c.impact = { is_driver: true, upcoming_carpools: 2, riders_told: 3, rider_seats: 0, rider_pending: 0 };
+      expect(c.hasOpen()).toBeTrue();
+      expect(c.cancelUpcoming).toBeTrue();
+      expect(c.effect()).toContain('2 upcoming carpools will be cancelled');
+      c.cancelUpcoming = false;
+      expect(c.effect()).toContain('stay as they are');
+      c.note = 'Warning only';
+      c.ban();
+      expect(api.post).toHaveBeenCalledWith('/admin/carpool/users/9/ban', { note: 'Warning only', cancel_upcoming: false });
+    });
+
+    it('offers no choice when there is nothing open', () => {
+      const auth = jasmine.createSpyObj<AuthService>('AuthService', ['hasPermission']);
+      const c = TestBed.runInInjectionContext(() => new CarpoolAccessComponent(api, toast, auth));
+      c.impact = { is_driver: false, upcoming_carpools: 0, riders_told: 0, rider_seats: 0, rider_pending: 0 };
+      expect(c.hasOpen()).toBeFalse();
     });
   });
 

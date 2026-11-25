@@ -50,6 +50,8 @@ import { dayOf, clock } from './rider-format';
           <div class="box-f"><button class="link" (click)="seeTrip(b)">See trip<ion-icon name="chevron-forward-outline"></ion-icon></button></div>
         </div>
 
+        <button type="button" class="more-btn" *ngIf="past && pastMore" [disabled]="loadingPast" (click)="loadOlderTrips()">{{ loadingPast ? 'Loading…' : 'Show older trips' }}</button>
+
         <div class="empty-plain" *ngIf="loaded && !shown.length">
           <div class="ec-i"><ion-icon name="chatbubbles-outline"></ion-icon></div>
           <h2>{{ past ? 'No past chats' : 'No messages yet' }}</h2>
@@ -96,6 +98,9 @@ export class CarpoolMessagesPage {
   past = false;
   active: CarpoolChatBox[] = [];
   pastBoxes: CarpoolChatBox[] = [];
+  pastMore = false;
+  gonePage = 1;
+  loadingPast = false;
   loaded = false;
   error = false;
   /** Days a chat is kept after the trip ends, for the "This chat was deleted" row. */
@@ -114,12 +119,29 @@ export class CarpoolMessagesPage {
     this.load();
   }
 
+  /** Older trips whose chats are gone, one page at a time (S12). */
+  loadOlderTrips(): void {
+    if (this.loadingPast) return;
+    this.loadingPast = true;
+    this.carpool.chats(this.gonePage + 1).subscribe({
+      next: (c) => {
+        this.pastBoxes = [...this.pastBoxes, ...c.past];
+        this.pastMore = !!c.past_more;
+        this.gonePage += 1;
+        this.loadingPast = false;
+      },
+      error: () => (this.loadingPast = false),
+    });
+  }
+
   load(done?: () => void): void {
     this.error = false;
     this.carpool.chats().subscribe({
       next: (c) => {
         this.active = c.active;
         this.pastBoxes = c.past;
+        this.pastMore = !!c.past_more;
+        this.gonePage = 1;
         this.retention = c.retention_days ?? 1;
         this.loaded = true;
         // Containers with unread messages start open; the rest closed (mockup 6).

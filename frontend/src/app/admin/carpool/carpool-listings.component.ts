@@ -52,7 +52,7 @@ interface Detail extends Row {
   can_cancel: boolean;
   can_end: boolean;
   requests: Req[];
-  reports: { id: number; reason: string; status: string; created_at: string }[];
+  reports: { id: number; reason: string; reason_label?: string | null; status: string; created_at: string }[];
   timeline: { at: string; label: string }[];
   history: HistoryEntry[];
 }
@@ -169,7 +169,7 @@ type Ask = null | { kind: 'cancel' } | { kind: 'end' } | { kind: 'remove'; req: 
         <p class="muted" *ngIf="!d.reports.length">No reports on this carpool.</p>
         <ul class="plain" *ngIf="d.reports.length">
           <li *ngFor="let r of d.reports">
-            <a class="linkish" [routerLink]="['/carpool/reports']" [queryParams]="{ open: r.id }">Report #{{ r.id }}</a>, {{ reason(r.reason) }} ({{ r.status }})
+            <a class="linkish" [routerLink]="['/carpool/reports']" [queryParams]="{ open: r.id }">Report #{{ r.id }}</a>, {{ reason(r.reason, r.reason_label) }} ({{ r.status }})
           </li>
         </ul>
 
@@ -349,7 +349,7 @@ export class CarpoolListingsComponent implements OnInit {
   label(r: Row): string { return listingStatusLabel(r.status, r.cancel_reason); }
   tone(r: Row): StatusTone { return listingStatusTone(r.status); }
   reqLabel(r: Req): string { return requestStatusLabel(r); }
-  reason(k: string): string { return reasonLabel(k); }
+  reason(k: string, label?: string | null): string { return label || reasonLabel(k); }
   hasPaidColumn(d: Detail): boolean { return d.requests.some((r) => !r.is_free); }
 
   times(r: Req): string {

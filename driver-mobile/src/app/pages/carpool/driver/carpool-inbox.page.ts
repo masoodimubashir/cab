@@ -106,6 +106,7 @@ interface Box {
               </button>
             </div>
           </div>
+          <button type="button" class="more-btn" *ngIf="pastMore" [disabled]="loadingPast" (click)="loadOlderTrips()">{{ loadingPast ? 'Loading…' : 'Show older trips' }}</button>
           <div class="empty-plain" *ngIf="loaded && !pastBoxes.length">
             <div class="ec-i"><ion-icon name="chatbubbles-outline"></ion-icon></div>
             <h2>No past chats</h2>
@@ -128,6 +129,9 @@ export class CarpoolInboxPage implements OnDestroy {
   past = false;
   boxes: Box[] = [];
   pastBoxes: CarpoolChatBox[] = [];
+  pastMore = false;
+  gonePage = 1;
+  loadingPast = false;
   loaded = false;
   openPast = new Set<number>();
   readonly whenLabel = whenLabel;
@@ -158,12 +162,29 @@ export class CarpoolInboxPage implements OnDestroy {
     this.entered.unsubscribe();
   }
 
+  /** Older trips whose chats are gone, one page at a time (S12). */
+  loadOlderTrips(): void {
+    if (this.loadingPast) return;
+    this.loadingPast = true;
+    this.carpool.chats(this.gonePage + 1).subscribe({
+      next: (c) => {
+        this.pastBoxes = [...this.pastBoxes, ...c.past];
+        this.pastMore = !!c.past_more;
+        this.gonePage += 1;
+        this.loadingPast = false;
+      },
+      error: () => (this.loadingPast = false),
+    });
+  }
+
   load(done?: () => void): void {
     this.error = false;
     forkJoin({ inbox: this.carpool.inbox(), chats: this.carpool.chats() }).subscribe({
       next: ({ inbox, chats }) => {
         this.boxes = this.merge(inbox.active, chats.active);
         this.pastBoxes = chats.past;
+        this.pastMore = !!chats.past_more;
+        this.gonePage = 1;
         this.retention = chats.retention_days ?? 1;
         this.loaded = true;
         this.done = {};

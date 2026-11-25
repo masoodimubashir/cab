@@ -52,6 +52,10 @@ interface BanImpact {
     <tm-modal [open]="open" title="Pause carpool access" (closed)="open = false">
       <ng-container slot="body">
         <p class="ca__effect" *ngIf="impact">{{ effect() }}</p>
+        <label class="ca__check" *ngIf="impact && hasOpen()">
+          <input type="checkbox" [(ngModel)]="cancelUpcoming" />
+          <span>Also cancel their upcoming carpools and take them off carpools they joined</span>
+        </label>
         <p class="ca__effect">Normal rides are not affected. Restoring later does not bring back cancelled carpools or seats.</p>
         <label class="ca__field">
           <span>Internal note</span>
@@ -90,6 +94,8 @@ interface BanImpact {
     .ca__ro { font-size: 12px; color: var(--tm-text-muted); }
     .ca__hist { padding: 4px 0 12px; }
     .ca__effect { margin: 0 0 10px; font-size: 13px; color: var(--tm-text); }
+    .ca__check { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; font-size: 13px; color: var(--tm-text); cursor: pointer; }
+    .ca__check input { margin-top: 3px; }
     .ca__field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--tm-text); }
     .ca__field textarea { font: inherit; font-weight: 400; padding: 8px 10px; border: 1px solid var(--tm-line-2); border-radius: 8px; resize: vertical; color: var(--tm-text); background: var(--tm-surface); }
   `],
@@ -106,6 +112,8 @@ export class CarpoolAccessComponent {
 
   open = false;
   openR = false;
+  /** S10: pausing ends upcoming carpools and seats unless the admin unticks this. */
+  cancelUpcoming = true;
   busy = false;
   note = '';
   impact: BanImpact | null = null;
@@ -120,6 +128,7 @@ export class CarpoolAccessComponent {
 
   openBan(): void {
     this.note = '';
+    this.cancelUpcoming = true;
     this.impact = null;
     this.open = true;
     this.api.get<{ data: BanImpact }>(`/admin/carpool/users/${this.userId}/ban-impact`).subscribe({
@@ -145,9 +154,18 @@ export class CarpoolAccessComponent {
     });
   }
 
+  /** Is there anything open that the pause could end? */
+  hasOpen(): boolean {
+    const i = this.impact;
+    return !!i && (i.upcoming_carpools > 0 || i.rider_seats > 0 || i.rider_pending > 0);
+  }
+
   effect(): string {
     const i = this.impact!;
     const parts: string[] = [];
+    if (!this.cancelUpcoming && this.hasOpen()) {
+      return 'Their upcoming carpools and seats stay as they are. They can no longer join, publish or chat.';
+    }
     if (i.is_driver) {
       parts.push(`${i.upcoming_carpools} upcoming carpools will be cancelled and ${i.riders_told} riders told; carpools on the road are not affected.`);
     }
@@ -159,7 +177,7 @@ export class CarpoolAccessComponent {
 
   ban(): void {
     this.busy = true;
-    this.api.post(`/admin/carpool/users/${this.userId}/ban`, { note: this.note.trim() }).subscribe({
+    this.api.post(`/admin/carpool/users/${this.userId}/ban`, { note: this.note.trim(), cancel_upcoming: this.cancelUpcoming }).subscribe({
       next: () => {
         this.busy = false;
         this.open = false;

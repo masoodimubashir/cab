@@ -22,6 +22,7 @@ interface Row {
 interface Person {
   id: number; name: string | null; phone: string | null; email: string | null; joined_at: string | null; photo_url: string | null;
   is_customer: boolean; banned: boolean; banned_at: string | null; ban_reason: string | null;
+  as_rider_total?: number; as_driver_total?: number;
   driver: null | {
     id: number; approval: string; deactivated: boolean; city: string | null; city_id: number | null;
     car: (CarpoolCar & { front_photo_url: string | null }) | null;
@@ -31,8 +32,8 @@ interface Person {
   counts: Record<string, number>;
   as_rider: { request_id: number; listing_id: number; route: string | null; departs_at: string | null; driver: string | null; seats: number; price_per_seat: number | null; paid_marked: boolean; status: string; closed_reason: string | null }[];
   as_driver: { listing_id: number; route: string; departs_at: string; seats_taken: number; seats_total: number; status: string; cancel_reason: string | null }[];
-  reports_against: { id: number; created_at: string; reason: string; status: string; listing_id: number | null; other: string | null }[];
-  reports_by: { id: number; created_at: string; reason: string; status: string; listing_id: number | null; other: string | null }[];
+  reports_against: { id: number; created_at: string; reason: string; reason_label?: string | null; status: string; listing_id: number | null; other: string | null }[];
+  reports_by: { id: number; created_at: string; reason: string; reason_label?: string | null; status: string; listing_id: number | null; other: string | null }[];
   history: HistoryEntry[];
 }
 
@@ -122,8 +123,8 @@ type Section = 'rider' | 'driver' | 'reports' | 'history';
         <app-carpool-access [userId]="p.id" [banned]="p.banned" [reason]="p.ban_reason" [showSummaryLink]="false" (changed)="reopen()"></app-carpool-access>
 
         <div class="tabs inner" role="tablist" aria-label="Details">
-          <button type="button" role="tab" [attr.aria-selected]="section === 'rider'" [class.is-on]="section === 'rider'" (click)="section = 'rider'">As rider ({{ p.as_rider.length }})</button>
-          <button *ngIf="p.driver" type="button" role="tab" [attr.aria-selected]="section === 'driver'" [class.is-on]="section === 'driver'" (click)="section = 'driver'">As driver ({{ p.as_driver.length }})</button>
+          <button type="button" role="tab" [attr.aria-selected]="section === 'rider'" [class.is-on]="section === 'rider'" (click)="section = 'rider'">As rider ({{ p.as_rider_total ?? p.as_rider.length }})</button>
+          <button *ngIf="p.driver" type="button" role="tab" [attr.aria-selected]="section === 'driver'" [class.is-on]="section === 'driver'" (click)="section = 'driver'">As driver ({{ p.as_driver_total ?? p.as_driver.length }})</button>
           <button type="button" role="tab" [attr.aria-selected]="section === 'reports'" [class.is-on]="section === 'reports'" (click)="section = 'reports'">Reports ({{ p.reports_against.length + p.reports_by.length }})</button>
           <button type="button" role="tab" [attr.aria-selected]="section === 'history'" [class.is-on]="section === 'history'" (click)="section = 'history'">History ({{ p.history.length }})</button>
         </div>
@@ -141,6 +142,7 @@ type Section = 'rider' | 'driver' | 'reports' | 'history';
                 <td>{{ reqLabel(r) }}</td>
               </tr>
             </table>
+            <p class="muted" *ngIf="(p.as_rider_total ?? 0) > p.as_rider.length">Showing the latest {{ p.as_rider.length }} of {{ p.as_rider_total }}. <button type="button" class="linkbtn" (click)="showAll()">Show all</button></p>
           </ng-container>
           <ng-container *ngSwitchCase="'driver'">
             <p class="muted" *ngIf="!p.as_driver.length">No carpools published yet.</p>
@@ -153,17 +155,18 @@ type Section = 'rider' | 'driver' | 'reports' | 'history';
                 <td><tm-status-pill [tone]="tone(l.status)">{{ lLabel(l.status, l.cancel_reason) }}</tm-status-pill></td>
               </tr>
             </table>
+            <p class="muted" *ngIf="(p.as_driver_total ?? 0) > p.as_driver.length">Showing the latest {{ p.as_driver.length }} of {{ p.as_driver_total }}. <button type="button" class="linkbtn" (click)="showAll()">Show all</button></p>
           </ng-container>
           <ng-container *ngSwitchCase="'reports'">
             <h4 class="sub-h">About them</h4>
             <p class="muted" *ngIf="!p.reports_against.length">None.</p>
             <ul class="plain" *ngIf="p.reports_against.length">
-              <li *ngFor="let r of p.reports_against"><a class="linkish" [routerLink]="['/carpool/reports']" [queryParams]="{ open: r.id }">#{{ r.id }}</a> {{ reason(r.reason) }}, from {{ r.other || 'a deleted user' }}, {{ date(r.created_at) }} ({{ r.status }})</li>
+              <li *ngFor="let r of p.reports_against"><a class="linkish" [routerLink]="['/carpool/reports']" [queryParams]="{ open: r.id }">#{{ r.id }}</a> {{ reason(r.reason, r.reason_label) }}, from {{ r.other || 'a deleted user' }}, {{ date(r.created_at) }} ({{ r.status }})</li>
             </ul>
             <h4 class="sub-h">Sent by them</h4>
             <p class="muted" *ngIf="!p.reports_by.length">None.</p>
             <ul class="plain" *ngIf="p.reports_by.length">
-              <li *ngFor="let r of p.reports_by"><a class="linkish" [routerLink]="['/carpool/reports']" [queryParams]="{ open: r.id }">#{{ r.id }}</a> {{ reason(r.reason) }}, about {{ r.other || 'a deleted user' }}, {{ date(r.created_at) }} ({{ r.status }})</li>
+              <li *ngFor="let r of p.reports_by"><a class="linkish" [routerLink]="['/carpool/reports']" [queryParams]="{ open: r.id }">#{{ r.id }}</a> {{ reason(r.reason, r.reason_label) }}, about {{ r.other || 'a deleted user' }}, {{ date(r.created_at) }} ({{ r.status }})</li>
             </ul>
           </ng-container>
           <ng-container *ngSwitchCase="'history'">
@@ -182,6 +185,8 @@ type Section = 'rider' | 'driver' | 'reports' | 'history';
       (closed)="editCar = false" (saved)="editCar = false; reopen()"></app-carpool-car-edit>
   `,
   styles: [CARPOOL_ADMIN_STYLES, `
+    .linkbtn { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--tm-green-deep); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+    .linkbtn:focus-visible { outline: 2px solid var(--tm-green-deep); outline-offset: 2px; }
     .sub { display: block; color: var(--tm-text-muted); font-size: 12px; }
     .muted-inline { color: var(--tm-text-muted); font-size: 12px; }
     .who { display: flex; gap: 16px; align-items: center; margin-bottom: 18px; }
@@ -243,8 +248,8 @@ export class CarpoolPeopleComponent implements OnInit {
     });
   }
 
-  open(id: number): void {
-    this.api.get<{ data: Person }>(`/admin/carpool/people/${id}`).subscribe({
+  open(id: number, all = false): void {
+    this.api.get<{ data: Person }>(`/admin/carpool/people/${id}${all ? '?all=1' : ''}`).subscribe({
       next: (r) => {
         const keep = this.person?.id === id;
         this.person = r.data;
@@ -252,6 +257,11 @@ export class CarpoolPeopleComponent implements OnInit {
       },
       error: (e) => this.toast.error(e?.status === 404 ? 'This person is not in your cities, has no carpool record, or no longer exists.' : (e?.error?.message || 'Could not open this person.')),
     });
+  }
+
+  /** The summary lists the latest 50 carpools and trips; this loads all of them. */
+  showAll(): void {
+    if (this.person) this.open(this.person.id, true);
   }
 
   reopen(): void {
@@ -287,7 +297,7 @@ export class CarpoolPeopleComponent implements OnInit {
   time(iso: string | null): string { return inTime(iso, true); }
   date(iso: string | null): string { return inDate(iso); }
   reqLabel(r: { status: string; closed_reason: string | null }): string { return requestStatusLabel(r); }
-  reason(k: string): string { return reasonLabel(k); }
+  reason(k: string, label?: string | null): string { return label || reasonLabel(k); }
   lLabel(s: string, c: string | null): string { return listingStatusLabel(s, c); }
   tone(s: string) { return listingStatusTone(s); }
 }

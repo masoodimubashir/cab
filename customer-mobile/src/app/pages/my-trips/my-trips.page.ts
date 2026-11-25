@@ -147,13 +147,19 @@ export class MyTripsPage implements OnDestroy {
     this.loadCarpools();
   }
   get showMessages(): boolean { return !!this.carpool && (this.carpoolFeed.rows.length > 0 || this.chatUnread > 0); }
-  loadCarpools(): void {
+  loadCarpools(page = 1): void {
     if (!this.carpool) return;
     this.requests.add(this.carpool.chatsUnread().subscribe({ next: n => this.chatUnread = n, error: () => undefined }));
     const feed = this.carpoolFeed;
     feed.loading = true; feed.error = '';
-    this.requests.add(this.carpool.myTrips().subscribe({
-      next: rows => { feed.rows = rows.map(carpoolCard); feed.loading = false; },
+    this.requests.add(this.carpool.myTripsPage(page).subscribe({
+      next: res => {
+        const cards = res.data.map(carpoolCard);
+        feed.rows = page === 1 ? cards : [...feed.rows, ...cards];
+        feed.page = page;
+        feed.more = res.has_more; // S12: older carpool trips load on request
+        feed.loading = false;
+      },
       // 404 means carpool is switched off everywhere: nothing to show, not an error.
       error: e => { feed.loading = false; feed.rows = []; feed.error = e?.status === 404 ? '' : 'Could not load carpools. Please try again.'; },
     }));
@@ -184,10 +190,14 @@ export class MyTripsPage implements OnDestroy {
       const feed = this.feeds[source];
       if (feed.more && !feed.loading) this.load(source, feed.page + 1);
     }
+    this.loadMoreCarpools();
+  }
+  loadMoreCarpools(): void {
+    if (this.carpoolFeed.more && !this.carpoolFeed.loading) this.loadCarpools(this.carpoolFeed.page + 1);
   }
   retry(source: Source): void { this.load(source, this.feeds[source].requestedPage); }
   get loading(): boolean { return this.sources.some(source => this.feeds[source].loading) || this.carpoolFeed.loading; }
-  get hasMore(): boolean { return this.sources.some(source => this.feeds[source].more); }
+  get hasMore(): boolean { return this.sources.some(source => this.feeds[source].more) || this.carpoolFeed.more; }
   get hasErrors(): boolean { return this.sources.some(source => !!this.feeds[source].error) || !!this.carpoolFeed.error; }
   get cards(): TripCard[] {
     const sharedTripIds = new Set([...this.feeds.fixed.rows, ...this.feeds.shuttle.rows].map(row => row.tripId).filter(Boolean));

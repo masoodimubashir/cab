@@ -716,18 +716,18 @@ export class ContactDriversComponent implements OnInit {
   readonly driverTypeOptions = [{ label: 'Carpool', value: 'carpool' }, { label: 'All types', value: 'all' }];
 
   /**
-   * Carpool drivers are never online, free or on a trip in the commercial sense, and the CSV upload
-   * matches commercial drivers only, so those choices are hidden when the type is Carpool.
+   * Carpool drivers are never online, free or on a trip in the commercial sense, so those choices are
+   * hidden when the type is Carpool. The CSV upload stays (it matches the chosen driver type, W11).
    * Commercial and All types keep every choice.
    */
   get shownAudienceOptions(): { value: AudienceKey; label: string }[] {
     if (this.driverType !== 'carpool') return this.audienceOptions;
-    return this.audienceOptions.filter((o) => o.value === 'active' || o.value === 'deactivated');
+    return this.audienceOptions.filter((o) => o.value === 'active' || o.value === 'deactivated' || o.value === 'custom_csv');
   }
 
   onDriverType(value: string): void {
     this.driverType = value === 'carpool' || value === 'all' ? value : 'commercial';
-    if (this.driverType === 'carpool' && this.audience !== 'active' && this.audience !== 'deactivated') {
+    if (this.driverType === 'carpool' && this.audience !== 'active' && this.audience !== 'deactivated' && this.audience !== 'custom_csv') {
       this.audience = 'active';
     }
     this.selectedIds = new Set();
@@ -763,6 +763,7 @@ export class ContactDriversComponent implements OnInit {
 
     const form = new FormData();
     form.append('file', file);
+    form.append('audience', this.driverType); // W11: match the driver type chosen on the screen
 
     const apiBase = this.api.baseUrl;
     const token = localStorage.getItem('dreamcabs_token');
