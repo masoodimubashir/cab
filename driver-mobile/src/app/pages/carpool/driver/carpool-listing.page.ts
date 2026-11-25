@@ -51,7 +51,8 @@ export class CarpoolListingPage implements OnDestroy {
   loadError = false;
   carSeats = 6;
   horizonDays = 30;
-  priceMax = 5000;
+  /** The server moves the departure by this much; 10 is only the fallback for the button text. */
+  delayMinutes = 10;
   retentionDays = 1;
 
   mode: Mode = 'view';
@@ -98,7 +99,7 @@ export class CarpoolListingPage implements OnDestroy {
     this.api.get<Me>('/drivers/me').subscribe({ next: (me) => (this.carSeats = me.driver?.carpool_vehicle?.seats ?? 6) });
     this.carpool.config().subscribe((c) => {
       this.horizonDays = c.publish_horizon_days ?? 30;
-      this.priceMax = c.price_max ?? 5000;
+      this.delayMinutes = c.delay_minutes ?? 10;
       this.retentionDays = c.chat_retention_days ?? 1;
     });
   }
@@ -473,7 +474,6 @@ export class CarpoolListingPage implements OnDestroy {
     if (!d) return null;
     if (d.date === indiaDate() && d.time <= indiaTime(new Date())) return 'Pick a time that is still to come.';
     if (!d.free && (!d.price || d.price < 1)) return 'Set a price per seat, or turn on Free ride.';
-    if (!d.free && d.price && d.price > this.priceMax) return `The highest price per seat is ₹${this.priceMax}.`;
     return null;
   }
 

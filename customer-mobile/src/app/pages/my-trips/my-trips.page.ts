@@ -31,7 +31,7 @@ export function carpoolCard(t: CarpoolTrip): TripCard {
     completed: `Completed with ${t.driver.name}`,
     cancelled: t.listing.cancel_reason === 'plan_ended' ? "Cancelled: the driver's plan has ended"
       : t.listing.cancel_reason === 'admin' ? 'Cancelled by Dream Cabs'
-      : t.listing.cancel_reason === 'missed_departure' ? "Cancelled: it didn't start that day" : `Cancelled by ${first}`,
+      : t.listing.cancel_reason === 'missed_departure' ? "Cancelled: it wasn't started" : `Cancelled by ${first}`,
     declined: `${first} couldn't take this request`,
     removed: 'Removed by the driver',
     filled: 'Filled up before the driver answered',

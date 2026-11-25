@@ -21,7 +21,17 @@ export interface RiderSearch {
   seats: number;
 }
 
-export const HORIZON_DAYS = 30;
+/** How many days ahead a rider can search. The server sends the real number in /carpool/config; 30 is only the fallback. */
+let horizonDays = 30;
+
+export function setHorizonDays(n: number | null | undefined): void {
+  horizonDays = Number.isFinite(n) && (n as number) >= 1 ? Math.floor(n as number) : 30;
+}
+
+export function getHorizonDays(): number {
+  return horizonDays;
+}
+
 const RECENT_KEY = 'carpool_recent_searches';
 
 export function toParams(s: RiderSearch): Params {
@@ -55,12 +65,23 @@ export function clampDate(date: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return indiaDate();
   const n = daysFromToday(date);
   if (n < 0) return indiaDate();
-  if (n > HORIZON_DAYS) return addDays(indiaDate(), HORIZON_DAYS);
+  if (n > horizonDays) return addDays(indiaDate(), horizonDays);
   return date;
 }
 
+/** Most seats one rider can ask for. The server sends the real number in /carpool/config; 6 is only the fallback. */
+let seatsMax = 6;
+
+export function setSeatsMax(n: number | null | undefined): void {
+  seatsMax = Number.isFinite(n) && (n as number) >= 1 ? Math.floor(n as number) : 6;
+}
+
+export function getSeatsMax(): number {
+  return seatsMax;
+}
+
 export function clampSeats(n: number): number {
-  return Number.isFinite(n) ? Math.min(6, Math.max(1, Math.round(n))) : 1;
+  return Number.isFinite(n) ? Math.min(seatsMax, Math.max(1, Math.round(n))) : 1;
 }
 
 /** The last three searches, kept on this phone only. */

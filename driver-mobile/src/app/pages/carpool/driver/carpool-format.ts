@@ -94,10 +94,10 @@ export function endedLabel(l: CarpoolListing): string {
 export function cancelReasonLabel(l: CarpoolListing): string | null {
   switch (l.cancel_reason) {
     case 'driver': return l.cancel_note ? `Cancelled by you: ${l.cancel_note}` : 'Cancelled by you';
-    case 'missed_departure': return 'Not started on the day';
+    case 'missed_departure': return 'Not started';
     case 'plan_ended': return "Cancelled: your plan had ended";
     case 'admin': return 'Cancelled by Dream Cabs';
-    default: return l.status === 'published' ? 'Not started on the day' : null;
+    default: return l.status === 'published' ? 'Not started' : null;
   }
 }
 

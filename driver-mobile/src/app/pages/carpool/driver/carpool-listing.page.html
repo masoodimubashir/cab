@@ -55,8 +55,8 @@
 
       <ng-container *ngIf="l.can_edit">
         <div class="late-row">
-          <button class="d-btn line mini" [disabled]="delaying" (click)="delay()"><ion-icon name="time-outline"></ion-icon>+10 min delay</button>
-          <p [class.ok]="delayMsg">{{ delayMsg ?? (riders ? 'Running late? Moves the time and tells riders in chat.' : 'Running late? Moves the time on 10 minutes.') }}</p>
+          <button class="d-btn line mini" [disabled]="delaying" (click)="delay()"><ion-icon name="time-outline"></ion-icon>+{{ delayMinutes }} min delay</button>
+          <p [class.ok]="delayMsg">{{ delayMsg ?? (riders ? 'Running late? Moves the time and tells riders in chat.' : 'Running late? Moves the time on ' + delayMinutes + ' minutes.') }}</p>
         </div>
       </ng-container>
 

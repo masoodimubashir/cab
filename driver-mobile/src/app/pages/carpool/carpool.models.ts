@@ -13,8 +13,17 @@ export interface CarpoolConfig {
   driver_signup?: boolean;
   search_distance_m?: number;
   publish_horizon_days?: number;
+  /** Start ride opens this many minutes before departure (an admin setting). */
+  start_early_minutes?: number;
+  /** A waiting request on a ride on the road closes this many minutes after its planned pickup. */
+  pending_expire_minutes?: number;
+  /** Days after a plan's last day on which carpools still run. */
+  plan_grace_days?: number;
+  /** 0 = an unstarted carpool is cancelled at the end of its departure day, 1 = at the end of the next day. */
+  missed_departure_days?: number;
   seats_max?: number;
-  price_max?: number;
+  /** How many minutes the driver's delay button moves the departure. */
+  delay_minutes?: number;
   message_max_chars?: number;
   chat_retention_days?: number;
   timezone?: string;
@@ -106,7 +115,7 @@ export interface CarpoolListing {
   completed_at: string | null;
   completed_by: 'driver' | 'auto' | null;
   counts_as_ride: boolean;
-  /** Start ride opens an hour before the departure time. */
+  /** Start ride opens before the departure time (see start_opens_at). */
   can_start: boolean;
   start_opens_at: string;
   route_polyline?: [number, number][];
@@ -301,6 +310,8 @@ export interface CarpoolRide {
   id: number;
   status: CarpoolListingStatus;
   departs_at: string;
+  /** When the driver can press Start ride (set by the server). */
+  start_opens_at?: string;
   day: number;
   start: CarpoolPlace;
   end: CarpoolPlace;

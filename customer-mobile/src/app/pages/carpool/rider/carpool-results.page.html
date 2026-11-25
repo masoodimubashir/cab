@@ -26,7 +26,7 @@
         <div class="stepper">
           <button aria-label="Fewer seats" [disabled]="search.seats <= 1" (click)="setSeats(search.seats - 1)"><ion-icon name="remove-outline"></ion-icon></button>
           <output aria-live="polite">{{ search.seats }}</output>
-          <button aria-label="More seats" [disabled]="search.seats >= 6" (click)="setSeats(search.seats + 1)"><ion-icon name="add-outline"></ion-icon></button>
+          <button aria-label="More seats" [disabled]="search.seats >= seatsMax" (click)="setSeats(search.seats + 1)"><ion-icon name="add-outline"></ion-icon></button>
         </div>
       </div>
     </div>

@@ -34,7 +34,6 @@ export class CarpoolPublishPage implements OnDestroy {
   blocked: 'plan' | 'error' | null = null;
   carSeats = 4;
   horizonDays = 30;
-  priceMax = 5000;
   recent: CarpoolDriverHome['recent'] = [];
 
   // Step 1
@@ -94,7 +93,6 @@ export class CarpoolPublishPage implements OnDestroy {
         this.carSeats = me.driver?.carpool_vehicle?.seats ?? 4;
         this.seats = this.carSeats;
         this.horizonDays = config.publish_horizon_days ?? 30;
-        this.priceMax = config.price_max ?? 5000;
         this.recent = home.recent ?? [];
         this.setDefaultTime();
       },
@@ -336,7 +334,6 @@ export class CarpoolPublishPage implements OnDestroy {
   get priceError(): string | null {
     if (this.free) return null;
     if (!this.price || this.price < 1) return 'Set a price per seat, or turn on Free ride.';
-    if (this.price > this.priceMax) return `The highest price per seat is ₹${this.priceMax}.`;
     return null;
   }
 

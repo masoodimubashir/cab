@@ -166,7 +166,8 @@ export class CarpoolCodePage {
         if (err?.error?.errors?.code) {
           // Locked: the server says until when.
           this.step = 'wrong';
-          this.lockedUntil = this.lockedUntil ?? new Date(Date.now() + 5 * 60000);
+          const until = err?.error?.locked_until;
+          if (until) this.lockedUntil = new Date(until);
         }
         this.failure = msg ?? "Couldn't check the code. Check your connection.";
       },

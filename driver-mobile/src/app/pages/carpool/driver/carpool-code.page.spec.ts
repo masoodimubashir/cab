@@ -82,13 +82,24 @@ describe('CarpoolCodePage', () => {
     expect(page.locked).toBeTrue();
   });
 
-  it('a server refusal while locked shows its message', () => {
+  it('a server refusal while locked shows its message and the lock end the server sent', () => {
+    open();
+    const until = new Date(Date.now() + 3 * 60000).toISOString();
+    api.checkCode.and.returnValue(throwError(() => ({ error: { errors: { code: ['Too many wrong codes. Try again at 9:05 AM.'] }, locked_until: until } })));
+    page.onInput('1111');
+    page.check();
+    expect(page.failure).toContain('Too many wrong codes');
+    expect(page.locked).toBeTrue();
+    expect(page.lockedUntil?.toISOString()).toBe(until);
+  });
+
+  it('a refusal without a lock end shows the message but does not invent a lock time', () => {
     open();
     api.checkCode.and.returnValue(throwError(() => ({ error: { errors: { code: ['Too many wrong codes. Try again at 9:05 AM.'] } } })));
     page.onInput('1111');
     page.check();
     expect(page.failure).toContain('Too many wrong codes');
-    expect(page.locked).toBeTrue();
+    expect(page.lockedUntil).toBeNull();
   });
 
   it('opens already green when the code was checked before', () => {

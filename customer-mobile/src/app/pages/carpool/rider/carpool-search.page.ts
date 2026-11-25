@@ -6,7 +6,7 @@ import { PlaceSuggestion, PlacesService } from '../../../core/places.service';
 import { CarpoolApiService } from '../carpool-api.service';
 import { addDays, dayLabel, daysFromToday, indiaDate, seatWord, shortDate, shortName } from './rider-format';
 import { loadRiderMaps, placeName } from './rider-map';
-import { clampDate, clampSeats, fromParams, HORIZON_DAYS, recentSearches, rememberSearch, RiderPlace, RiderSearch, toParams } from './rider-search';
+import { clampDate, clampSeats, fromParams, getHorizonDays, getSeatsMax, setHorizonDays, setSeatsMax, recentSearches, rememberSearch, RiderPlace, RiderSearch, toParams } from './rider-search';
 
 /**
  * Find a carpool (customer mockup 2). Pickup starts at the rider's location;
@@ -24,6 +24,7 @@ export class CarpoolSearchPage implements OnInit {
   to: RiderPlace | null = null;
   date = indiaDate();
   seats = 1;
+  seatsMax = getSeatsMax();
   /** The field shown as current (green outline in the mockup). */
   active: 'from' | 'to' = 'to';
   recent: RiderSearch[] = [];
@@ -39,7 +40,7 @@ export class CarpoolSearchPage implements OnInit {
   private debounce: ReturnType<typeof setTimeout> | null = null;
 
   readonly today = indiaDate();
-  readonly lastDay = addDays(indiaDate(), HORIZON_DAYS);
+  get lastDay(): string { return addDays(indiaDate(), getHorizonDays()); }
   readonly seatWord = seatWord;
 
   @ViewChild('pickInput') pickInput?: ElementRef<HTMLInputElement>;
@@ -67,6 +68,11 @@ export class CarpoolSearchPage implements OnInit {
     this.recent = recentSearches();
     this.carpool.config().subscribe((c) => {
       if (c.search_distance_m) this.distanceKm = Math.round(c.search_distance_m / 100) / 10;
+      setSeatsMax(c.seats_max);
+      setHorizonDays(c.publish_horizon_days);
+      this.seatsMax = getSeatsMax();
+      this.seats = clampSeats(this.seats);
+      this.date = clampDate(this.date);
     });
   }
 

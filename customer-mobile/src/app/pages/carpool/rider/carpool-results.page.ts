@@ -5,7 +5,7 @@ import { Subscription } from 'rxjs';
 import { CarpoolApiService } from '../carpool-api.service';
 import { CarpoolResult, CarpoolSearchAnswer } from '../carpool.models';
 import { addDays, clock, dayLabel, distanceLabel, indiaDate, plainDate, priceLabel, shortDate, daysFromToday } from './rider-format';
-import { clampDate, clampSeats, fromParams, HORIZON_DAYS, RiderSearch, toParams, toQuery } from './rider-search';
+import { clampDate, clampSeats, fromParams, getHorizonDays, getSeatsMax, setHorizonDays, setSeatsMax, RiderSearch, toParams, toQuery } from './rider-search';
 
 /**
  * Results (customer mockup 3, 3b and the loading state). The day and seats
@@ -26,8 +26,9 @@ export class CarpoolResultsPage implements OnInit, OnDestroy {
   private sub?: Subscription;
 
   readonly today = indiaDate();
-  readonly lastDay = addDays(indiaDate(), HORIZON_DAYS);
+  get lastDay(): string { return addDays(indiaDate(), getHorizonDays()); }
   readonly price = priceLabel;
+  seatsMax = getSeatsMax();
   readonly clock = clock;
 
   constructor(
@@ -43,6 +44,11 @@ export class CarpoolResultsPage implements OnInit, OnDestroy {
       this.nav.navigateRoot('/carpool/search');
       return;
     }
+    this.carpool.config().subscribe((c) => {
+      setSeatsMax(c.seats_max);
+      setHorizonDays(c.publish_horizon_days);
+      this.seatsMax = getSeatsMax();
+    });
     this.load();
   }
 

@@ -6,7 +6,7 @@ import { CarpoolApiService } from '../carpool-api.service';
 import { CarpoolMyRequest, CarpoolRide, CarpoolRoutePoint } from '../carpool.models';
 import { clock, distanceLabel, indiaDate, priceLabel, seatWord, titleWhen } from './rider-format';
 import { LatLng, createMap, drawRide, flat, loadRiderMaps, pathLength, pickupPin, placeName, snapToPath, toPath, youMarker } from './rider-map';
-import { RiderSearch, fromParams, toParams, toQuery } from './rider-search';
+import { RiderSearch, fromParams, getSeatsMax, setSeatsMax, toParams, toQuery } from './rider-search';
 
 type View = 'open' | 'sent' | 'accepted' | 'started' | 'ended';
 type Sheet = 'ask' | 'photo' | 'cancel' | 'leave' | 'rate' | 'banned' | null;
@@ -96,6 +96,7 @@ export class CarpoolRidePage implements OnDestroy {
   ionViewWillEnter(): void {
     this.id = Number(this.route.snapshot.paramMap.get('id'));
     this.search = fromParams(this.route.snapshot.queryParams);
+    this.carpool.config().subscribe((c) => setSeatsMax(c.seats_max));
     this.load();
     // While you wait for or ride in the car, the page checks for news every 15 seconds.
     this.stopPoll();
@@ -104,9 +105,12 @@ export class CarpoolRidePage implements OnDestroy {
     }, 15000);
   }
 
-  /** Within an hour of leaving (or past it): the only time an accepted ride can change under you. */
+  /** From the moment the driver can press Start ride (or past it): the only time an accepted ride can change under you. */
   private get nearDeparture(): boolean {
-    return !!this.ride && new Date(this.ride.departs_at).getTime() - Date.now() < 60 * 60 * 1000;
+    if (!this.ride) return false;
+    // The server says when Start ride opens; 60 minutes before departure is only the fallback for an older answer.
+    const opens = this.ride.start_opens_at ? new Date(this.ride.start_opens_at).getTime() : new Date(this.ride.departs_at).getTime() - 60 * 60 * 1000;
+    return Date.now() >= opens;
   }
 
   ionViewWillLeave(): void {
@@ -220,7 +224,7 @@ export class CarpoolRidePage implements OnDestroy {
       case 'cancelled':
         if (r.cancel_reason === 'plan_ended') return grey("Cancelled: the driver's plan has ended");
         if (r.cancel_reason === 'admin') return grey('Cancelled by Dream Cabs');
-        if (r.cancel_reason === 'missed_departure') return grey("Cancelled: it didn't start that day");
+        if (r.cancel_reason === 'missed_departure') return grey("Cancelled: it wasn't started");
         return grey(`Cancelled by ${this.first}`, r.cancel_note ? `Reason: ${r.cancel_note.charAt(0).toLowerCase()}${r.cancel_note.slice(1)}` : undefined);
       case 'declined': return grey(`${this.first} couldn't take this request`, 'You can still find other carpools for this trip.');
       case 'removed': return grey(`${this.first} removed you from this carpool`);
@@ -392,7 +396,7 @@ export class CarpoolRidePage implements OnDestroy {
     }
     const s = this.ride?.suggested;
     if (!this.ride || !s) return;
-    this.askSeats = Math.max(1, Math.min(this.search?.seats ?? 1, this.ride.seats_free, 6));
+    this.askSeats = Math.max(1, Math.min(this.search?.seats ?? 1, this.ride.seats_free, getSeatsMax()));
     this.askPickup = {
       lat: s.pickup.lat, lng: s.pickup.lng, name: this.search?.from.name ?? 'Your pickup', address: this.search?.from.address ?? null,
       along_m: s.pickup.along_m ?? 0, walk_m: s.pickup.walk_m ?? 0, at: s.pickup.at,
@@ -404,7 +408,7 @@ export class CarpoolRidePage implements OnDestroy {
   }
 
   get askMax(): number {
-    return Math.max(1, Math.min(this.ride?.seats_free ?? 1, 6));
+    return Math.max(1, Math.min(this.ride?.seats_free ?? 1, getSeatsMax()));
   }
 
   setAskSeats(n: number): void {
