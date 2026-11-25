@@ -100,8 +100,9 @@ class AdminCarpoolPeopleController
         ]);
     }
 
-    public function show(User $user): JsonResponse
+    public function show(Request $request, User $user): JsonResponse
     {
+        $limit = $request->boolean('all') ? 500 : 50; // the latest 50 by default, everything on request (F29-3)
         abort_if($user->manager_role_id !== null, 404);
         CarpoolAdminScope::assertPerson($user);
         $user->loadMissing(['driver.city:id,name', 'driver.carpoolVehicle']);
@@ -109,7 +110,7 @@ class AdminCarpoolPeopleController
         $present = app(CarpoolPresenter::class);
 
         $asRider = CarpoolRequest::query()->with(['listing.driver.user:id,name'])->where('rider_id', $user->id)
-            ->orderByDesc('id')->limit(50)->get()->map(fn (CarpoolRequest $r) => [
+            ->orderByDesc('id')->limit($limit)->get()->map(fn (CarpoolRequest $r) => [
                 'request_id' => $r->id,
                 'listing_id' => $r->listing_id,
                 'route' => $r->listing ? $r->listing->start_name . ' to ' . $r->listing->end_name : null,
@@ -123,7 +124,7 @@ class AdminCarpoolPeopleController
             ]);
 
         $asDriver = $driver
-            ? CarpoolListing::query()->where('driver_id', $driver->id)->orderByDesc('departs_at')->limit(50)->get()->map(fn (CarpoolListing $l) => [
+            ? CarpoolListing::query()->where('driver_id', $driver->id)->orderByDesc('departs_at')->limit($limit)->get()->map(fn (CarpoolListing $l) => [
                 'listing_id' => $l->id,
                 'route' => $l->start_name . ' to ' . $l->end_name,
                 'departs_at' => $l->departs_at->toIso8601String(),
@@ -135,8 +136,10 @@ class AdminCarpoolPeopleController
             ])
             : collect();
 
+        $labels = \App\Models\Carpool\CarpoolReportReason::labels();
         $reportRow = fn (CarpoolReport $r) => [
-            'id' => $r->id, 'created_at' => $r->created_at?->toIso8601String(), 'reason' => $r->reason, 'status' => $r->status,
+            'id' => $r->id, 'created_at' => $r->created_at?->toIso8601String(), 'reason' => $r->reason,
+            'reason_label' => \App\Models\Carpool\CarpoolReportReason::labelFor($r->reason, $labels), 'status' => $r->status,
             'listing_id' => $r->listing_id, 'other' => $r->relationLoaded('reporter') ? $r->reporter?->name : $r->reported?->name,
         ];
         $against = CarpoolReport::query()->with('reporter:id,name')->where('reported_user_id', $user->id)->orderByDesc('id')->limit(30)->get()->map($reportRow);
@@ -193,7 +196,9 @@ class AdminCarpoolPeopleController
                 'reports_by' => CarpoolReport::query()->where('reporter_id', $user->id)->count(),
             ],
             'as_rider' => $asRider,
+            'as_rider_total' => CarpoolRequest::query()->where('rider_id', $user->id)->count(),
             'as_driver' => $asDriver,
+            'as_driver_total' => $driver ? CarpoolListing::query()->where('driver_id', $driver->id)->count() : 0,
             'reports_against' => $against,
             'reports_by' => $by,
             'history' => CarpoolAdminLog::forPerson($user->id),

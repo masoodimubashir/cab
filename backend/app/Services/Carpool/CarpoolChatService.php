@@ -77,7 +77,7 @@ class CarpoolChatService
     // ---- Reading ----
 
     /** @return array{active: array<int, array<string, mixed>>, past: array<int, array<string, mixed>>, unread: int} */
-    public function inbox(User $user): array
+    public function inbox(User $user, int $gonePage = 1): array
     {
         $members = CarpoolConversationMember::query()->where('user_id', $user->id)->whereNull('left_at')
             ->with(['conversation.listing.driver.user', 'conversation.request.rider'])->get();
@@ -114,15 +114,23 @@ class CarpoolChatService
             ->sortByDesc(fn ($b) => $b['listing']['departs_at'])->values();
 
         // Trips whose chats are already deleted stay under Past with a note (B1, Option A): the driver's own carpools and the ones the rider asked to join.
+        $goneSize = max(1, (int) config('carpool.past_page_size', 50));
         $seen = $boxes->map(fn ($b) => $b['listing']['id'])->all();
         $asked = CarpoolRequest::query()->where('rider_id', $user->id)->pluck('listing_id');
         $gone = CarpoolListing::query()->with('driver.user')->whereNotNull('chats_deleted_at')->whereNotIn('id', $seen)
             ->where(fn ($q) => $q->whereIn('id', $asked)->orWhereHas('driver', fn ($d) => $d->where('user_id', $user->id)))
-            ->orderByDesc('departs_at')->limit(50)->get()
+            ->orderByDesc('departs_at')->offset((max(1, $gonePage) - 1) * $goneSize)->limit($goneSize + 1)->get();
+        // One extra row tells us there are older trips to load (S12).
+        $goneMore = $gone->count() > $goneSize;
+        $gone = $gone->take($goneSize)
             ->map(fn (CarpoolListing $l) => ['listing' => $this->present->listingSummary($l), 'unread' => 0, 'conversations' => [], 'chats_deleted' => true]);
+        if ($gonePage > 1) {
+            // Page two and on bring only the older trips whose chats are gone.
+            return ['active' => [], 'past' => $gone->sortByDesc(fn ($b) => $b['listing']['departs_at'])->values()->all(), 'past_more' => $goneMore, 'unread' => 0, 'retention_days' => $this->retentionDays()];
+        }
         $past = $past->concat($gone)->sortByDesc(fn ($b) => $b['listing']['departs_at'])->values();
 
-        return ['active' => $active->all(), 'past' => $past->all(), 'unread' => (int) $active->sum('unread'), 'retention_days' => $this->retentionDays()];
+        return ['active' => $active->all(), 'past' => $past->all(), 'past_more' => $goneMore, 'unread' => (int) $active->sum('unread'), 'retention_days' => $this->retentionDays()];
     }
 
     /** Unread messages in live carpools, for the badges. One query, so the apps can ask often. */
@@ -141,16 +149,22 @@ class CarpoolChatService
     }
 
     /** @return array<string, mixed> */
-    public function thread(User $user, CarpoolConversation $c, int $afterId = 0): array
+    public function thread(User $user, CarpoolConversation $c, int $afterId = 0, int $beforeId = 0): array
     {
         $member = $this->memberOf($user, $c);
+        $size = max(1, (int) config('carpool.thread_page_size', 100));
         $messages = CarpoolMessage::query()->where('conversation_id', $c->id)->where('id', '>', $afterId)
-            ->orderByDesc('id')->limit(100)->get()->reverse()->values();
+            ->when($beforeId > 0, fn ($q) => $q->where('id', '<', $beforeId))
+            ->orderByDesc('id')->limit($size)->get()->reverse()->values();
+        // Are there older messages than the oldest one returned? (S12: the app offers "earlier messages".)
+        $oldest = $messages->first()?->id;
+        $hasMoreBefore = $oldest !== null && CarpoolMessage::query()->where('conversation_id', $c->id)->where('id', '<', $oldest)->where('id', '>', $afterId)->exists();
 
         return [
             'conversation' => $this->conversation($c, $user),
             'messages' => $messages->map(fn ($m) => $this->message($m, $user))->all(),
             'writable' => $this->writable($c, $user),
+            'has_more_before' => $hasMoreBefore,
             // Where this person had read up to, so the app can draw "N unread messages" (mockup 14).
             'last_read_message_id' => (int) $member->last_read_message_id,
             // The saved route, thinned, for the mini map on pickup cards (mockups 14, 7).

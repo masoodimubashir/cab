@@ -41,6 +41,8 @@ class CarpoolAdminAction extends Model
         'plan_delete' => 'Deleted a plan',
         'anonymise' => 'Account deleted, personal data removed',
         'ban_inherited' => 'Pause carried over from an earlier account',
+        'reason_add' => 'Added a report reason',
+        'reason_edit' => 'Changed a report reason',
     ];
 
     public function toEntry(): array

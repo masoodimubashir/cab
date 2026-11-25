@@ -18,7 +18,7 @@ class ChatController extends Controller
 
     public function inbox(Request $request): JsonResponse
     {
-        return response()->json($this->chat->inbox($request->user()));
+        return response()->json($this->chat->inbox($request->user(), max(1, $request->integer('gone_page', 1))));
     }
 
     public function unread(Request $request): JsonResponse
@@ -29,8 +29,9 @@ class ChatController extends Controller
     public function show(Request $request, CarpoolConversation $conversation): JsonResponse
     {
         $after = (int) $request->query('after', 0);
+        $before = (int) $request->query('before_id', 0);
 
-        return response()->json($this->chat->thread($request->user(), $conversation, $after));
+        return response()->json($this->chat->thread($request->user(), $conversation, $after, $before));
     }
 
     public function send(Request $request, CarpoolConversation $conversation): JsonResponse
@@ -79,9 +80,13 @@ class ChatController extends Controller
     {
         $data = $request->validate([
             'message_id' => ['nullable', 'integer'], 'user_id' => ['nullable', 'integer'], 'listing_id' => ['nullable', 'integer'],
-            'reason' => ['required', 'string', 'in:' . implode(',', CarpoolChatService::REASONS)],
+            'reason' => ['required', 'string', 'max:40'],
             'details' => ['nullable', 'string', 'max:1000'],
         ]);
+        // S9: only reasons the admin has turned on, and only where they apply (on a message, or on a person).
+        if (! \App\Models\Carpool\CarpoolReportReason::allows($data['reason'], ! empty($data['message_id']) ? 'message' : 'person')) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['reason' => 'Pick one of the listed reasons.']);
+        }
         $this->chat->report($request->user(), $data);
 
         return response()->json(['ok' => true], 201);

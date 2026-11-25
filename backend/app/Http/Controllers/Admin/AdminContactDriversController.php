@@ -98,8 +98,13 @@ class AdminContactDriversController
             ]);
         }
 
-        $rows = Driver::query()
-            ->commercial()
+        // W11: match the driver type chosen on the screen (commercial when none is sent, as before).
+        $matching = match ((string) $request->input('audience', 'commercial')) {
+            'carpool' => Driver::query()->carpool(),
+            'all' => Driver::query(),
+            default => Driver::query()->commercial(),
+        };
+        $rows = $matching
             ->with(['user'])
             ->whereIn('id', $ids)
             ->get()

@@ -366,6 +366,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
             Route::post('/banned-words', [$c, 'addWord']);
             Route::post('/banned-words/bulk', [$c, 'addWords']);
             Route::patch('/banned-words/{word}', [$c, 'updateWord']);
+            Route::post('/report-reasons', [$c, 'addReason']);
+            Route::patch('/report-reasons/{reason}', [$c, 'updateReason']);
             Route::delete('/banned-words/{word}', [$c, 'deleteWord']);
         });
     });

@@ -230,8 +230,9 @@ class CarpoolListingService
      * - upcoming: not started and leaving after today;
      * - past: completed or cancelled, or leaving before today.
      */
-    public function listFor(Driver $driver, string $filter): Collection
+    public function listFor(Driver $driver, string $filter, int $page = 1, bool $peek = false): Collection
     {
+        $size = max(1, (int) config('carpool.past_page_size', 50));
         $today = CarpoolClock::today();
         $dayStart = CarpoolClock::startOfDay($today);
         $dayEnd = CarpoolClock::endOfDay($today);
@@ -245,7 +246,7 @@ class CarpoolListingService
             'past' => $q->where(fn ($w) => $w
                 ->whereIn('status', [CarpoolListing::STATUS_COMPLETED, CarpoolListing::STATUS_CANCELLED])
                 ->orWhere(fn ($t) => $t->where('status', CarpoolListing::STATUS_PUBLISHED)->where('departs_at', '<', $dayStart)))
-                ->orderByDesc('departs_at')->limit(50)->get(),
+                ->orderByDesc('departs_at')->offset((max(1, $page) - 1) * $size)->limit($size + ($peek ? 1 : 0))->get(),
             default => $q->where('status', CarpoolListing::STATUS_PUBLISHED)->where('departs_at', '>', $dayEnd)
                 ->orderBy('departs_at')->get(),
         };

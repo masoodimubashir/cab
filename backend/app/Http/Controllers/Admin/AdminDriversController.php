@@ -148,6 +148,9 @@ class AdminDriversController
         $query = $this->buildIndexQuery($request);
         $state = strtolower((string) $request->query('state', 'active'));
         $filename = 'drivers-' . $state . '-' . now()->format('Ymd-His') . '.csv';
+        if ($request->query('type') === 'carpool') {
+            return app(\App\Services\Carpool\CarpoolDriversCsv::class)->download($query, $filename); // W11: carpool columns
+        }
 
         $columns = [
             'driver_id', 'name', 'phone', 'email', 'vehicle_type', 'vehicle_reg_no',

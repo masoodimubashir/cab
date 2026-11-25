@@ -164,11 +164,14 @@ class RiderController extends Controller
     /** My trips (customer 8, 8l): every request the rider made, newest first. */
     public function trips(Request $request): JsonResponse
     {
-        $rows = CarpoolRequest::query()->where('rider_id', $request->user()->id)
-            ->with(['listing.driver.user'])->orderByDesc('id')->limit(100)->get()
-            ->filter(fn (CarpoolRequest $r) => $r->listing !== null);
+        $size = max(1, (int) config('carpool.trips_page_size', 100));
+        $page = max(1, $request->integer('page', 1));
+        $fetched = CarpoolRequest::query()->where('rider_id', $request->user()->id)
+            ->with(['listing.driver.user'])->orderByDesc('id')->offset(($page - 1) * $size)->limit($size + 1)->get();
+        $hasMore = $fetched->count() > $size; // one extra row tells us there is a next page (S12)
+        $rows = $fetched->take($size)->filter(fn (CarpoolRequest $r) => $r->listing !== null);
 
-        return response()->json(['data' => $rows->map(function (CarpoolRequest $r) {
+        return response()->json(['meta' => ['page' => $page, 'has_more' => $hasMore], 'data' => $rows->map(function (CarpoolRequest $r) {
             $l = $r->listing;
             $driver = $this->present->driver($l);
 

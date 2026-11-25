@@ -64,8 +64,8 @@ class AdminCarpoolOverviewController
                 continue;
             }
             $days[$k]['carpools']++;
-            $days[$k]['seats_offered'] += $l->status === CarpoolListing::STATUS_CANCELLED ? 0 : (int) $l->seats_total;
             if ($l->status === CarpoolListing::STATUS_COMPLETED) {
+                $days[$k]['seats_offered'] += (int) $l->seats_total; // only finished carpools could have been filled (F29-2)
                 $days[$k]['completed']++;
                 $days[$k]['riders'] += (int) ($riderCount[$l->id] ?? 0);
             } elseif ($l->status === CarpoolListing::STATUS_CANCELLED) {
@@ -100,7 +100,7 @@ class AdminCarpoolOverviewController
                 'published_in_period' => $listings()->where('created_at', '>=', $start)->where('created_at', '<', $end)->count(),
             ],
             'seats' => [
-                'offered' => (int) $departing->where('status', '!=', CarpoolListing::STATUS_CANCELLED)->sum('seats_total'),
+                'offered' => (int) $completed->sum('seats_total'),
                 'filled' => (int) $carried->sum('seats'),
             ],
             'riders' => [

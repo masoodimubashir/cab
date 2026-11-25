@@ -26,7 +26,8 @@ use Illuminate\Validation\ValidationException;
 class CarpoolSearchService
 {
     private const WALK_STEP_M = 500;
-    private const MAX_CANDIDATES = 300;
+    /** Set by candidates(): did the day have more carpools than the search looked at (S12)? */
+    private bool $truncated = false;
 
     public function __construct(private CarpoolPresenter $present)
     {
@@ -51,12 +52,15 @@ class CarpoolSearchService
         $maxM = (float) CarpoolSetting::current()->search_distance_m;
         $seats = (int) $q['seats'];
         $listings = $this->candidates($rider, $q, CarpoolClock::startOfDay($q['date']), CarpoolClock::endOfDay($q['date']), $maxM);
+        $truncated = $this->truncated;
         $results = $this->matches($rider, $listings, $q, $seats, $maxM);
 
         return [
             'results' => $results,
             'other_days' => $results ? [] : $this->otherDays($rider, $q, $seats, $maxM, $today, $last),
             'distance_m' => (int) $maxM,
+            // True when the day has more carpools than the search looked at: the earliest ones are shown (S12).
+            'truncated' => $truncated,
         ];
     }
 
@@ -78,7 +82,11 @@ class CarpoolSearchService
                 ->where('min_lng', '<=', $lng + $dLng)->where('max_lng', '>=', $lng - $dLng);
         }
 
-        return $query->orderBy('departs_at')->limit(self::MAX_CANDIDATES)->get();
+        $cap = max(1, (int) config('carpool.search_max_candidates', 300));
+        $rows = $query->orderBy('departs_at')->limit($cap + 1)->get();
+        $this->truncated = $rows->count() > $cap;
+
+        return $rows->take($cap);
     }
 
     /**

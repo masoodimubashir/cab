@@ -117,11 +117,13 @@ class AdminCarpoolController
                 'asked_at' => $r->created_at?->toIso8601String(), 'answered_at' => $r->answered_at?->toIso8601String(),
                 'picked_up_at' => $r->picked_up_at?->toIso8601String(), 'dropped_at' => $r->dropped_at?->toIso8601String(),
                 'no_show_at' => $r->no_show_at?->toIso8601String(), 'ended_at' => $r->ended_at?->toIso8601String(),
-                'can_remove' => in_array($listing->status, CarpoolListing::LIVE, true) && in_array($r->status, CarpoolRequest::ACTIVE, true) && ! $r->picked_up_at,
+                // Not offered on a carpool that was never started and whose departure has passed: the job cancels it (F29-4).
+                'can_remove' => in_array($listing->status, CarpoolListing::LIVE, true) && in_array($r->status, CarpoolRequest::ACTIVE, true) && ! $r->picked_up_at
+                    && ! ($listing->status === CarpoolListing::STATUS_PUBLISHED && $listing->departs_at->lt(now())),
                 'can_correct' => $listing->status === CarpoolListing::STATUS_COMPLETED && in_array($r->status, [CarpoolRequest::STATUS_COMPLETED, CarpoolRequest::STATUS_NO_SHOW], true),
             ]); // The rider code is never shown.
         $reports = CarpoolReport::query()->where('listing_id', $listing->id)->orderByDesc('id')->get()
-            ->map(fn ($r) => ['id' => $r->id, 'reason' => $r->reason, 'status' => $r->status, 'created_at' => $r->created_at?->toIso8601String()]);
+            ->map(fn ($r) => ['id' => $r->id, 'reason' => $r->reason, 'reason_label' => $this->reasonLabel($r->reason), 'status' => $r->status, 'created_at' => $r->created_at?->toIso8601String()]);
 
         return response()->json(['data' => $this->listingRow($listing) + [
             'cancel_note' => $listing->cancel_note,
@@ -254,7 +256,7 @@ class AdminCarpoolController
         $data = $request->validate([
             'tab' => ['sometimes', 'in:open,closed'],
             'city_id' => ['sometimes', 'nullable', 'integer'],
-            'reason' => ['sometimes', 'nullable', 'in:' . implode(',', CarpoolChatService::REASONS)],
+            'reason' => ['sometimes', 'nullable', 'in:' . implode(',', \App\Models\Carpool\CarpoolReportReason::allKeys())],
             'search' => ['sometimes', 'nullable', 'string', 'max:80'],
             'date_from' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'date_to' => ['sometimes', 'nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
@@ -290,7 +292,8 @@ class AdminCarpoolController
         return response()->json([
             'data' => $page->getCollection()->map(fn ($r) => $this->reportRow($r))->values(),
             'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'total' => $page->total()],
-            'reasons' => CarpoolChatService::REASONS,
+            'reasons' => \App\Models\Carpool\CarpoolReportReason::allKeys(),
+            'reason_labels' => \App\Models\Carpool\CarpoolReportReason::labels(),
         ]);
     }
 
@@ -300,7 +303,7 @@ class AdminCarpoolController
         $report->load(['reporter:id,name,phone', 'reported:id,name,phone', 'listing']);
         $earlier = CarpoolReport::query()->where('reported_user_id', $report->reported_user_id)->where('id', '!=', $report->id)
             ->orderByDesc('id')->limit(20)->get()
-            ->map(fn ($r) => ['id' => $r->id, 'created_at' => $r->created_at?->toIso8601String(), 'reason' => $r->reason, 'status' => $r->status, 'listing_id' => $r->listing_id]);
+            ->map(fn ($r) => ['id' => $r->id, 'created_at' => $r->created_at?->toIso8601String(), 'reason' => $r->reason, 'reason_label' => $this->reasonLabel($r->reason), 'status' => $r->status, 'listing_id' => $r->listing_id]);
         $l = $report->listing;
 
         return response()->json(['data' => $this->reportRow($report) + [
@@ -357,9 +360,20 @@ class AdminCarpoolController
             'reported_person_phone' => $r->reported?->phone,
             'reported_user_id' => $r->reported_user_id,
             'reason' => $r->reason,
+            'reason_label' => $this->reasonLabel($r->reason),
             'listing_id' => $r->listing_id,
             'status' => $r->status,
         ];
+    }
+
+    private ?array $reasonLabels = null;
+
+    /** The admin's current label for a report reason (also for reasons that have been turned off). */
+    private function reasonLabel(?string $key): string
+    {
+        $this->reasonLabels ??= \App\Models\Carpool\CarpoolReportReason::labels();
+
+        return \App\Models\Carpool\CarpoolReportReason::labelFor($key, $this->reasonLabels);
     }
 
     // ---- Bans (from Reports, Drivers, Customers and People) ----
@@ -377,8 +391,9 @@ class AdminCarpoolController
     public function ban(Request $request, User $user): JsonResponse
     {
         CarpoolAdminScope::assertPerson($user);
-        $data = $request->validate(['note' => ['required', 'string', 'min:3', 'max:255']]);
-        $impact = $this->admin->ban($user, $data['note']);
+        $data = $request->validate(['note' => ['required', 'string', 'min:3', 'max:255'], 'cancel_upcoming' => ['sometimes', 'boolean']]);
+        // S10 (D-11): the admin chooses whether upcoming carpools and seats end with the pause (default: yes, as before).
+        $impact = $this->admin->ban($user, $data['note'], (bool) ($data['cancel_upcoming'] ?? true));
 
         return response()->json(['message' => 'Carpool access paused.', 'data' => $impact]);
     }
@@ -497,11 +512,68 @@ class AdminCarpoolController
             'kill_switch' => (bool) config('carpool.kill_switch'),
             'banned_words' => CarpoolBannedWord::query()->orderBy('word')->get(['id', 'word', 'active']),
             'banned_words_max' => CarpoolBannedWord::MAX_WORDS,
+            'report_reasons' => $this->reasonsPayload(),
             'can_edit' => (bool) $request->user()?->hasPermission('carpool_settings'),
             'jobs' => CarpoolJobStatus::all(),
-            'history' => \App\Models\Carpool\CarpoolAdminAction::query()->whereIn('target_type', ['settings', 'word'])
+            'history' => \App\Models\Carpool\CarpoolAdminAction::query()->whereIn('target_type', ['settings', 'word', 'reason'])
                 ->orderByDesc('id')->limit(20)->get()->map->toEntry()->values(),
         ];
+    }
+
+    /** @return list<array<string, mixed>> every reason, with how many reports used it */
+    private function reasonsPayload(): array
+    {
+        $used = CarpoolReport::query()->selectRaw('reason, count(*) n')->groupBy('reason')->pluck('n', 'reason');
+
+        return \App\Models\Carpool\CarpoolReportReason::query()->orderBy('sort')->orderBy('id')->get()->map(fn ($r) => [
+            'id' => $r->id, 'key' => $r->key, 'label' => $r->label, 'applies_to' => $r->applies_to,
+            'active' => (bool) $r->active, 'reports' => (int) ($used[$r->key] ?? 0),
+        ])->all();
+    }
+
+    public function addReason(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'label' => ['required', 'string', 'min:3', 'max:60'],
+            'applies_to' => ['required', 'in:' . implode(',', \App\Models\Carpool\CarpoolReportReason::APPLIES)],
+        ]);
+        $label = trim($data['label']);
+        $reason = \App\Models\Carpool\CarpoolReportReason::query()->create([
+            'key' => \App\Models\Carpool\CarpoolReportReason::newKey($label), 'label' => $label, 'applies_to' => $data['applies_to'],
+            'active' => true, 'sort' => (int) \App\Models\Carpool\CarpoolReportReason::query()->max('sort') + 1,
+        ]);
+        CarpoolAdminLog::record('reason_add', 'reason', $reason->id, ['after' => ['label' => $label, 'applies_to' => $reason->applies_to]]);
+
+        return response()->json(['data' => $this->reasonRow($reason)], 201);
+    }
+
+    public function updateReason(Request $request, \App\Models\Carpool\CarpoolReportReason $reason): JsonResponse
+    {
+        $data = $request->validate([
+            'label' => ['sometimes', 'string', 'min:3', 'max:60'],
+            'applies_to' => ['sometimes', 'in:' . implode(',', \App\Models\Carpool\CarpoolReportReason::APPLIES)],
+            'active' => ['sometimes', 'boolean'],
+        ]);
+        $before = $reason->only(['label', 'applies_to', 'active']);
+        DB::transaction(function () use ($reason, $data) {
+            $reason->fill(array_filter(['label' => isset($data['label']) ? trim($data['label']) : null, 'applies_to' => $data['applies_to'] ?? null], fn ($v) => $v !== null));
+            if (array_key_exists('active', $data)) {
+                $reason->active = (bool) $data['active'];
+            }
+            $reason->save();
+            if (! \App\Models\Carpool\CarpoolReportReason::leavesBothKindsCovered()) {
+                abort(422, 'Keep at least one reason on for reports about a person and one for reports about a message.');
+            }
+        });
+        CarpoolAdminLog::record('reason_edit', 'reason', $reason->id, ['before' => $before, 'after' => $reason->only(['label', 'applies_to', 'active'])]);
+
+        return response()->json(['data' => $this->reasonRow($reason->fresh())]);
+    }
+
+    private function reasonRow(\App\Models\Carpool\CarpoolReportReason $r): array
+    {
+        return ['id' => $r->id, 'key' => $r->key, 'label' => $r->label, 'applies_to' => $r->applies_to, 'active' => (bool) $r->active,
+            'reports' => CarpoolReport::query()->where('reason', $r->key)->count()];
     }
 
     public function addWord(Request $request): JsonResponse

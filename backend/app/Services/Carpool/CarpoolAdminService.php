@@ -110,7 +110,7 @@ class CarpoolAdminService
      * requests end. Carpools already on the road are not touched. Normal rides
      * are not affected.
      */
-    public function ban(User $user, string $note): array
+    public function ban(User $user, string $note, bool $cancelUpcoming = true): array
     {
         $impact = $this->banImpact($user);
         DB::transaction(function () use ($user, $note) {
@@ -119,11 +119,14 @@ class CarpoolAdminService
             $user->save();
             CarpoolAccess::rememberNumber($user); // so a deleted-and-returned account stays paused (B-02)
         });
-        if ($driver = $this->driverOf($user)) {
-            $this->cancelUpcomingOf($driver);
+        if ($cancelUpcoming) {
+            if ($driver = $this->driverOf($user)) {
+                $this->cancelUpcomingOf($driver);
+            }
+            $this->endRiderSide($user);
         }
-        $this->endRiderSide($user);
-        CarpoolAdminLog::record('ban', 'user', $user->id, ['subject_user_id' => $user->id, 'note' => $note, 'after' => $impact]);
+        // A pause is about the person, so it applies in every city; the log says which cities the admin manages (F29-1).
+        CarpoolAdminLog::record('ban', 'user', $user->id, ['subject_user_id' => $user->id, 'note' => $note, 'after' => $impact + ['admin_cities' => CarpoolAdminScope::cities() ?? 'all', 'cancelled_upcoming' => $cancelUpcoming]]);
 
         return $impact;
     }

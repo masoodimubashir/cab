@@ -44,19 +44,25 @@ Schedule::command('subscriptions:notify-expiring')
 // Carpool chats are deleted a set time after the trip ends (M5).
 Schedule::command('carpool:prune-chats')
     ->hourly()
-    ->withoutOverlapping()
+    ->withoutOverlapping(30)
     ->runInBackground();
 
 // Carpool lifecycle jobs (M6): missed departures at the end of the India day,
 // rides never completed, and the plan grace rule. Each does nothing while the kill switch is on.
 Schedule::command('carpool:lifecycle')
     ->hourly()
-    ->withoutOverlapping()
+    ->withoutOverlapping(30)
     ->runInBackground();
 
 Schedule::command('carpool:expire-requests')
     ->everyFiveMinutes()
-    ->withoutOverlapping()
+    ->withoutOverlapping(30)
+    ->runInBackground();
+
+// Tells the admins when the carpool jobs above have stopped (W7, F-01).
+Schedule::command('carpool:check-jobs')
+    ->everyThirtyMinutes()
+    ->withoutOverlapping(30)
     ->runInBackground();
 
 // Dispatch fixed forming vehicles that are due.

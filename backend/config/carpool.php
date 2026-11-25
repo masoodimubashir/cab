@@ -28,6 +28,13 @@ return [
     // Pickup proposals must be this close to the route (P9, same check as Fixed pins).
     'pickup_max_distance_m' => (int) env('CARPOOL_PICKUP_MAX_DISTANCE_M', 300),
 
+    // List sizes (S12). Each list is shown in pages of this size; the apps ask for the next page.
+    'trips_page_size' => (int) env('CARPOOL_TRIPS_PAGE_SIZE', 100),
+    'past_page_size' => (int) env('CARPOOL_PAST_PAGE_SIZE', 50),
+    'thread_page_size' => (int) env('CARPOOL_THREAD_PAGE_SIZE', 100),
+    // The search looks at the earliest this many carpools of the day and says so when there are more.
+    'search_max_candidates' => (int) env('CARPOOL_SEARCH_MAX_CANDIDATES', 300),
+
     // Chat message length limit (P9: 1,000 characters, fixed in code, not an admin setting).
     'message_max_chars' => 1000,
 

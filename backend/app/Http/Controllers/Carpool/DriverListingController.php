@@ -66,10 +66,15 @@ class DriverListingController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $filter = $request->validate(['filter' => ['nullable', 'in:upcoming,today,past']])['filter'] ?? 'upcoming';
+        $in = $request->validate(['filter' => ['nullable', 'in:upcoming,today,past'], 'page' => ['nullable', 'integer', 'min:1']]);
+        $filter = $in['filter'] ?? 'upcoming';
         $driver = $this->listings->driverFor($request->user());
+        $size = max(1, (int) config('carpool.past_page_size', 50));
+        $rows = $this->listings->listFor($driver, $filter, (int) ($in['page'] ?? 1), true);
+        // Only the past list is paged (S12); one extra row tells us there is a next page.
+        $hasMore = $filter === 'past' && $rows->count() > $size;
 
-        return response()->json(['data' => $this->listings->listFor($driver, $filter)->map(fn ($l) => $this->shape($l))->values()]);
+        return response()->json(['meta' => ['has_more' => $hasMore], 'data' => $rows->take($filter === 'past' ? $size : $rows->count())->map(fn ($l) => $this->shape($l))->values()]);
     }
 
     public function show(Request $request, CarpoolListing $listing): JsonResponse
