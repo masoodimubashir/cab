@@ -210,8 +210,11 @@ export class AppComponent implements OnInit {
       operations.push({
         label: 'Carpool', icon: 'car',
         children: [
+          { label: 'Overview', icon: 'chart-bar', route: '/carpool/overview' },
           { label: 'Listings', icon: 'road', route: '/carpool/listings' },
           { label: 'Reports', icon: 'alert-triangle', route: '/carpool/reports' },
+          { label: 'People', icon: 'users', route: '/carpool/people' },
+          { label: 'Plans', icon: 'star', route: '/carpool/plans' },
           { label: 'Settings', icon: 'cog', route: '/carpool/settings' },
         ],
       });

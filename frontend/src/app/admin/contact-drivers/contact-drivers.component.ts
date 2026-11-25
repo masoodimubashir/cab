@@ -96,7 +96,7 @@ interface SendResult {
             </button>
             <ul class="state-select__menu" *ngIf="audienceOpen" role="listbox" (click)="$event.stopPropagation()">
               <li
-                *ngFor="let opt of audienceOptions"
+                *ngFor="let opt of shownAudienceOptions"
                 class="state-select__option"
                 [class.is-selected]="audience === opt.value"
                 role="option"
@@ -715,8 +715,21 @@ export class ContactDriversComponent implements OnInit {
   driverType: string = 'commercial';
   readonly driverTypeOptions = [{ label: 'Carpool', value: 'carpool' }, { label: 'All types', value: 'all' }];
 
+  /**
+   * Carpool drivers are never online, free or on a trip in the commercial sense, and the CSV upload
+   * matches commercial drivers only, so those choices are hidden when the type is Carpool.
+   * Commercial and All types keep every choice.
+   */
+  get shownAudienceOptions(): { value: AudienceKey; label: string }[] {
+    if (this.driverType !== 'carpool') return this.audienceOptions;
+    return this.audienceOptions.filter((o) => o.value === 'active' || o.value === 'deactivated');
+  }
+
   onDriverType(value: string): void {
     this.driverType = value === 'carpool' || value === 'all' ? value : 'commercial';
+    if (this.driverType === 'carpool' && this.audience !== 'active' && this.audience !== 'deactivated') {
+      this.audience = 'active';
+    }
     this.selectedIds = new Set();
     this.refreshAudience();
   }

@@ -131,7 +131,7 @@ const STATUS_OPTIONS: SelectOption<string>[] = [
         [pageSize]="pageSize"
         [pageSizes]="[10, 25, 50, 100]"
         [loading]="loading"
-        emptyTitle="No documents yet"
+        [emptyTitle]="typeView === 'carpool' ? 'No carpool documents yet' : 'No commercial documents yet'"
         emptyHint='Click "Create Document" to add one.'
         (pageChange)="onPageChange($event)"
         (pageSizeChange)="onPageSizeChange($event)"
@@ -143,6 +143,24 @@ const STATUS_OPTIONS: SelectOption<string>[] = [
           [(ngModel)]="search"
           (ngModelChange)="onSearchChange()"
         />
+
+        <!-- Commercial / Carpool switch. A document for "All drivers" shows in both. -->
+        <div slot="filters" class="type-switch" role="group" aria-label="Driver type">
+          <button
+            type="button"
+            class="type-switch__btn"
+            [class.is-active]="typeView === 'commercial'"
+            [attr.aria-pressed]="typeView === 'commercial'"
+            (click)="setTypeView('commercial')"
+          >Commercial <span class="type-switch__n">{{ countFor('commercial') }}</span></button>
+          <button
+            type="button"
+            class="type-switch__btn"
+            [class.is-active]="typeView === 'carpool'"
+            [attr.aria-pressed]="typeView === 'carpool'"
+            (click)="setTypeView('carpool')"
+          >Carpool <span class="type-switch__n">{{ countFor('carpool') }}</span></button>
+        </div>
 
         <tm-column key="id" label="ID" width="80">
           <ng-template let-row>
@@ -338,6 +356,18 @@ const STATUS_OPTIONS: SelectOption<string>[] = [
   `,
   styles: [`
     :host { display: block; }
+
+    .type-switch { display: inline-flex; padding: 3px; background: var(--tm-canvas-2); border-radius: var(--tm-radius-md); gap: 2px; }
+    .type-switch__btn {
+      display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 0; background: transparent;
+      color: var(--tm-text-muted); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+      border-radius: calc(var(--tm-radius-md) - 3px);
+      transition: background var(--tm-duration-fast) var(--tm-ease), color var(--tm-duration-fast) var(--tm-ease), box-shadow var(--tm-duration-fast) var(--tm-ease);
+    }
+    .type-switch__btn:hover:not(.is-active) { color: var(--tm-text); }
+    .type-switch__btn:focus-visible { outline: 2px solid var(--tm-green-deep); outline-offset: 1px; }
+    .type-switch__btn.is-active { background: var(--tm-surface); color: var(--tm-text); box-shadow: 0 1px 3px rgba(15, 20, 25, 0.08); }
+    .type-switch__n { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--tm-text-muted); }
 
     .page { display: flex; flex-direction: column; gap: var(--tm-space-5); }
     .page__hero {
@@ -625,6 +655,8 @@ export class DocumentsCatalogTabComponent implements OnInit, OnDestroy {
   loading = false;
 
   search = '';
+  /** Which driver type's documents the list shows. */
+  typeView: 'commercial' | 'carpool' = 'commercial';
   page = 1;
   pageSize = 25;
 
@@ -689,10 +721,27 @@ export class DocumentsCatalogTabComponent implements OnInit, OnDestroy {
     this.searchTimer = setTimeout(() => { this.page = 1; this.cdr.markForCheck(); }, 200);
   }
 
+  /** A document belongs to a driver type when it names it, or says "all drivers". Missing means commercial. */
+  private isFor(d: DocumentRow, type: 'commercial' | 'carpool'): boolean {
+    const a = d.applies_to ?? 'commercial';
+    return a === 'all' || a === type;
+  }
+
+  countFor(type: 'commercial' | 'carpool'): number {
+    return this.documents.filter((d) => this.isFor(d, type)).length;
+  }
+
+  setTypeView(type: 'commercial' | 'carpool'): void {
+    if (this.typeView === type) return;
+    this.typeView = type;
+    this.page = 1;
+  }
+
   get filteredRows(): DocumentRow[] {
     const term = this.search.trim().toLowerCase();
-    if (!term) return this.documents;
-    return this.documents.filter((d) => d.name.toLowerCase().includes(term));
+    const ofType = this.documents.filter((d) => this.isFor(d, this.typeView));
+    if (!term) return ofType;
+    return ofType.filter((d) => d.name.toLowerCase().includes(term));
   }
 
   get pagedRows(): DocumentRow[] {
@@ -740,6 +789,7 @@ export class DocumentsCatalogTabComponent implements OnInit, OnDestroy {
     this.editing = false;
     this.editingId = null;
     this.form = this.blankForm();
+    this.form.applies_to = this.typeView;
     this.formOpen = true;
   }
 

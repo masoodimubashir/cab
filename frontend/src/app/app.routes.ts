@@ -94,6 +94,10 @@ export const routes: Routes = [
   { path: 'carpool/listings', component: CarpoolListingsComponent, canActivate: [adminAuthGuard], data: { permission: 'carpool' } },
   { path: 'carpool/reports', component: CarpoolReportsComponent, canActivate: [adminAuthGuard], data: { permission: 'carpool' } },
   { path: 'carpool/settings', component: CarpoolSettingsComponent, canActivate: [adminAuthGuard], data: { permission: 'carpool' } },
+  { path: 'carpool', redirectTo: 'carpool/overview', pathMatch: 'full' },
+  { path: 'carpool/overview', loadComponent: () => import('./admin/carpool/carpool-overview.component').then((m) => m.CarpoolOverviewComponent), canActivate: [adminAuthGuard], data: { permission: 'carpool' } },
+  { path: 'carpool/people', loadComponent: () => import('./admin/carpool/carpool-people.component').then((m) => m.CarpoolPeopleComponent), canActivate: [adminAuthGuard], data: { permission: 'carpool' } },
+  { path: 'carpool/plans', loadComponent: () => import('./admin/carpool/carpool-plans.component').then((m) => m.CarpoolPlansComponent), canActivate: [adminAuthGuard], data: { permission: 'carpool' } },
   { path: 'contact-drivers', component: ContactDriversComponent, canActivate: [adminAuthGuard], data: { permission: 'contact_drivers' } },
 
   { path: 'rides', component: RidesShellComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },

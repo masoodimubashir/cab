@@ -1,0 +1,286 @@
+import { TestBed } from '@angular/core/testing';
+import { of, throwError } from 'rxjs';
+import { ApiService } from '../../core/api.service';
+import { ToastService } from '../../core/toast.service';
+import { CarpoolSettingsComponent, parseWords } from './carpool-settings.component';
+
+const LIMITS = {
+  search_distance_km: { min: 1, max: 10, default: 2, unit: 'km', nullable: false },
+  auto_complete_hours: { min: 1, max: 48, default: 12, unit: 'hours', nullable: false },
+  chat_retention_days: { min: 1, max: 30, default: 1, unit: 'days', nullable: false },
+  publish_horizon_days: { min: 1, max: 90, default: 30, unit: 'days', nullable: false },
+  start_early_minutes: { min: 5, max: 720, default: 60, unit: 'minutes', nullable: false },
+  pending_expire_minutes: { min: 1, max: 180, default: 15, unit: 'minutes', nullable: false },
+  plan_grace_days: { min: 0, max: 7, default: 1, unit: 'days', nullable: false },
+  missed_departure_days: { min: 0, max: 1, default: 0, unit: 'days', nullable: false },
+  plan_warning_days: { min: 1, max: 14, default: 3, unit: 'days', nullable: false },
+  report_retention_days: { min: 30, max: 730, default: 180, unit: 'days', nullable: false },
+};
+
+function settings(over: Record<string, unknown> = {}) {
+  return {
+    version: 'v1',
+    enabled: true,
+    search_distance_km: 2,
+    auto_complete_hours: 12,
+    chat_retention_days: 1,
+    publish_horizon_days: 30,
+    start_early_minutes: 60,
+    pending_expire_minutes: 15,
+    plan_grace_days: 1,
+    missed_departure_days: 0,
+    plan_warning_days: 3,
+    report_retention_days: 180,
+    limits: LIMITS,
+    upcoming_carpools: 0,
+    carpools_on_the_road: 0,
+    waiting_requests: 0,
+    kill_switch: false,
+    banned_words: [],
+    banned_words_max: 500,
+    can_edit: true,
+    jobs: [],
+    history: [],
+    ...over,
+  };
+}
+
+describe('CarpoolSettingsComponent', () => {
+  let api: jasmine.SpyObj<ApiService>;
+  let toast: jasmine.SpyObj<ToastService>;
+  let c: CarpoolSettingsComponent;
+
+  function open(data = settings()): void {
+    api.get.and.returnValue(of({ data }) as any);
+    c = TestBed.runInInjectionContext(() => new CarpoolSettingsComponent(api, toast));
+    c.ngOnInit();
+  }
+
+  beforeEach(() => {
+    api = jasmine.createSpyObj<ApiService>('ApiService', ['get', 'patch', 'post', 'delete']);
+    toast = jasmine.createSpyObj<ToastService>('ToastService', ['success', 'error']);
+  });
+
+  it('shows the server values and starts with nothing to save', () => {
+    open();
+    expect(c.f.publish_horizon_days).toBe(30);
+    expect(c.f.missed_departure_days).toBe(0);
+    expect(c.dirty).toBeFalse();
+    expect(c.invalid).toBeFalse();
+  });
+
+  it('notices which settings were changed', () => {
+    open();
+    c.f.plan_grace_days = 3;
+    c.f.start_early_minutes = 45;
+    expect(c.dirty).toBeTrue();
+    expect(c.changedKeys).toEqual(['start_early_minutes', 'plan_grace_days']);
+    expect(c.isChanged('plan_grace_days')).toBeTrue();
+    expect(c.isChanged('publish_horizon_days')).toBeFalse();
+    c.discard();
+    expect(c.dirty).toBeFalse();
+    expect(c.f.plan_grace_days).toBe(1);
+  });
+
+  it('refuses values outside the limits the server sent, and blanks and decimals', () => {
+    open();
+    c.f.publish_horizon_days = 100;
+    expect(c.err('publish_horizon_days')).toBe('Enter a value from 1 to 90.');
+    expect(c.invalid).toBeTrue();
+    c.f.publish_horizon_days = 1.5;
+    expect(c.err('publish_horizon_days')).toContain('whole number');
+    c.f.publish_horizon_days = null as any;
+    expect(c.err('publish_horizon_days')).toContain('whole number');
+    c.f.publish_horizon_days = 90;
+    c.f.start_early_minutes = 4;
+    expect(c.err('start_early_minutes')).toBe('Enter a value from 5 to 720.');
+    c.f.start_early_minutes = 5;
+    expect(c.invalid).toBeFalse();
+  });
+
+  it('offers two choices for a carpool nobody started: end of the departure day or end of the next day', () => {
+    open();
+    expect(c.err('missed_departure_days')).toBeNull();
+    c.f.missed_departure_days = 1;
+    expect(c.isChanged('missed_departure_days')).toBeTrue();
+    expect(c.changedKeys).toEqual(['missed_departure_days']);
+    expect(c.err('missed_departure_days')).toBeNull();
+    c.discard();
+    expect(c.f.missed_departure_days).toBe(0);
+    expect(c.dirty).toBeFalse();
+  });
+
+  it('shows the choice the server already holds', () => {
+    open(settings({ missed_departure_days: 1 }));
+    expect(c.f.missed_departure_days).toBe(1);
+    expect(c.dirty).toBeFalse();
+  });
+
+  it('has a plain-words explanation for every setting, the switch and the banned words', () => {
+    open();
+    for (const g of c.groups) {
+      for (const r of g.rows) {
+        expect(c.tip(r.key).length).withContext(r.key).toBeGreaterThan(60);
+      }
+    }
+    expect(c.tips.enabled.length).toBeGreaterThan(60);
+    expect(c.tips.banned_words.length).toBeGreaterThan(60);
+  });
+
+  it('sends only the changed fields and the version it loaded', () => {
+    open();
+    api.patch.and.returnValue(of({ data: settings({ version: 'v2', plan_grace_days: 3 }) }) as any);
+    c.f.plan_grace_days = 3;
+    c.save();
+
+    expect(api.patch).toHaveBeenCalledOnceWith('/admin/carpool/settings', { plan_grace_days: 3, version: 'v1' });
+    expect(c.s?.version).toBe('v2');
+    expect(c.dirty).toBeFalse();
+    expect(toast.success).toHaveBeenCalled();
+  });
+
+  it('sends the missed-departure choice as 0 or 1', () => {
+    open(settings({ missed_departure_days: 1 }));
+    api.patch.and.returnValue(of({ data: settings({ version: 'v2' }) }) as any);
+    c.f.missed_departure_days = 0;
+    c.save();
+
+    expect(api.patch).toHaveBeenCalledOnceWith('/admin/carpool/settings', { missed_departure_days: 0, version: 'v1' });
+    expect(c.f.missed_departure_days).toBe(0);
+  });
+
+  it('asks first when a timing change reaches carpools that already exist', () => {
+    open(settings({ upcoming_carpools: 17, waiting_requests: 2 }));
+    c.f.start_early_minutes = 30;
+    c.save();
+    expect(c.askApply).toBeTrue();
+    expect(api.patch).not.toHaveBeenCalled();
+
+    api.patch.and.returnValue(of({ data: settings({ version: 'v2', start_early_minutes: 30 }) }) as any);
+    c.apply();
+    expect(api.patch).toHaveBeenCalledOnceWith('/admin/carpool/settings', { start_early_minutes: 30, version: 'v1' });
+    expect(c.askApply).toBeFalse();
+  });
+
+  it('saves a non-timing change without asking, even with carpools booked', () => {
+    open(settings({ upcoming_carpools: 17 }));
+    api.patch.and.returnValue(of({ data: settings({ version: 'v2', chat_retention_days: 5 }) }) as any);
+    c.f.chat_retention_days = 5;
+    c.save();
+    expect(c.askApply).toBeFalse();
+    expect(api.patch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not send anything while a value is invalid or nothing changed', () => {
+    open();
+    c.save();
+    c.f.publish_horizon_days = 500;
+    c.save();
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+
+  it('replaces its values and says so when someone else saved first (409)', () => {
+    open();
+    api.patch.and.returnValue(throwError(() => ({
+      status: 409,
+      error: { message: 'Settings were changed by someone else.', data: settings({ version: 'v9', plan_grace_days: 2 }) },
+    })));
+    c.f.chat_retention_days = 7;
+    c.save();
+
+    expect(c.s?.version).toBe('v9');
+    expect(c.f.plan_grace_days).toBe(2);           // their value is shown
+    expect(c.f.chat_retention_days).toBe(1);       // our unsaved edit is dropped
+    expect(c.dirty).toBeFalse();
+    expect(toast.error).toHaveBeenCalledWith(jasmine.stringContaining('changed by someone else'));
+  });
+
+  it('shows the server message for any other failure and keeps the typed values', () => {
+    open();
+    api.patch.and.returnValue(throwError(() => ({ status: 422, error: { errors: { plan_grace_days: ['The plan grace days must be between 0 and 7.'] } } })));
+    c.f.plan_grace_days = 3;
+    c.save();
+    expect(toast.error).toHaveBeenCalledWith('The plan grace days must be between 0 and 7.');
+    expect(c.f.plan_grace_days).toBe(3);
+  });
+
+  it('keeps unsaved edits when the Carpool enabled switch is saved', () => {
+    open();
+    api.patch.and.returnValue(of({ data: settings({ version: 'v2', enabled: true }) }) as any);
+    c.f.plan_grace_days = 4;
+    c.turnOff();
+    expect(api.patch).toHaveBeenCalledOnceWith('/admin/carpool/settings', { enabled: false, version: 'v1' });
+    expect(c.f.plan_grace_days).toBe(4);
+    expect(c.dirty).toBeTrue();
+  });
+  describe('banned words', () => {
+    const word = (id: number, w: string, active = true) => ({ id, word: w, active });
+    const bulk = (over: Record<string, unknown> = {}) => ({
+      data: { added: [], already_there: 0, skipped: [], skipped_count: 0, over_limit: 0, total: 0, max: 500, ...over },
+    });
+
+    it('reads a pasted list the way the server does', () => {
+      expect(parseWords('Fool, STUPID;idiot\n  dumb   head \n\n,a,fool')).toEqual(['fool', 'stupid', 'idiot', 'dumb head']);
+      expect(parseWords('')).toEqual([]);
+      expect(parseWords('x'.repeat(61))).toEqual([]);
+    });
+
+    it('counts only the words that would really be added', () => {
+      open(settings({ banned_words: [word(1, 'idiot')] }));
+      c.word = 'idiot, fool, fool, a';
+      expect(c.wordCount).toBe(1);
+      c.word = '';
+      expect(c.wordCount).toBe(0);
+    });
+
+    it('sends the pasted text, shows the new words in order and says what happened', () => {
+      open(settings({ banned_words: [word(1, 'idiot')] }));
+      api.post.and.returnValue(of(bulk({ added: [word(3, 'stupid'), word(2, 'fool')], already_there: 1, total: 3 })) as any);
+      c.word = 'Fool, stupid, idiot';
+      c.addWords();
+
+      expect(api.post).toHaveBeenCalledOnceWith('/admin/carpool/banned-words/bulk', { words: 'Fool, stupid, idiot' });
+      expect(c.s?.banned_words.map((w) => w.word)).toEqual(['fool', 'idiot', 'stupid']);
+      expect(c.word).toBe('');
+      expect(c.result).toEqual({ text: 'Added 2 words. 1 was already on the list.', warn: false });
+    });
+
+    it('warns when words were skipped or the list is full', () => {
+      open();
+      api.post.and.returnValue(of(bulk({ added: [word(2, 'fool')], skipped: ['a'], skipped_count: 1, over_limit: 3 })) as any);
+      c.word = 'fool, a, x1, x2, x3';
+      c.addWords();
+      expect(c.result?.warn).toBeTrue();
+      expect(c.result?.text).toContain('Skipped 1');
+      expect(c.result?.text).toContain('3 not added because the list is full (500 words)');
+    });
+
+    it('does nothing when there is nothing new to add', () => {
+      open(settings({ banned_words: [word(1, 'idiot')] }));
+      c.word = 'idiot';
+      c.addWords();
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it('keeps the typed text when adding fails', () => {
+      open();
+      api.post.and.returnValue(throwError(() => ({ status: 422, error: { message: 'The list is full.' } })));
+      c.word = 'fool';
+      c.addWords();
+      expect(c.word).toBe('fool');
+      expect(c.adding).toBeFalse();
+      expect(toast.error).toHaveBeenCalledWith('The list is full.');
+    });
+
+    it('searches the list without changing it', () => {
+      open(settings({ banned_words: [word(1, 'fool'), word(2, 'foolish'), word(3, 'idiot')] }));
+      c.wordFilter = 'FOOL';
+      expect(c.shownWords.map((w) => w.word)).toEqual(['fool', 'foolish']);
+      c.wordFilter = 'zzz';
+      expect(c.shownWords).toEqual([]);
+      c.wordFilter = '';
+      expect(c.shownWords.length).toBe(3);
+      expect(c.s?.banned_words.length).toBe(3);
+    });
+  });
+});

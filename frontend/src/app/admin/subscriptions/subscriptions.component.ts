@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
@@ -86,7 +87,7 @@ const PRICING_MODEL_OPTIONS: {
   selector: 'app-subscriptions',
   standalone: true,
   imports: [
-    CommonModule, FormsModule,
+    CommonModule, FormsModule, RouterLink,
     ButtonComponent, ColumnComponent, DataTableComponent,
     DrawerComponent, FilterPillComponent, FilterSelectComponent,
     IconComponent, InputComponent, ModalComponent,
@@ -279,11 +280,10 @@ const PRICING_MODEL_OPTIONS: {
             <span class="model-card__label">Commercial drivers</span>
             <span class="model-card__desc">Taxi plans, wallet or UPI</span>
           </button>
-          <button type="button" class="model-card" [class.is-on]="isCarpool" role="radio" [attr.aria-checked]="isCarpool"
-                  [disabled]="!!editingId" (click)="setAudience('carpool')">
+          <a class="model-card" routerLink="/carpool/plans" (click)="open = false">
             <span class="model-card__label">Carpool drivers</span>
-            <span class="model-card__desc">Days, no commission. UPI only. No auto-renew.</span>
-          </button>
+            <span class="model-card__desc">Carpool plans are managed in Carpool, Plans.</span>
+          </a>
         </div>
 
         <!-- Pricing model selector -->
@@ -556,6 +556,7 @@ const PRICING_MODEL_OPTIONS: {
       cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s;
     }
     .model-card:hover { border-color: var(--tm-text-muted); }
+    a.model-card { text-decoration: none; color: inherit; cursor: pointer; }
     .model-card.is-on {
       border-color: var(--tm-green); background: var(--tm-success-bg);
       box-shadow: 0 0 0 1px var(--tm-green) inset;
@@ -627,8 +628,9 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
   get meterFilterOptions(): { label: string; value: string }[] {
     return METER_OPTIONS.map((m) => ({ label: m.label, value: m.value }));
   }
+  /** Carpool plans moved to Carpool > Plans (2026-11-25), so this list shows commercial plans only. */
   get audienceFilterOptions(): { label: string; value: string }[] {
-    return [{ label: 'Carpool', value: 'carpool' }];
+    return [];
   }
 
   get isCarpool(): boolean {

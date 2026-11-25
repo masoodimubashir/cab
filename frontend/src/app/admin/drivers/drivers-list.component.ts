@@ -357,6 +357,7 @@ interface AllocationVehicle {
       <!-- =================== Reusable table =================== -->
       <tm-data-table
         class="drivers-table"
+        [class.drivers-table--carpool]="carpoolList"
         *ngIf="view === 'table'"
         [rows]="rows"
         [total]="total"
@@ -588,7 +589,7 @@ interface AllocationVehicle {
         </ng-container>
 
         <!-- ============ Columns ============ -->
-        <tm-column key="id" label="Driver ID" width="110">
+        <tm-column key="id" label="Driver ID" [width]="carpoolList ? '94px' : '110'">
           <ng-template let-row>
             <span class="cell-id cell-id--static">#{{ row.id }}</span>
           </ng-template>
@@ -614,7 +615,7 @@ interface AllocationVehicle {
           </ng-template>
         </tm-column>
 
-        <tm-column key="contact" label="Contact" width="240">
+        <tm-column key="contact" label="Contact" [width]="carpoolList ? '190px' : '240'">
           <ng-template let-row>
             <div class="cell-contact">
               <span class="cell-contact__email" [class.muted]="!row.user?.email">
@@ -625,7 +626,7 @@ interface AllocationVehicle {
           </ng-template>
         </tm-column>
 
-        <tm-column *ngIf="cityCounts" key="cities" label="Cities" width="130">
+        <tm-column *ngIf="cityCounts" key="cities" label="Cities" [width]="carpoolList ? '100px' : '130'">
           <ng-template let-row>
             @if (row.cities?.length > 1) {
               <button type="button" class="allocation-view" aria-haspopup="dialog"
@@ -637,7 +638,7 @@ interface AllocationVehicle {
             }
           </ng-template>
         </tm-column>
-        <tm-column key="assignments" label="Stand &amp; Route Assignments" width="220">
+        <tm-column *ngIf="!carpoolList" key="assignments" label="Stand &amp; Route Assignments" width="220">
           <ng-template let-row>
             <button type="button" class="allocation-view" title="View stand and route assignments"
                     (click)="allocationDriver = row">
@@ -655,7 +656,7 @@ interface AllocationVehicle {
             </button>
           </ng-template>
         </tm-column>
-        <tm-column key="registered_on" label="Registered" width="140">
+        <tm-column key="registered_on" label="Registered" [width]="carpoolList ? '112px' : '140'">
           <ng-template let-row>
             <span class="mono">
               {{ row.registered_on ? (row.registered_on | date:'MMM d, y') : '—' }}
@@ -663,7 +664,7 @@ interface AllocationVehicle {
           </ng-template>
         </tm-column>
 
-        <tm-column key="rides_7d_total" label="Rides (7d / total)" width="145">
+        <tm-column key="rides_7d_total" [label]="carpoolList ? 'Rides' : 'Rides (7d / total)'" [width]="carpoolList ? '90px' : '145'">
           <ng-template let-row>
             <span class="rides-chip" [class.is-zero]="!row.rides_7d && !row.total_rides"
                   title="Completed rides in the last 7 days / all completed rides">
@@ -672,7 +673,7 @@ interface AllocationVehicle {
           </ng-template>
         </tm-column>
 
-        <tm-column key="status" label="Status" width="135">
+        <tm-column key="status" label="Status" [width]="carpoolList ? '124px' : '135'">
           <ng-template let-row>
             @if (row.deactivated_at) {
               <span
@@ -704,7 +705,7 @@ interface AllocationVehicle {
           </ng-template>
         </tm-column>
 
-        <tm-column key="view" label="" width="64" align="right">
+        <tm-column key="view" label="" [width]="carpoolList ? '50px' : '64'" align="right">
           <ng-template let-row>
             <div class="id-pop" [class.is-open]="openPopoverId === row.id">
               <button
@@ -800,7 +801,7 @@ interface AllocationVehicle {
             </div>
           </ng-template>
         </tm-column>
-        <tm-column key="action" label="" width="64" align="right">
+        <tm-column key="action" label="" [width]="carpoolList ? '50px' : '64'" align="right">
           <ng-template let-row>
             <button
               type="button"
@@ -999,6 +1000,18 @@ interface AllocationVehicle {
       --tm-dt-cell-padding: 8px 10px;
       --driver-filter-height: 36px;
       container: driver-table / inline-size;
+    }
+    /* Carpool list only: the same columns and look as the commercial list (without Stand & Route Assignments, which carpool drivers do not have), in a fixed width so it never scrolls sideways. */
+    :host ::ng-deep .drivers-table--carpool .tm-dt__table { table-layout: fixed; }
+    :host ::ng-deep .drivers-table--carpool .tm-dt__table th { overflow: hidden; text-overflow: ellipsis; }
+    .drivers-table--carpool .cell-user { display: flex; }
+    .drivers-table--carpool .cell-user__meta { flex: 1; }
+    .drivers-table--carpool .cell-user__name { display: block; }
+    .drivers-table--carpool .type-badge { display: none; }
+    .drivers-table--carpool .cell-user__sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @container driver-table (max-width: 940px) {
+      :host ::ng-deep .drivers-table--carpool .tm-dt__table th:nth-child(5),
+      :host ::ng-deep .drivers-table--carpool .tm-dt__table td:nth-child(5) { display: none; }
     }
     .allocation-view { padding: 0; border: 0; background: transparent; color: var(--tm-green-deep); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
     .driver-cities__summary {
@@ -2092,6 +2105,11 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /** Driver type filter (Carpool.md section 10); 'all' shows both types. */
   driverType: 'commercial' | 'carpool' | 'all' = 'commercial';
+
+  /** True only while the Carpool filter is chosen: that list is laid out compactly. */
+  get carpoolList(): boolean {
+    return this.driverType === 'carpool';
+  }
   readonly driverTypeOptions = [
     { value: 'commercial', label: 'Commercial' },
     { value: 'carpool', label: 'Carpool' },

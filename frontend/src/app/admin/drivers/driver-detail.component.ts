@@ -10,6 +10,7 @@ import { MultiSelectModule } from 'primeng/multiselect';
 import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
 import { CarpoolAccessComponent } from '../carpool/carpool-access.component';
+import { CarpoolCarEditComponent, CarpoolCar } from '../carpool/carpool-car-edit.component';
 import { DriverRouteGroupsPanelComponent } from './driver-route-groups-panel.component';
 import {
   ButtonComponent,
@@ -81,6 +82,7 @@ interface DriverProfile {
     plan_active_until: string | null;
     published: number;
     completed: number;
+    total?: number;
     rating_avg: number | null;
     rating_count: number;
     comments: { score: number; comment: string; created_at: string }[];
@@ -130,6 +132,7 @@ const BLOCK_REASONS = [
   standalone: true,
   imports: [
     CarpoolAccessComponent,
+    CarpoolCarEditComponent,
     CommonModule,
     FormsModule,
     MultiSelectModule,
@@ -197,7 +200,7 @@ const BLOCK_REASONS = [
               <tm-status-pill *ngIf="!profile.is_online" tone="neutral">Offline</tm-status-pill>
               <span *ngIf="profile.active_subscription" class="plan-tag">
                 <tm-icon name="shield" [size]="11" />
-                {{ profile.active_subscription.plan_title }} ({{ profile.active_subscription.commission_percent }}% Comm)
+                {{ profile.active_subscription.plan_title }}<ng-container *ngIf="profile.driver_type !== 'carpool'"> ({{ profile.active_subscription.commission_percent }}% Comm)</ng-container>
               </span>
               <tm-status-pill *ngIf="profile.is_suspended" tone="danger">Blocked</tm-status-pill>
             </div>
@@ -212,7 +215,7 @@ const BLOCK_REASONS = [
               <span class="meta-dot" *ngIf="profile.email">·</span>
               <span class="meta-item mono"><tm-icon name="car" [size]="12" /> {{ profile.vehicle_reg_no || 'No reg' }} {{ profile.vehicle_model ? '(' + profile.vehicle_model + ')' : '' }}</span>
               <span class="meta-dot">·</span>
-              <span class="meta-item"><tm-icon name="star" [size]="12" /> {{ profile.rating_count ? (profile.rating_avg | number:'1.1-1') + ' ★ (' + profile.rating_count + ')' : '5.0 ★' }}</span>
+              <span class="meta-item"><tm-icon name="star" [size]="12" /> {{ profile.driver_type === 'carpool' ? (profile.carpool?.rating_count ? (profile.carpool?.rating_avg | number:'1.1-1') + ' ★ (' + profile.carpool?.rating_count + ')' : 'No ratings yet') : (profile.rating_count ? (profile.rating_avg | number:'1.1-1') + ' ★ (' + profile.rating_count + ')' : '5.0 ★') }}</span>
               <span class="meta-dot">·</span>
               <span class="meta-item">Joined {{ profile.date_registered | date:'mediumDate' }}</span>
             </div>
@@ -291,10 +294,10 @@ const BLOCK_REASONS = [
         </div>
 
         <div class="spec-col">
-          <span class="sc-head"><tm-icon name="shield" [size]="12" /> Subscription Details</span>
+          <span class="sc-head"><tm-icon name="shield" [size]="12" /> {{ profile.driver_type === 'carpool' ? 'Carpool' : 'Subscription Details' }}</span>
           <ng-container *ngIf="profile.driver_type === 'carpool'">
             <div class="sc-row"><span class="sc-lbl">Plan:</span><span class="sc-val">{{ profile.carpool?.plan_active_until ? 'Active until ' + (profile.carpool?.plan_active_until | date:'mediumDate') : 'None' }}</span></div>
-            <div class="sc-row"><span class="sc-lbl">Carpools:</span><span class="sc-val">{{ profile.carpool?.published }} published, {{ profile.carpool?.completed }} completed</span></div>
+            <div class="sc-row"><span class="sc-lbl">Carpools:</span><span class="sc-val">{{ profile.carpool?.completed }} completed of {{ profile.carpool?.total }} ({{ profile.carpool?.published }} still published)</span></div>
             <div class="sc-row"><span class="sc-lbl">Rating:</span><span class="sc-val">{{ profile.carpool?.rating_avg ? profile.carpool?.rating_avg + ' (' + profile.carpool?.rating_count + ')' : (profile.carpool?.rating_count || 0) + ' ratings' }}</span></div>
           </ng-container>
           <ng-container *ngIf="profile.driver_type !== 'carpool' && profile.active_subscription; else noSubCol">
@@ -600,7 +603,23 @@ const BLOCK_REASONS = [
               </div>
             </div>
 
-            <div class="spec-panel">
+            <!-- Carpool drivers: their carpool car, with Edit car (Admin-Audit.md C-04, H-01). Commercial view unchanged. -->
+            <div class="spec-panel" *ngIf="profile.driver_type === 'carpool'">
+              <div class="spec-panel-head">
+                <tm-icon name="car" [size]="13" />
+                <h3>Carpool car</h3>
+                <button class="sp-edit-btn" (click)="carpoolCarOpen = true">Edit car</button>
+              </div>
+              <div class="sp-list">
+                <div class="sp-row"><span>City</span><strong>{{ profile.city_names || profile.city_name || '—' }}</strong></div>
+                <div class="sp-row"><span>Number plate</span><strong class="mono">{{ carpoolCar?.plate || profile.vehicle_reg_no || '—' }}</strong></div>
+                <div class="sp-row"><span>Car</span><strong>{{ carpoolCar ? carpoolCar.make + ' ' + carpoolCar.model : '—' }}</strong></div>
+                <div class="sp-row"><span>Colour</span><strong>{{ carpoolCar?.colour || '—' }}</strong></div>
+                <div class="sp-row"><span>Seats for riders</span><strong>{{ carpoolCar?.seats ?? '—' }}</strong></div>
+              </div>
+            </div>
+
+            <div class="spec-panel" *ngIf="profile.driver_type !== 'carpool'">
               <div class="spec-panel-head">
                 <tm-icon name="car" [size]="13" />
                 <h3>Vehicle & Fleet Specs</h3>
@@ -626,7 +645,20 @@ const BLOCK_REASONS = [
               </div>
             </div>
 
-            <div class="spec-panel">
+            <div class="spec-panel" *ngIf="profile.driver_type === 'carpool'">
+              <div class="spec-panel-head">
+                <tm-icon name="shield" [size]="13" />
+                <h3>Carpool plan</h3>
+              </div>
+              <div class="sp-list">
+                <div class="sp-row"><span>Plan</span><strong>{{ profile.carpool?.plan_active_until ? 'Active until ' + (profile.carpool?.plan_active_until | date:'mediumDate') : 'No running plan' }}</strong></div>
+                <div class="sp-row"><span>Commission</span><strong>None (carpool plans take no commission)</strong></div>
+                <div class="sp-row"><span>Carpools</span><strong>{{ profile.carpool?.completed }} completed of {{ profile.carpool?.total }} ({{ profile.carpool?.published }} still published)</strong></div>
+              </div>
+              <p class="text-muted" style="font-size: 12px; margin: 8px 0 0;"><a routerLink="/carpool/people" [queryParams]="{ open: profile.user_id }">Open the carpool summary</a> for trips, reports and history.</p>
+            </div>
+
+            <div class="spec-panel" *ngIf="profile.driver_type !== 'carpool'">
               <div class="spec-panel-head">
                 <tm-icon name="shield" [size]="13" />
                 <h3>Subscription Plan</h3>
@@ -893,7 +925,7 @@ const BLOCK_REASONS = [
     </tm-modal>
 
     <!-- =================== Edit Profile Drawer =================== -->
-    <tm-drawer [open]="editOpen" title="Edit Driver & Service Details" (closed)="editOpen = false">
+    <tm-drawer [open]="editOpen" [title]="profile?.driver_type === 'carpool' ? 'Edit Driver Details' : 'Edit Driver & Service Details'" (closed)="editOpen = false">
       <div slot="body" class="drawer-form-wrap" *ngIf="editForm">
         
         <div class="drawer-section-heading">Personal Details</div>
@@ -950,6 +982,8 @@ const BLOCK_REASONS = [
           />
         </div>
 
+        <p *ngIf="profile?.driver_type === 'carpool'" class="form-text-muted mt-4">Carpool drivers have no service modes or vehicle type. Edit the carpool car with "Edit car" on the Full Specifications tab.</p>
+        <ng-container *ngIf="profile?.driver_type !== 'carpool'">
         <div class="drawer-section-heading mt-4">Service &amp; Mode Settings</div>
         <div class="form-group-grid">
           <div class="form-group">
@@ -1001,6 +1035,7 @@ const BLOCK_REASONS = [
             <input class="form-control" type="text" [(ngModel)]="editForm.vehicle_color" maxlength="100" placeholder="e.g. White" />
           </div>
         </div>
+        </ng-container>
 
       </div>
 
@@ -1016,6 +1051,9 @@ const BLOCK_REASONS = [
         </div>
       </ng-container>
     </tm-drawer>
+
+    <app-carpool-car-edit *ngIf="profile?.driver_type === 'carpool'" [open]="carpoolCarOpen" [driverId]="profile!.id" [car]="carpoolCar"
+      (closed)="carpoolCarOpen = false" (saved)="carpoolCarOpen = false; reloadAfterCarEdit()"></app-carpool-car-edit>
 
     <!-- =================== Unsubscribe Modal =================== -->
     <tm-modal
@@ -1909,6 +1947,22 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // Edit profile drawer
   editOpen = false;
+  /** Carpool drivers only: the carpool car (read from Carpool > People) and the Edit car dialog. */
+  carpoolCarOpen = false;
+  carpoolCar: CarpoolCar | null = null;
+
+  private loadCarpoolCar(): void {
+    const userId = this.profile?.user_id;
+    if (!userId) return;
+    this.api.get<{ data: { driver: { car: CarpoolCar | null } | null } }>(`/admin/carpool/people/${userId}`).subscribe({
+      next: (r) => (this.carpoolCar = r.data.driver?.car ?? null),
+      error: () => (this.carpoolCar = null),
+    });
+  }
+
+  reloadAfterCarEdit(): void {
+    this.loadProfile();
+  }
   editSaving = false;
   serviceModeOptions: { value: DriverServiceMode; label: string }[] = [...DRIVER_SERVICE_MODE_OPTIONS];
   editForm: {
@@ -2619,6 +2673,9 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         this.unsubPush = this.profile?.push_unsubscribed ?? false;
         if (this.profile?.driver_type === 'carpool' && this.activeTab !== 'specs') {
           this.setTab('specs');
+        }
+        if (this.profile?.driver_type === 'carpool') {
+          this.loadCarpoolCar();
         }
       },
       error: (err) =>
