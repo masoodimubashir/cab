@@ -542,6 +542,8 @@ class SubscriptionService
             ->whereNotNull('expires_at')
             ->whereNull('notified_expiry_at')
             ->whereBetween('expires_at', [$now, $until])
+            // Carpool plans get their own reminder in carpool words (CarpoolPlanService::notifyEnding).
+            ->whereDoesntHave('plan', fn ($p) => $p->where('audience', SubscriptionPlan::AUDIENCE_CARPOOL))
             ->with(['driver', 'plan'])
             ->orderBy('id')
             ->chunkById(200, function ($subs) use (&$count, $now) {

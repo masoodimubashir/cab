@@ -32,6 +32,7 @@ interface Values {
   plan_grace_days: number;
   chat_retention_days: number;
   plan_warning_days: number;
+  plan_push_hours: number;
   report_retention_days: number;
 }
 type Key = keyof Values;
@@ -71,6 +72,7 @@ const TIPS: Record<Key | 'enabled' | 'banned_words', string> = {
   plan_grace_days: "This setting decides how many extra days a driver's carpools keep running after their plan ends. Example: with 1 day, a plan that ends on Friday still runs Saturday's carpools. Later ones are cancelled.",
   chat_retention_days: "This setting decides how long a chat is kept after its carpool is finished. After this many days the messages are deleted.",
   plan_warning_days: "This setting decides how many days before a plan ends the driver app starts showing \"Your plan ends soon\". Example: 3 days means a plan ending on Friday shows the warning from Tuesday.",
+  plan_push_hours: "This setting decides how many hours before a plan ends the driver gets one reminder on their phone. Example: 24 hours means a plan ending Friday 9 pm sends it on Thursday 9 pm. No reminder is sent when the driver's next plan is already waiting.",
   report_retention_days: "This setting decides how long a closed report keeps the reported message and its details. After this many days the text is cleared; the report, who reported whom and the outcome stay.",
   banned_words: "This list helps you block bad words in chat. Paste many at once, separated by commas or new lines. A message with one of these words shows dots instead. Switch a word off to pause it.",
 };
@@ -79,7 +81,7 @@ interface Group { id: string; title: string; desc: string; rows: Row[] }
 const KEYS: Key[] = [
   'search_distance_km', 'publish_horizon_days', 'start_early_minutes', 'pending_expire_minutes',
   'auto_complete_hours', 'missed_departure_days', 'plan_grace_days', 'chat_retention_days',
-  'plan_warning_days', 'report_retention_days',
+  'plan_warning_days', 'plan_push_hours', 'report_retention_days',
 ];
 /** Changing one of these reaches carpools that are already booked, so Save asks first. */
 const TIMING: Key[] = ['publish_horizon_days', 'start_early_minutes', 'pending_expire_minutes', 'missed_departure_days', 'plan_grace_days'];
@@ -444,6 +446,7 @@ export class CarpoolSettingsComponent implements OnInit, OnDestroy {
       desc: 'When drivers are warned about a plan ending, what happens after it ends, and how long chats and report text are kept.',
       rows: [
         { key: 'plan_warning_days', label: 'Plan ending warning', help: 'How many days before a plan ends the driver app starts warning the driver.' },
+        { key: 'plan_push_hours', label: 'Plan ending reminder', help: 'How many hours before a plan ends the driver gets one phone reminder. None when the next plan is waiting.' },
         { key: 'plan_grace_days', label: 'Plan grace', help: "Days after a plan's last day on which the driver's carpools still run. Later ones are cancelled." },
         { key: 'chat_retention_days', label: 'Chat retention', help: 'Chats of finished carpools are deleted after this many days.' },
         { key: 'report_retention_days', label: 'Report text kept for', help: 'Closed reports keep the reported message and details this long, then the text is cleared.' },

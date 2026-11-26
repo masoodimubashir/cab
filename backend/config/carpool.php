@@ -24,6 +24,8 @@ return [
 
     // A plan warning shows this many days before a plan ends (section 10, fixed values).
     'plan_warning_days' => (int) env('CARPOOL_PLAN_WARNING_DAYS', 3),
+    // Hours before a plan ends that the reminder push goes out (admin setting plan_push_hours since W4).
+    'plan_push_hours' => (int) env('CARPOOL_PLAN_PUSH_HOURS', 24),
 
     // Pickup proposals must be this close to the route (P9, same check as Fixed pins).
     'pickup_max_distance_m' => (int) env('CARPOOL_PICKUP_MAX_DISTANCE_M', 300),
@@ -105,6 +107,7 @@ return [
         'plan_grace_days' => 1,         // S4: plan end day plus 1 day
         'missed_departure_days' => 0, // S4: 0 = cancel at the end of the departure day, 1 = at the end of the next day
         'plan_warning_days' => 3,       // admin setting since 2026-11-25 (falls back to plan_warning_days above)
+        'plan_push_hours' => 24,        // admin setting since W4 (falls back to plan_push_hours above)
         'report_retention_days' => 180, // closed reports keep their message text this long
     ],
 

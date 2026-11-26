@@ -21,6 +21,7 @@ class CarpoolConfigTest extends TestCase
             'timezone' => 'Asia/Kolkata',
             'publish_horizon_days' => 30,
             'plan_warning_days' => 3,
+            'plan_push_hours' => 24,
             'pickup_max_distance_m' => 300,
             'message_max_chars' => 1000,
             'messages_per_minute' => 20,
@@ -54,7 +55,9 @@ class CarpoolConfigTest extends TestCase
                 'enabled' => false, 'search_distance_m' => 2000, 'auto_complete_hours' => 12, 'chat_retention_days' => 1,
                 'publish_horizon_days' => 30, 'start_early_minutes' => 60, 'pending_expire_minutes' => 15,
                 'plan_grace_days' => 1, 'missed_departure_days' => 0,
-                'plan_warning_days' => 3, 'report_retention_days' => 180, // admin settings since 2026-11-25, same values as before
+                'plan_warning_days' => 3, // admin setting since 2026-11-25, same value as before
+                'plan_push_hours' => 24, // W4: the shared push used 24 hours before
+                'report_retention_days' => 180,
             ],
             config('carpool.defaults')
         );

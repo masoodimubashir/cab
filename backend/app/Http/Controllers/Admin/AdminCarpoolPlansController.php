@@ -45,10 +45,10 @@ class AdminCarpoolPlansController
         $bought = DriverSubscription::query()->whereIn('subscription_plan_id', $ids)->groupBy('subscription_plan_id')
             ->selectRaw('subscription_plan_id, count(*) n')->pluck('n', 'subscription_plan_id');
         $running = DriverSubscription::query()->whereIn('subscription_plan_id', $ids)
-            ->where('status', DriverSubscription::STATUS_ACTIVE)->where('is_queued', false)->where('expires_at', '>', now())
+            ->where('status', DriverSubscription::STATUS_ACTIVE)->where('starts_at', '<=', now())->where('expires_at', '>', now())
             ->groupBy('subscription_plan_id')->selectRaw('subscription_plan_id, count(*) n')->pluck('n', 'subscription_plan_id');
         $waiting = DriverSubscription::query()->whereIn('subscription_plan_id', $ids)
-            ->where('status', DriverSubscription::STATUS_ACTIVE)->where('is_queued', true)
+            ->where('status', DriverSubscription::STATUS_ACTIVE)->where('is_queued', true)->where('starts_at', '>', now())
             ->groupBy('subscription_plan_id')->selectRaw('subscription_plan_id, count(*) n')->pluck('n', 'subscription_plan_id');
         $groupSize = $plans->countBy('title');
 

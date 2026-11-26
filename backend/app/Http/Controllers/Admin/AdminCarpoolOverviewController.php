@@ -123,7 +123,7 @@ class AdminCarpoolOverviewController
                 'signed_up' => (clone $driversQ)->where('created_at', '>=', $start)->where('created_at', '<', $end)->count(),
                 'waiting_approval' => (clone $driversQ)->where('approval_status', 'pending')->count(),
                 'approved' => (clone $driversQ)->where('approval_status', 'approved')->whereNull('deactivated_at')->count(),
-                'with_plan_now' => DriverSubscription::query()->where('status', DriverSubscription::STATUS_ACTIVE)->where('is_queued', false)
+                'with_plan_now' => DriverSubscription::query()->where('status', DriverSubscription::STATUS_ACTIVE)->where('starts_at', '<=', now())
                     ->where('expires_at', '>', now())
                     ->whereHas('plan', fn ($p) => $p->where('audience', SubscriptionPlan::AUDIENCE_CARPOOL))
                     ->whereIn('driver_user_id', (clone $driversQ)->select('user_id'))->distinct()->count('driver_user_id'),

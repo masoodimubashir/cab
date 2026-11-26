@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\Carpool\CarpoolJobStatus;
+use App\Services\Carpool\CarpoolPlanService;
 use App\Services\Carpool\CarpoolRideService;
 use App\Services\Carpool\CarpoolSwitch;
 use Illuminate\Console\Command;
@@ -12,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Carpool scheduled jobs (Carpool.md P8): cancel carpools not started by the
  * end of their departure day, complete rides left open past the setting's
- * hours, and apply the plan grace rule. All day rules use India time.
+ * hours, apply the plan grace rule and send the plan-ending reminder. All day rules use India time.
  * Each step runs on its own (one failing does not stop the others), and the
  * heartbeat is written only after the work (Admin-Audit.md F-03).
  */
@@ -24,7 +25,7 @@ class CarpoolLifecycle extends Command
 
     protected $description = 'Cancel missed carpools, auto-complete old rides and apply the plan grace rule';
 
-    public function handle(CarpoolRideService $rides): int
+    public function handle(CarpoolRideService $rides, CarpoolPlanService $plans): int
     {
         if (CarpoolSwitch::killed()) {
             return self::SUCCESS;
@@ -34,6 +35,7 @@ class CarpoolLifecycle extends Command
             'Missed departures cancelled' => fn () => $rides->cancelMissed(),
             'Rides auto-completed' => fn () => $rides->autoComplete(),
             'Cancelled by the grace rule' => fn () => $rides->applyGrace(),
+            'Plan ending reminders sent' => fn () => $plans->notifyEnding(),
         ];
         foreach ($steps as $label => $step) {
             try {

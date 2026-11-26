@@ -504,6 +504,7 @@ class AdminCarpoolController
             'plan_grace_days' => CarpoolSetting::number('plan_grace_days'),
             'missed_departure_days' => CarpoolSetting::missedDepartureDays(),
             'plan_warning_days' => CarpoolSetting::number('plan_warning_days'),
+            'plan_push_hours' => CarpoolSetting::number('plan_push_hours'),
             'report_retention_days' => CarpoolSetting::number('report_retention_days'),
             'limits' => CarpoolSetting::LIMITS,
             'upcoming_carpools' => CarpoolListing::query()->where('status', CarpoolListing::STATUS_PUBLISHED)->count(),

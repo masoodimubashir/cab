@@ -2,10 +2,12 @@
 
 namespace App\Services\Carpool;
 
+use App\Models\Carpool\CarpoolSetting;
 use App\Models\Driver;
 use App\Models\DriverSubscription;
 use App\Models\SubscriptionPlan;
 use App\Models\User;
+use App\Services\NotificationCenter;
 use App\Services\RazorpayService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -36,20 +38,64 @@ class CarpoolPlanService
             ->values();
     }
 
-    /** The running plan (not queued, not past its end), or null. */
+    /**
+     * The plan covering now, or null. A waiting plan counts from its stored start (the moment the plan
+     * before it ends), so publishing has no gap until the hourly shared sweep marks it started
+     * (Admin-Audit.md A-07, W4). When two rows cover now, the one that ends last wins.
+     */
     public function activePlan(User $user): ?DriverSubscription
     {
         return $this->carpoolRows($user)
-            ->where('is_queued', false)
             ->where('starts_at', '<=', now())
             ->where('expires_at', '>', now())
             ->orderByDesc('expires_at')
             ->first();
     }
 
+    /** The plan waiting to start (bought while another runs), or null once its start has come. */
     public function queuedPlan(User $user): ?DriverSubscription
     {
-        return $this->carpoolRows($user)->where('is_queued', true)->first();
+        return $this->carpoolRows($user)->where('is_queued', true)->where('starts_at', '>', now())->first();
+    }
+
+    /**
+     * Carpool plan-ending push (W4; A-08, A-09): once per plan, plan_push_hours before it ends, in carpool
+     * words, and nothing when the next plan is already waiting. The shared commercial reminder skips
+     * carpool rows. Run by the hourly carpool:lifecycle job. Returns how many were sent.
+     */
+    public function notifyEnding(): int
+    {
+        $now = now();
+        $sent = 0;
+        $rows = DriverSubscription::query()
+            ->where('status', DriverSubscription::STATUS_ACTIVE)
+            ->whereNull('notified_expiry_at')
+            ->where('starts_at', '<=', $now)
+            ->whereBetween('expires_at', [$now, $now->copy()->addHours(CarpoolSetting::number('plan_push_hours'))])
+            ->whereHas('plan', fn ($p) => $p->where('audience', SubscriptionPlan::AUDIENCE_CARPOOL))
+            ->with('driver')->orderBy('id')->get();
+        foreach ($rows as $sub) {
+            if (! $sub->driver) {
+                continue;
+            }
+            $nextWaiting = $this->carpoolRows($sub->driver)->where('id', '!=', $sub->id)
+                ->where('expires_at', '>', $sub->expires_at)->exists();
+            if (! $nextWaiting) {
+                app(NotificationCenter::class)->notify(
+                    $sub->driver,
+                    'carpool_plan_ending',
+                    'Your carpool plan ends soon',
+                    'Your carpool plan ends on ' . CarpoolClock::local($sub->expires_at)->format('j M, g:i a')
+                        . '. Buy your next plan to keep publishing carpools.',
+                    ['subscription_id' => $sub->id, 'expires_at' => $sub->expires_at->toIso8601String(), 'link' => '/carpool-signup/plans'],
+                );
+                $sent++;
+            }
+            $sub->notified_expiry_at = $now;
+            $sub->save();
+        }
+
+        return $sent;
     }
 
     /** The publish gate (M3 calls this). A plan is needed to publish; no free trial. */

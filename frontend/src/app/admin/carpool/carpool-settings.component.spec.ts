@@ -14,6 +14,7 @@ const LIMITS = {
   plan_grace_days: { min: 0, max: 7, default: 1, unit: 'days', nullable: false },
   missed_departure_days: { min: 0, max: 1, default: 0, unit: 'days', nullable: false },
   plan_warning_days: { min: 1, max: 14, default: 3, unit: 'days', nullable: false },
+  plan_push_hours: { min: 1, max: 72, default: 24, unit: 'hours', nullable: false },
   report_retention_days: { min: 30, max: 730, default: 180, unit: 'days', nullable: false },
 };
 
@@ -30,6 +31,7 @@ function settings(over: Record<string, unknown> = {}) {
     plan_grace_days: 1,
     missed_departure_days: 0,
     plan_warning_days: 3,
+    plan_push_hours: 24,
     report_retention_days: 180,
     limits: LIMITS,
     upcoming_carpools: 0,
@@ -137,6 +139,17 @@ describe('CarpoolSettingsComponent', () => {
     expect(c.s?.version).toBe('v2');
     expect(c.dirty).toBeFalse();
     expect(toast.success).toHaveBeenCalled();
+  });
+
+  it('offers the plan reminder push hours next to the plan warning and saves them', () => {
+    open();
+    const keys = c.groups.find((g) => g.id === 'drivers-chats')!.rows.map((r) => r.key);
+    expect(keys.indexOf('plan_push_hours')).toBe(keys.indexOf('plan_warning_days') + 1);
+    expect(c.tip('plan_push_hours')).toContain('This setting');
+    api.patch.and.returnValue(of({ data: settings({ version: 'v2', plan_push_hours: 6 }) }) as any);
+    c.f.plan_push_hours = 6;
+    c.save();
+    expect(api.patch).toHaveBeenCalledOnceWith('/admin/carpool/settings', { plan_push_hours: 6, version: 'v1' });
   });
 
   it('sends the missed-departure choice as 0 or 1', () => {
