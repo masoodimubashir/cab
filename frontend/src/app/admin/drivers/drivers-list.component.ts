@@ -1004,6 +1004,8 @@ interface AllocationVehicle {
     /* Carpool list only: the same columns and look as the commercial list (without Stand & Route Assignments, which carpool drivers do not have), in a fixed width so it never scrolls sideways. */
     :host ::ng-deep .drivers-table--carpool .tm-dt__table { table-layout: fixed; }
     :host ::ng-deep .drivers-table--carpool .tm-dt__table th { overflow: hidden; text-overflow: ellipsis; }
+    /* The two 50px icon columns (view, deactivate): less side padding so the 32px buttons fit, and never draw "…" there. */
+    :host ::ng-deep .drivers-table--carpool .tm-dt__table td:nth-last-child(-n+2) { padding-left: 6px; padding-right: 6px; text-overflow: clip !important; }
     .drivers-table--carpool .cell-user { display: flex; }
     .drivers-table--carpool .cell-user__meta { flex: 1; }
     .drivers-table--carpool .cell-user__name { display: block; }

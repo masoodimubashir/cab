@@ -36,6 +36,7 @@ class CarpoolAdminAction extends Model
         'word_delete' => 'Removed a banned word',
         'car_edit' => 'Edited the car',
         'document_expiry' => 'Changed a document expiry date',
+        'document_upload' => 'Uploaded a document on behalf of the driver',
         'document_allow' => 'Allowed a document until a date',
         'document_renewal_approve' => 'Approved a renewed document',
         'document_renewal_reject' => 'Rejected a renewed document',

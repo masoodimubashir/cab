@@ -26,10 +26,15 @@ class AdminCarpoolDocumentsController extends Controller
     public function setExpiry(Request $request, Driver $driver, Document $document): JsonResponse
     {
         $this->carpoolDriver($driver);
-        $data = $request->validate(['date' => ['required', 'date_format:Y-m-d'], 'note' => ['required', 'string', 'min:3', 'max:500']]);
-        $this->documents->setExpiry($driver, $document, $data['date'], $data['note']);
+        $data = $request->validate([
+            'date' => ['required', 'date_format:Y-m-d'],
+            'note' => ['required', 'string', 'min:3', 'max:500'],
+            // Upload on behalf: an optional photo of the new copy (same limit as the driver's renewal).
+            'file' => ['nullable', 'image', 'max:' . (int) config('carpool.photo_max_kb', 4096)],
+        ]);
+        $this->documents->setExpiry($driver, $document, $data['date'], $data['note'], $request->file('file'));
 
-        return response()->json(['message' => 'Expiry date saved.', 'data' => $this->documents->items($driver)]);
+        return response()->json(['message' => $request->hasFile('file') ? 'Uploaded. The driver was told.' : 'Expiry date saved.', 'data' => $this->documents->items($driver)]);
     }
 
     public function allowUntil(Request $request, Driver $driver, Document $document): JsonResponse

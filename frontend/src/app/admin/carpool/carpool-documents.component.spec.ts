@@ -18,7 +18,7 @@ describe('CarpoolDocumentsComponent (S11)', () => {
   let c: CarpoolDocumentsComponent;
 
   beforeEach(() => {
-    api = jasmine.createSpyObj<ApiService>('ApiService', ['post', 'getBlob']);
+    api = jasmine.createSpyObj<ApiService>('ApiService', ['post', 'postMultipart', 'getBlob']);
     toast = jasmine.createSpyObj<ToastService>('ToastService', ['success', 'error']);
     c = TestBed.runInInjectionContext(() => new CarpoolDocumentsComponent(api, toast));
     c.driverId = 33;
@@ -80,6 +80,28 @@ describe('CarpoolDocumentsComponent (S11)', () => {
     c.save();
     expect(c.error).toBe('This driver has no copy of this document to date.');
     expect(c.ask).not.toBeNull();
+  });
+
+  it('uploads on behalf with a photo, the date and a reason as a form', () => {
+    api.postMultipart.and.returnValue(of({ data: [item({ expires_on: '2027-11-30' })], message: 'Uploaded. The driver was told.' }) as any);
+    c.openAsk({ kind: 'upload', doc: item() });
+    expect(c.date).toBe('');
+    c.date = '2027-11-30';
+    c.note = 'Sent by WhatsApp';
+    expect(c.canSave()).withContext('no photo yet').toBeFalse();
+    c.onFile({ target: { files: [new File(['x'], 'paper.pdf', { type: 'application/pdf' })] } } as any);
+    expect(c.file).toBeNull();
+    expect(c.error).toBe('Choose a photo (JPG or PNG).');
+    c.onFile({ target: { files: [new File(['x'], 'paper.jpg', { type: 'image/jpeg' })] } } as any);
+    expect(c.canSave()).toBeTrue();
+    c.save();
+    const [path, form] = api.postMultipart.calls.mostRecent().args as [string, FormData];
+    expect(path).toBe('/admin/carpool/drivers/33/documents/10/expiry');
+    expect(form.get('date')).toBe('2027-11-30');
+    expect(form.get('note')).toBe('Sent by WhatsApp');
+    expect(form.get('file')).toBeTruthy();
+    expect(api.post).not.toHaveBeenCalled();
+    expect(c.items![0].expires_on).toBe('2027-11-30');
   });
 
   it('labels a carpool cancelled for an expired document', () => {

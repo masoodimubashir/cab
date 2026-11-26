@@ -12,7 +12,7 @@ export interface CarpoolDocItem {
   renewal: null | { id: number; status: 'pending' | 'rejected'; expiry_date: string; reason: string | null; sent_at: string | null };
 }
 
-type Ask = null | { kind: 'expiry' | 'allow'; doc: CarpoolDocItem } | { kind: 'approve' | 'reject'; doc: CarpoolDocItem };
+type Ask = null | { kind: 'expiry' | 'allow' | 'upload'; doc: CarpoolDocItem } | { kind: 'approve' | 'reject'; doc: CarpoolDocItem };
 
 /**
  * S11 (choice C): a carpool driver's dated documents in Carpool > People. The admin corrects the expiry date,
@@ -41,6 +41,7 @@ type Ask = null | { kind: 'expiry' | 'allow'; doc: CarpoolDocItem } | { kind: 'a
         <td class="act">
           <button *ngIf="d.uploaded" type="button" class="linkish" (click)="openAsk({ kind: 'expiry', doc: d })">Edit date</button>
           <button type="button" class="linkish" (click)="openAsk({ kind: 'allow', doc: d })">Allow until</button>
+          <button type="button" class="linkish" (click)="openAsk({ kind: 'upload', doc: d })">Upload on behalf</button>
         </td>
       </tr>
     </table>
@@ -63,9 +64,14 @@ type Ask = null | { kind: 'expiry' | 'allow'; doc: CarpoolDocItem } | { kind: 'a
           <p *ngSwitchCase="'allow'">The driver can publish and keep carpools up to this day even if {{ shown.doc.name }} has run out. Leave the date empty to go back to the document date.</p>
           <p *ngSwitchCase="'approve'">The new copy replaces the old one, valid until {{ day(shown.doc.renewal?.expiry_date ?? null) }}. The driver is told. Their sign-up stays approved.</p>
           <p *ngSwitchCase="'reject'">The photo is deleted and the driver is told your reason, so they can send it again.</p>
+          <p *ngSwitchCase="'upload'">For a copy the driver sent another way (for example WhatsApp). It replaces the stored {{ shown.doc.name }} at once as approved, and any copy the driver sent from the app. The driver is told and stays approved.</p>
         </ng-container>
-        <label class="field" *ngIf="shown.kind === 'expiry' || shown.kind === 'allow'">
-          <span>{{ shown.kind === 'expiry' ? 'Expiry date' : 'Allow until (optional)' }}</span>
+        <label class="field" *ngIf="shown.kind === 'upload'">
+          <span>Photo of the new copy</span>
+          <input type="file" accept="image/*" (change)="onFile($event)" />
+        </label>
+        <label class="field" *ngIf="shown.kind === 'expiry' || shown.kind === 'allow' || shown.kind === 'upload'">
+          <span>{{ shown.kind === 'allow' ? 'Allow until (optional)' : shown.kind === 'upload' ? 'Expiry date on the new copy' : 'Expiry date' }}</span>
           <input type="date" [(ngModel)]="date" [min]="shown.kind === 'allow' ? today : ''" />
         </label>
         <label class="field" *ngIf="shown.kind !== 'approve'">
@@ -86,6 +92,7 @@ type Ask = null | { kind: 'expiry' | 'allow'; doc: CarpoolDocItem } | { kind: 'a
     .renewal__act { display: inline-flex; align-items: center; gap: 8px; flex: none; }
     .err { margin: 10px 0 0; color: var(--tm-danger); font-size: 13px; }
     .act .linkish + .linkish { margin-left: 14px; }
+    .field + .field { margin-top: 12px; }
     :host { margin-bottom: 16px; }
   `],
 })
@@ -99,6 +106,7 @@ export class CarpoolDocumentsComponent {
   shown: Ask = null;
   date = '';
   note = '';
+  file: File | null = null;
   busy = false;
   error = '';
   readonly today = indiaToday();
@@ -110,21 +118,23 @@ export class CarpoolDocumentsComponent {
     this.shown = a;
     this.note = '';
     this.error = '';
+    this.file = null;
     this.date = a?.kind === 'expiry' ? (a.doc.expires_on ?? '') : a?.kind === 'allow' ? (a.doc.allow_until ?? '') : '';
   }
 
   title(): string {
-    return ({ expiry: 'Edit the expiry date', allow: 'Allow until a day', approve: 'Approve the new copy?', reject: 'Reject the new copy' } as Record<string, string>)[this.shown?.kind ?? ''] ?? '';
+    return ({ expiry: 'Edit the expiry date', allow: 'Allow until a day', approve: 'Approve the new copy?', reject: 'Reject the new copy', upload: 'Upload on behalf of the driver' } as Record<string, string>)[this.shown?.kind ?? ''] ?? '';
   }
 
   saveLabel(): string {
-    return ({ expiry: 'Save date', allow: this.date ? 'Allow' : 'Clear', approve: 'Approve', reject: 'Reject' } as Record<string, string>)[this.shown?.kind ?? ''] ?? 'Save';
+    return ({ expiry: 'Save date', allow: this.date ? 'Allow' : 'Clear', approve: 'Approve', reject: 'Reject', upload: 'Upload' } as Record<string, string>)[this.shown?.kind ?? ''] ?? 'Save';
   }
 
   canSave(): boolean {
     const k = this.shown?.kind;
     if (k === 'approve') return true;
     if (this.note.trim().length < 3) return false;
+    if (k === 'upload') return !!this.date && !!this.file;
     return k === 'expiry' ? !!this.date : true;
   }
 
@@ -133,7 +143,14 @@ export class CarpoolDocumentsComponent {
     if (!a) return;
     const base = `/admin/carpool/drivers/${this.driverId}/documents/${a.doc.document_id}`;
     const note = this.note.trim();
-    const call = a.kind === 'expiry' ? this.api.post<{ data: CarpoolDocItem[]; message: string }>(`${base}/expiry`, { date: this.date, note })
+    const form = new FormData();
+    if (a.kind === 'upload' && this.file) {
+      form.append('file', this.file, this.file.name);
+      form.append('date', this.date);
+      form.append('note', note);
+    }
+    const call = a.kind === 'upload' ? this.api.postMultipart<{ data: CarpoolDocItem[]; message: string }>(`${base}/expiry`, form)
+      : a.kind === 'expiry' ? this.api.post<{ data: CarpoolDocItem[]; message: string }>(`${base}/expiry`, { date: this.date, note })
       : a.kind === 'allow' ? this.api.post<{ data: CarpoolDocItem[]; message: string }>(`${base}/allow-until`, { date: this.date || null, note })
       : a.kind === 'approve' ? this.api.post<{ data: CarpoolDocItem[]; message: string }>(`/admin/carpool/document-renewals/${a.doc.renewal!.id}/approve`, {})
       : this.api.post<{ data: CarpoolDocItem[]; message: string }>(`/admin/carpool/document-renewals/${a.doc.renewal!.id}/reject`, { reason: note });
@@ -147,6 +164,12 @@ export class CarpoolDocumentsComponent {
         this.error = (errs && (Object.values(errs)[0] as string[])?.[0]) || e?.error?.message || 'That did not work. Try again.';
       },
     });
+  }
+
+  onFile(event: Event): void {
+    const f = (event.target as HTMLInputElement).files?.[0] ?? null;
+    this.error = f && !f.type.startsWith('image/') ? 'Choose a photo (JPG or PNG).' : '';
+    this.file = f && f.type.startsWith('image/') ? f : null;
   }
 
   view(d: CarpoolDocItem): void {

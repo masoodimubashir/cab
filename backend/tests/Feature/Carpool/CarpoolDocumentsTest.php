@@ -270,6 +270,49 @@ class CarpoolDocumentsTest extends TestCase
             ->assertJsonPath('data.driver.documents.0.has_date', true);
     }
 
+    public function test_admin_uploads_on_behalf_without_resetting_the_sign_up(): void
+    {
+        Storage::disk('local')->put('driver-documents/old-' . $this->insurance->id . '.jpg', 'old');
+        Sanctum::actingAs($this->user, ['act-as:driver']);
+        $waiting = $this->postJson("/api/carpool/driver/documents/{$this->insurance->id}/renew", ['expiry_date' => '2027-01-31', 'file' => UploadedFile::fake()->image('mine.jpg')])
+            ->assertCreated()->json('data.id');
+        $waitingFile = CarpoolDocumentRenewal::query()->find($waiting)->file_path;
+
+        $this->asAdmin();
+        $url = "/api/admin/carpool/drivers/{$this->driver->id}/documents/{$this->insurance->id}/expiry";
+        $this->post($url, ['date' => '2027-11-30', 'note' => 'x', 'file' => UploadedFile::fake()->image('paper.jpg')], ['Accept' => 'application/json'])->assertStatus(422);
+        $this->post($url, ['date' => '2027-11-30', 'note' => 'Sent by WhatsApp', 'file' => UploadedFile::fake()->create('paper.pdf', 10, 'application/pdf')], ['Accept' => 'application/json'])
+            ->assertStatus(422);
+        $this->post($url, ['date' => '2027-11-30', 'note' => 'Sent by WhatsApp', 'file' => UploadedFile::fake()->image('paper.jpg')], ['Accept' => 'application/json'])
+            ->assertOk()->assertJsonPath('data.0.expires_on', '2027-11-30')->assertJsonPath('data.0.renewal', null);
+
+        $doc = DriverDocument::query()->first();
+        $this->assertSame('approved', $doc->status);
+        $this->assertSame('2027-11-30', $doc->label_values['Expiry date']);
+        Storage::disk('local')->assertExists($doc->file_path);
+        Storage::disk('local')->assertMissing('driver-documents/old-' . $this->insurance->id . '.jpg');
+        Storage::disk('local')->assertMissing($waitingFile);
+        $this->assertSame(0, CarpoolDocumentRenewal::query()->count(), 'the copy the driver was waiting on is replaced');
+        $this->assertSame('approved', $this->driver->fresh()->approval_status);
+        $log = CarpoolAdminAction::query()->where('action', 'document_upload')->firstOrFail();
+        $this->assertSame('Sent by WhatsApp', $log->note);
+        $this->assertSame('2026-11-28', $log->before['expiry_date']);
+        $this->assertTrue(AppNotification::query()->where('user_id', $this->user->id)->where('type', 'carpool_document_approved')->exists());
+        $this->publish('2026-12-20')->assertCreated();
+    }
+
+    public function test_admin_upload_creates_the_copy_when_the_driver_had_none(): void
+    {
+        DriverDocument::query()->delete();
+        $this->asAdmin();
+        $url = "/api/admin/carpool/drivers/{$this->driver->id}/documents/{$this->insurance->id}/expiry";
+        $this->postJson($url, ['date' => '2027-11-30', 'note' => 'No copy yet'])->assertStatus(422); // a date alone needs a copy to date
+        $this->post($url, ['date' => '2027-11-30', 'note' => 'Brought to the office', 'file' => UploadedFile::fake()->image('paper.jpg')], ['Accept' => 'application/json'])
+            ->assertOk();
+        $doc = DriverDocument::query()->firstOrFail();
+        $this->assertSame([$this->insurance->id, 1, 'approved'], [$doc->document_id, $doc->image_index, $doc->status]);
+    }
+
     public function test_driver_renews_in_the_app_and_admin_approves(): void
     {
         Storage::disk('local')->put('driver-documents/old-' . $this->insurance->id . '.jpg', 'old');

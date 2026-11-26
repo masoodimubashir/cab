@@ -233,21 +233,51 @@ class CarpoolDocuments
             $reason . '. Please send it again from the app.');
     }
 
-    /** Correct the date on the driver's copy (the admin saw the paper). */
-    public function setExpiry(Driver $driver, Document $doc, string $date, string $note): void
+    /**
+     * Correct the date on the driver's copy (the admin saw the paper), or, with a photo, upload a new copy on the
+     * driver's behalf: it replaces the stored copy at once as approved, replaces any renewal the driver was waiting
+     * on, and the driver's sign-up stays approved (unlike the shared "Upload on behalf" on the driver page).
+     */
+    public function setExpiry(Driver $driver, Document $doc, string $date, string $note, ?UploadedFile $file = null): void
     {
         $label = self::expiryLabel($doc->loadMissing('labels'));
-        $row = DriverDocument::query()->where('driver_id', $driver->id)->where('document_id', $doc->id)->orderBy('image_index')->first();
-        if (! $label || ! $row) {
-            $this->fail('This driver has no copy of this document to date. Ask them to renew it in the app.', 'document');
+        if (! $label || ! in_array($doc->applies_to, ['carpool', 'all'], true)) {
+            abort(404);
         }
-        $before = $row->label_values[$label] ?? null;
-        $row->label_values = array_merge($row->label_values ?? [], [$label => $this->day($date)]);
-        $row->save();
-        CarpoolAdminLog::record('document_expiry', 'driver', $driver->id, [
+        $row = DriverDocument::query()->where('driver_id', $driver->id)->where('document_id', $doc->id)->orderBy('image_index')->first();
+        if (! $row && ! $file) {
+            $this->fail('This driver has no copy of this document to date. Upload one on their behalf, or ask them to renew it in the app.', 'document');
+        }
+        $before = $row ? ($row->label_values[$label] ?? null) : null;
+        $path = $file?->store('driver-documents', 'local');
+
+        DB::transaction(function () use ($driver, $doc, $label, $date, $path, &$row) {
+            if (! $row) {
+                $row = new DriverDocument(['driver_id' => $driver->id, 'document_id' => $doc->id, 'image_index' => 1]);
+            }
+            if ($path) {
+                $this->deleteFile($row->file_path);
+                $row->file_path = $path;
+                $row->status = 'approved';
+                $row->rejection_reason = null;
+                foreach (CarpoolDocumentRenewal::query()->where('driver_id', $driver->id)->where('document_id', $doc->id)
+                    ->where('status', CarpoolDocumentRenewal::STATUS_PENDING)->lockForUpdate()->get() as $old) {
+                    $this->deleteFile($old->file_path);
+                    $old->delete();
+                }
+            }
+            $row->label_values = array_merge($row->label_values ?? [], [$label => $this->day($date)]);
+            $row->save();
+        });
+
+        CarpoolAdminLog::record($path ? 'document_upload' : 'document_expiry', 'driver', $driver->id, [
             'subject_user_id' => $driver->user_id, 'note' => $note,
             'before' => ['document' => $doc->name, 'expiry_date' => $before], 'after' => ['document' => $doc->name, 'expiry_date' => $this->day($date)],
         ]);
+        if ($path) {
+            $this->tell($driver, 'carpool_document_approved', "Your new {$doc->name} is on file",
+                'Dream Cabs added it for you. It is valid until ' . CarbonImmutable::parse($this->day($date), CarpoolClock::timezone())->format('j M Y') . '.');
+        }
     }
 
     /** Let the driver keep going until a day, or clear that (null). */
