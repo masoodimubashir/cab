@@ -540,7 +540,13 @@
             <span class="dc-row__icon dc-row__icon--muted"><ion-icon [name]="serviceModeIcon"></ion-icon></span>
             <span class="dc-row__text">
               <strong>Approved Services</strong>
-              <small>{{ serviceModeDisplay }}</small>
+              <small *ngIf="!profileLoaded || !displayedServiceModes.length">{{ serviceModeDisplay }}</small>
+              <small *ngIf="profileLoaded && displayedServiceModes.length" class="approved-services">
+                <span *ngFor="let mode of displayedServiceModes">
+                  <img *ngIf="serviceBranding[mode]?.imageUrl as image" [src]="image" alt="" (error)="serviceBranding[mode]!.imageUrl = ''">
+                  {{ serviceBranding[mode]?.label || defaultServiceNames[mode] }}
+                </span>
+              </small>
             </span>
             <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
           </div>

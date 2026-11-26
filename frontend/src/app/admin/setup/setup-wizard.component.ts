@@ -167,9 +167,9 @@ export class SetupWizardComponent implements OnInit, OnDestroy {
       key: 'fares',
       title: 'Fares',
       icon: 'rupee',
-      blurb: 'Configure Private / Fixed / Shuttle fare rules per city vehicle.',
+      blurb: 'Set the city vehicle rate cards in the service workspace.',
       cta: 'Set fares',
-      action: () => this.goWithReturn('/vehicles'),
+      action: () => this.goWithReturn('/operations/private?view=fares'),
     },
     {
       key: 'fixed_routes',
@@ -177,15 +177,15 @@ export class SetupWizardComponent implements OnInit, OnDestroy {
       icon: 'map',
       blurb: 'Route departures, stops and flat fares for Fixed rides.',
       cta: 'View departures',
-      action: () => this.goWithReturn('/fixed-departures'),
+      action: () => this.goWithReturn('/operations/routes?view=live'),
     },
     {
       key: 'route_groups',
       title: 'Stands & Drivers',
       icon: 'users',
       blurb: 'Organize routes into stands and assign drivers.',
-      cta: 'View departures',
-      action: () => this.goWithReturn('/fixed-departures'),
+      cta: 'Manage stands',
+      action: () => this.goWithReturn('/operations/routes'),
     },
   ];
 

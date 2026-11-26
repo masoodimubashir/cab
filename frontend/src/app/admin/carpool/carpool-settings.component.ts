@@ -1,8 +1,9 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
+import { AuthService } from '../../core/auth.service';
 import { ButtonComponent, ModalComponent } from '../../ui';
 import { CARPOOL_ADMIN_STYLES, inTime } from './carpool-admin.styles';
 import { CarpoolHistoryComponent, HistoryEntry } from './carpool-history.component';
@@ -151,6 +152,37 @@ const TIMING: Key[] = ['publish_horizon_days', 'start_early_minutes', 'pending_e
             </div>
           </section>
 
+          </fieldset>
+
+          <section class="panel" id="app-tile" *ngIf="canBrand && tile">
+            <div class="panel__head">
+              <div>
+                <h2 class="panel__title">App tile</h2>
+                <p class="panel__desc">The name and picture on the carpool tile in the customer app. Leave the name blank to show "Carpool". JPG, PNG or WebP up to 4 MB.</p>
+              </div>
+            </div>
+            <div class="panel__body">
+              <div class="brand">
+                <label class="brand__field">
+                  <span class="brand__label">Name</span>
+                  <input class="brand__input" maxlength="40" placeholder="Carpool" [(ngModel)]="tileName" [disabled]="tileBusy" aria-label="Carpool tile name" />
+                </label>
+                <div class="brand__pic">
+                  <input #tileInput hidden type="file" accept="image/jpeg,image/png,image/webp" (change)="pickTile($event)" />
+                  <button type="button" class="brand__img" [disabled]="tileBusy" (click)="tileInput.click()" [attr.aria-label]="tilePreview ? 'Replace carpool tile picture' : 'Add carpool tile picture'">
+                    <img *ngIf="tilePreview; else noPic" [src]="tilePreview" alt="" />
+                    <ng-template #noPic><span>Add picture</span></ng-template>
+                  </button>
+                  <button type="button" class="bw-link" *ngIf="tilePreview" [disabled]="tileBusy" (click)="removeTile()">Remove picture</button>
+                </div>
+              </div>
+              <div class="brand__row">
+                <tm-button variant="ink" size="sm" [loading]="tileBusy" [disabled]="!tileDirty" (clicked)="saveTile()">Save tile</tm-button>
+              </div>
+            </div>
+          </section>
+
+          <fieldset class="lock" [disabled]="!s.can_edit">
           <section class="panel" *ngFor="let g of groups" [id]="g.id">
             <div class="panel__head">
               <div>
@@ -396,6 +428,16 @@ const TIMING: Key[] = ['publish_horizon_days', 'start_early_minutes', 'pending_e
     .x { border: 0; background: var(--tm-canvas-2); border-radius: 50%; width: 22px; height: 22px; cursor: pointer; color: var(--tm-text-muted); }
     .x:hover { color: var(--tm-text); }
 
+    .brand { display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+    .brand__field { display: flex; flex-direction: column; gap: 6px; flex: 0 1 360px; }
+    .brand__input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--tm-line-2); border-radius: 8px; font: inherit; color: var(--tm-text); background: var(--tm-surface); }
+    .brand__input:focus-visible { outline: 2px solid var(--tm-green-deep); border-color: transparent; }
+    .brand__label { font-size: 13px; font-weight: 700; color: var(--tm-text); }
+    .brand__pic { display: flex; align-items: center; gap: 12px; }
+    .brand__img { width: 96px; height: 72px; padding: 0; border: 1px dashed var(--tm-line-2); border-radius: var(--tm-radius-md); background: var(--tm-canvas); overflow: hidden; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
+    .brand__img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .brand__img:focus-visible { outline: 2px solid var(--tm-green-deep); outline-offset: 2px; }
+    .brand__row { display: flex; justify-content: flex-end; }
     .savebar { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: var(--tm-radius-lg, 14px); box-shadow: var(--tm-shadow-pop); }
     .savebar__hint { font-size: 13px; color: var(--tm-text-muted); }
     .savebar__hint.is-dirty { color: var(--tm-text); font-weight: 700; }
@@ -420,6 +462,17 @@ export class CarpoolSettingsComponent implements OnInit, OnDestroy {
   askOff = false;
   askApply = false;
   readonly tips = TIPS;
+
+  // ---- app tile (name and picture). Stored in operator settings, so it needs that permission. ----
+  private readonly auth = inject(AuthService);
+  readonly canBrand = this.auth.hasPermission('operator_settings');
+  /** What the server holds; null until loaded (or without the permission). */
+  tile: { name: string; image: string | null } | null = null;
+  tileName = '';
+  tilePreview: string | null = null;
+  private tileFile: File | null = null;
+  private tileRemove = false;
+  tileBusy = false;
 
   readonly groups: Group[] = [
     {
@@ -460,6 +513,7 @@ export class CarpoolSettingsComponent implements OnInit, OnDestroy {
   readonly nav = [
     { id: 'jobs', label: 'Job status' },
     { id: 'availability', label: 'Availability' },
+    ...(this.canBrand ? [{ id: 'app-tile', label: 'App tile' }] : []),
     { id: 'finding', label: 'Finding a carpool' },
     { id: 'on-the-day', label: 'On the day' },
     { id: 'drivers-chats', label: 'Plans, chats and reports' },
@@ -487,10 +541,75 @@ export class CarpoolSettingsComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     document.addEventListener('scroll', this.onScroll, true); // capture: the page scrolls inside the admin shell
     this.load();
+    if (this.canBrand) this.loadTile();
   }
 
   ngOnDestroy(): void {
     document.removeEventListener('scroll', this.onScroll, true);
+    this.dropPreview();
+  }
+
+  get tileDirty(): boolean {
+    return !!this.tile && (this.tileName.trim() !== this.tile.name || !!this.tileFile || this.tileRemove);
+  }
+
+  private loadTile(): void {
+    this.api.get<{ settings: Record<string, any> }>('/admin/operator-settings').subscribe({
+      next: (r) => this.adoptTile(r.settings),
+      error: () => this.toast.error('Could not load the app tile.'),
+    });
+  }
+
+  private adoptTile(st: Record<string, any>): void {
+    this.dropPreview();
+    this.tile = { name: (st['carpool_service_name'] ?? '').trim(), image: st['carpool_service_image_url'] ?? null };
+    this.tileName = this.tile.name;
+    this.tilePreview = this.tile.image;
+    this.tileFile = null;
+    this.tileRemove = false;
+  }
+
+  /** Frees a local preview made from a picked file. */
+  private dropPreview(): void {
+    if (this.tileFile && this.tilePreview) URL.revokeObjectURL(this.tilePreview);
+  }
+
+  pickTile(ev: Event): void {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || this.tileBusy) return;
+    if (file.size > 4 * 1024 * 1024) { this.toast.error('Choose a picture up to 4 MB.'); return; }
+    this.dropPreview();
+    this.tileFile = file;
+    this.tileRemove = false;
+    this.tilePreview = URL.createObjectURL(file);
+  }
+
+  removeTile(): void {
+    this.dropPreview();
+    this.tileFile = null;
+    this.tilePreview = null;
+    this.tileRemove = !!this.tile?.image;
+  }
+
+  /** Sends only the carpool fields, the same way the operator settings page saves. */
+  saveTile(): void {
+    if (!this.tileDirty || this.tileBusy) return;
+    const fd = new FormData();
+    fd.append('_method', 'PATCH');
+    fd.append('carpool_service_name', this.tileName.trim());
+    if (this.tileFile) fd.append('carpool_service_image', this.tileFile);
+    else if (this.tileRemove) fd.append('carpool_remove_service_image', '1');
+    this.tileBusy = true;
+    this.api.postMultipart<{ settings: Record<string, any> }>('/admin/operator-settings', fd).subscribe({
+      next: (r) => { this.tileBusy = false; this.adoptTile(r.settings); this.toast.success('App tile saved.'); },
+      error: (e) => {
+        this.tileBusy = false;
+        const first = e?.error?.errors ? (Object.values(e.error.errors)[0] as string[])[0] : null;
+        this.toast.error(first || e?.error?.message || 'Could not save the app tile.');
+      },
+    });
   }
 
   /** While a rail click scrolls the page, the scroll listener leaves the highlight alone. */

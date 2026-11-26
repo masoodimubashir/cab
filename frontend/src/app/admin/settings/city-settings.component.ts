@@ -1,18 +1,17 @@
 import {
-  AfterViewInit,
-  ChangeDetectorRef,
   Component,
-  ElementRef,
+  Input,
   OnDestroy,
   OnInit,
 } from '@angular/core';
+import { ServiceNamesService } from '../../core/service-names.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin, Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
-import { ButtonComponent, IconComponent, IconName } from '../../ui';
+import { ButtonComponent, IconComponent } from '../../ui';
 
 interface DispatcherSetting {
   id: number;
@@ -95,18 +94,6 @@ const TOGGLES: { key: keyof CitySettings; label: string; hint: string }[] = [
   { key: 'show_vehicle_make_model', label: 'Vehicle make & model', hint: 'Display the car make/model to the rider.' },
 ];
 
-const NAV: { id: string; label: string; icon: IconName }[] = [
-  { id: 'sec-general', label: 'General', icon: 'bolt' },
-  { id: 'sec-private', label: 'Private rides', icon: 'rupee' },
-  { id: 'sec-fixed', label: 'Fixed rides', icon: 'map-marker' },
-  { id: 'sec-shuttle', label: 'Shuttle rides', icon: 'send' },
-];
-
-/**
- * City Settings — per-city operational, branding and contact configuration
- * for the city chosen in the topbar switcher. A sticky section-nav rail
- * jumps between groups; everything saves together from the bottom bar.
- */
 @Component({
   selector: 'app-city-settings',
   standalone: true,
@@ -124,27 +111,10 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
     </div>
 
     <div class="cs" *ngIf="cityId && !loading && form">
-      <!-- Section nav rail -->
-      <aside class="rail">
-        <span class="rail__overline">Sections</span>
-        <nav class="rail__nav">
-          <button
-            *ngFor="let n of nav"
-            type="button"
-            class="rail__item"
-            [class.is-active]="activeId === n.id"
-            (click)="scrollTo(n.id)"
-          >
-            <tm-icon [name]="n.icon" [size]="15" />
-            <span>{{ n.label }}</span>
-          </button>
-        </nav>
-      </aside>
-
       <!-- Sections -->
       <div class="cs__main">
         <!-- General -->
-        <section class="sec" id="sec-general">
+        <section class="sec" id="sec-general" *ngIf="!serviceMode">
           <header class="sec__head">
             <span class="sec__icon"><tm-icon name="bolt" [size]="16" /></span>
             <div><h3 class="sec__title">General</h3><p class="sec__desc">City-wide settings shared by private, fixed, and shuttle rides.</p></div>
@@ -160,8 +130,8 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
             <div class="subsec"><h4 class="subsec__title">Support contacts</h4><div class="grid grid-3"><label class="field"><span class="field__lbl">Emergency no.<span class="info" tabindex="0" aria-label="Emergency contact number shown to users in this city." data-tip="Emergency contact number shown to users in this city.">!</span></span><input type="text" [(ngModel)]="form.emergency_no" /></label><label class="field"><span class="field__lbl">Police no.<span class="info" tabindex="0" aria-label="Police contact number shown for safety help in this city." data-tip="Police contact number shown for safety help in this city.">!</span></span><input type="text" [(ngModel)]="form.emergency_police_no" /></label><label class="field"><span class="field__lbl">Driver support no.<span class="info" tabindex="0" aria-label="Support number drivers can use for this city." data-tip="Support number drivers can use for this city.">!</span></span><input type="text" [(ngModel)]="form.driver_support_no" /></label><label class="field"><span class="field__lbl">Customer support no.<span class="info" tabindex="0" aria-label="Support number customers can use for this city." data-tip="Support number customers can use for this city.">!</span></span><input type="text" [(ngModel)]="form.customer_support_no" /></label><label class="field"><span class="field__lbl">Support email<span class="info" tabindex="0" aria-label="Support email shown to users for this city." data-tip="Support email shown to users for this city.">!</span></span><input type="email" [(ngModel)]="form.support_email" /></label></div></div>
           </div>
         </section>
-        <section class="sec" id="sec-private">
-          <header class="sec__head"><span class="sec__icon"><tm-icon name="rupee" [size]="16" /></span><div><h3 class="sec__title">Private Ride Settings</h3><p class="sec__desc">Rules for normal local and outstation private rides.</p></div></header>
+        <section class="sec" id="sec-private" *ngIf="serviceMode === 'private'">
+          <header class="sec__head"><span class="sec__icon"><tm-icon name="rupee" [size]="16" /></span><div><h3 class="sec__title">{{ serviceLabel || 'Private Ride' }} Settings</h3><p class="sec__desc">Rules for normal local and outstation private rides.</p></div></header>
           <div class="sec__body">
             <div class="subsec"><h4 class="subsec__title">Negotiation</h4><div class="grid grid-2"><label class="field"><span class="field__lbl">Maximum negotiation discount (%)<span class="info" tabindex="0" aria-label="Maximum discount allowed when fare negotiation is used." data-tip="Maximum discount allowed when fare negotiation is used.">!</span></span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.negotiation_floor_percent" /></label></div></div>
             <div class="subsec" *ngIf="activeDispatcher as d">
@@ -194,22 +164,23 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
                 <label class="field"><span class="field__lbl">Cancel window (min)<span class="info" tabindex="0" aria-label="How long before pickup scheduled rides can still be cancelled." data-tip="How long before pickup scheduled rides can still be cancelled.">!</span></span><input type="number" min="0" max="1440" [(ngModel)]="d.schedule_cancel_window_min" /></label>
               </div>
             </div>
-            <div class="subsec"><h4 class="subsec__title">No-show / cancellation</h4><div class="grid grid-4"><label class="field"><span class="field__lbl">Customer no-show threshold (min)<span class="info" tabindex="0" aria-label="Time after which a private ride customer can be treated as no-show." data-tip="Time after which a private ride customer can be treated as no-show.">!</span></span><input type="number" min="0" max="180" step="0.01" [(ngModel)]="form.private_no_show_threshold_minutes" /></label><label class="field"><span class="field__lbl">No-show charge / min<span class="info" tabindex="0" aria-label="Charge applied per minute for private ride no-show rules." data-tip="Charge applied per minute for private ride no-show rules.">!</span></span><input type="number" min="0" step="0.01" [(ngModel)]="form.private_no_show_charge_per_minute" /></label><label class="field"><span class="field__lbl">Driver no-show grace (min)<span class="info" tabindex="0" aria-label="Extra time before treating the driver as no-show." data-tip="Extra time before treating the driver as no-show.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.private_driver_no_show_grace_minutes" /></label><label class="field"><span class="field__lbl">Cancellation charge (%)<span class="info" tabindex="0" aria-label="Percent of the fare the operator keeps when a customer cancels a private or shuttle ride while the driver is on the way. Applies to Private and Shuttle; Fixed is always a full refund before arrival." data-tip="Percent of the fare kept when a customer cancels while the driver is on the way (Private & Shuttle).">!</span></span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.cancellation_charge_percent" /></label></div></div>
+            <div class="subsec"><h4 class="subsec__title">No-show / cancellation</h4><div class="grid grid-4"><label class="field"><span class="field__lbl">Customer no-show threshold (min)<span class="info" tabindex="0" aria-label="Time after which a private ride customer can be treated as no-show." data-tip="Time after which a private ride customer can be treated as no-show.">!</span></span><input type="number" min="0" max="180" step="0.01" [(ngModel)]="form.private_no_show_threshold_minutes" /></label><label class="field"><span class="field__lbl">No-show charge / min<span class="info" tabindex="0" aria-label="Charge applied per minute for private ride no-show rules." data-tip="Charge applied per minute for private ride no-show rules.">!</span></span><input type="number" min="0" step="0.01" [(ngModel)]="form.private_no_show_charge_per_minute" /></label><label class="field"><span class="field__lbl">Driver no-show grace (min)<span class="info" tabindex="0" aria-label="Extra time before treating the driver as no-show." data-tip="Extra time before treating the driver as no-show.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.private_driver_no_show_grace_minutes" /></label><label class="field"><span class="field__lbl">Cancellation charge (%), shared with {{ names.labels().shuttle }}<span class="info" tabindex="0" aria-label="Percent of the fare the operator keeps when a customer cancels a private or shuttle ride while the driver is on the way. Applies to Private and Shuttle; Fixed is always a full refund before arrival." data-tip="Percent of the fare kept when a customer cancels while the driver is on the way (Private & Shuttle).">!</span></span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.cancellation_charge_percent" /></label></div></div>
           </div>
         </section>
-        <section class="sec" id="sec-fixed"><header class="sec__head"><span class="sec__icon"><tm-icon name="map-marker" [size]="16" /></span><div><h3 class="sec__title">Fixed Ride Settings</h3><p class="sec__desc">City-level boarding and no-show rules for fixed shared rides.</p></div></header><div class="sec__body"><div class="subsec"><h4 class="subsec__title">Boarding & no-show</h4><div class="grid grid-4"><label class="field"><span class="field__lbl">Wait time per stop (min)<span class="info" tabindex="0" aria-label="How long the driver waits after confirmed arrival before no-show starts." data-tip="How long the driver waits after confirmed arrival before no-show starts.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_waiting_time_per_stop_minutes" /></label><label class="field"><span class="field__lbl">Stop arrival radius (m)<span class="info" tabindex="0" aria-label="Driver must be inside this distance from the stop." data-tip="Driver must be inside this distance from the stop.">!</span></span><input type="number" min="5" max="5000" step="5" [(ngModel)]="form.fixed_stop_arrival_radius_m" /></label><label class="field"><span class="field__lbl">Arrival dwell time (sec)<span class="info" tabindex="0" aria-label="Driver must stay inside the stop radius for this many seconds before arrival is confirmed." data-tip="Driver must stay inside the stop radius for this many seconds before arrival is confirmed.">!</span></span><input type="number" min="0" max="600" step="1" [(ngModel)]="form.fixed_stop_arrival_dwell_seconds" /></label><label class="field"><span class="field__lbl">Driver missed stop grace (min)<span class="info" tabindex="0" aria-label="Extra time before cancelling when the customer is at pickup but driver reaches a later stop first." data-tip="Extra time before cancelling when the customer is at pickup but driver reaches a later stop first.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_driver_missed_stop_grace_minutes" /></label><label class="field"><span class="field__lbl">Customer pickup radius (m)<span class="info" tabindex="0" aria-label="Customer must be within this distance from pickup to be treated as present." data-tip="Customer must be within this distance from pickup to be treated as present.">!</span></span><input type="number" min="5" max="5000" step="5" [(ngModel)]="form.fixed_customer_pickup_radius_m" /></label><label class="field"><span class="field__lbl">Approaching alert radius (m)<span class="info" tabindex="0" aria-label="Customer gets a vehicle approaching alert inside this distance." data-tip="Customer gets a vehicle approaching alert inside this distance.">!</span></span><input type="number" min="5" max="10000" step="5" [(ngModel)]="form.fixed_vehicle_approaching_alert_radius_m" /></label><label class="field"><span class="field__lbl">Customer grace (min)<span class="info" tabindex="0" aria-label="Extra time allowed after wait time if the customer is detected near pickup." data-tip="Extra time allowed after wait time if the customer is detected near pickup.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_customer_grace_minutes" /></label></div></div></div></section>
-        <section class="sec" id="sec-shuttle">
+        <section class="sec" id="sec-fixed" *ngIf="serviceMode === 'fixed'"><header class="sec__head"><span class="sec__icon"><tm-icon name="map-marker" [size]="16" /></span><div><h3 class="sec__title">{{ serviceLabel }} Settings</h3><p class="sec__desc">City-level boarding and no-show rules for fixed shared rides.</p></div></header><div class="sec__body"><div class="subsec"><h4 class="subsec__title">Boarding & no-show</h4><div class="grid grid-4"><label class="field"><span class="field__lbl">Wait time per stop (min)<span class="info" tabindex="0" aria-label="How long the driver waits after confirmed arrival before no-show starts." data-tip="How long the driver waits after confirmed arrival before no-show starts.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_waiting_time_per_stop_minutes" /></label><label class="field"><span class="field__lbl">Stop arrival radius (m)<span class="info" tabindex="0" aria-label="Driver must be inside this distance from the stop." data-tip="Driver must be inside this distance from the stop.">!</span></span><input type="number" min="5" max="5000" step="5" [(ngModel)]="form.fixed_stop_arrival_radius_m" /></label><label class="field"><span class="field__lbl">Arrival dwell time (sec)<span class="info" tabindex="0" aria-label="Driver must stay inside the stop radius for this many seconds before arrival is confirmed." data-tip="Driver must stay inside the stop radius for this many seconds before arrival is confirmed.">!</span></span><input type="number" min="0" max="600" step="1" [(ngModel)]="form.fixed_stop_arrival_dwell_seconds" /></label><label class="field"><span class="field__lbl">Driver missed stop grace (min)<span class="info" tabindex="0" aria-label="Extra time before cancelling when the customer is at pickup but driver reaches a later stop first." data-tip="Extra time before cancelling when the customer is at pickup but driver reaches a later stop first.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_driver_missed_stop_grace_minutes" /></label><label class="field"><span class="field__lbl">Customer pickup radius (m)<span class="info" tabindex="0" aria-label="Customer must be within this distance from pickup to be treated as present." data-tip="Customer must be within this distance from pickup to be treated as present.">!</span></span><input type="number" min="5" max="5000" step="5" [(ngModel)]="form.fixed_customer_pickup_radius_m" /></label><label class="field"><span class="field__lbl">Approaching alert radius (m)<span class="info" tabindex="0" aria-label="Customer gets a vehicle approaching alert inside this distance." data-tip="Customer gets a vehicle approaching alert inside this distance.">!</span></span><input type="number" min="5" max="10000" step="5" [(ngModel)]="form.fixed_vehicle_approaching_alert_radius_m" /></label><label class="field"><span class="field__lbl">Customer grace (min)<span class="info" tabindex="0" aria-label="Extra time allowed after wait time if the customer is detected near pickup." data-tip="Extra time allowed after wait time if the customer is detected near pickup.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_customer_grace_minutes" /></label></div></div></div></section>
+        <section class="sec" id="sec-shuttle" *ngIf="serviceMode === 'shuttle'">
           <header class="sec__head">
             <span class="sec__icon"><tm-icon name="send" [size]="16" /></span>
             <div>
               <div class="sec__title-row">
-                <h3 class="sec__title">Shuttle Ride Settings</h3>
+                <h3 class="sec__title">{{ serviceLabel || 'Shuttle Ride' }} Settings</h3>
               </div>
               <p class="sec__desc">Dynamic Shuttle matching, boarding, and automatic no-show rules.</p>
             </div>
           </header>
           <div class="sec__body">
             <div class="subsec">
+              <label class="field" *ngIf="serviceMode"><span class="field__lbl">Cancellation charge (%), shared with {{ names.labels().private }}</span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.cancellation_charge_percent" /></label>
               <h4 class="subsec__title">Matching rules</h4>
               <div class="grid grid-4">
                 <label class="field"><span class="field__lbl">Pickup match distance (km)<span class="info" tabindex="0" aria-label="Maximum pickup detour allowed when matching shuttle passengers." data-tip="Maximum pickup detour allowed when matching shuttle passengers.">!</span></span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.shuttle_pickup_match_distance_km" /></label>
@@ -241,7 +212,7 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
         <div class="savebar">
           <span class="savebar__hint">Changes apply to {{ currentCityName }} only.</span>
           <div style="display: flex; gap: 8px; align-items: center;">
-            <tm-button variant="outline" icon="copy" (clicked)="openCopyModal()">
+            <tm-button *ngIf="!serviceMode" variant="outline" icon="copy" (clicked)="openCopyModal()">
               Copy settings
             </tm-button>
             <tm-button variant="green" icon="check" [disabled]="saving" (clicked)="save()">
@@ -433,37 +404,6 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
     .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
     .cue__text { margin: 0; font-size: 13px; }
 
-    .cs {
-      display: grid;
-      grid-template-columns: 210px 1fr;
-      gap: 16px;
-      align-items: start;
-    }
-
-    /* section-nav rail */
-    .rail {
-      position: sticky; top: 12px;
-      display: flex; flex-direction: column; gap: 8px;
-      padding: 12px;
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg, 14px);
-    }
-    .rail__overline {
-      font-size: 10px; font-weight: 800; letter-spacing: 0.6px;
-      text-transform: uppercase; color: var(--tm-text-muted);
-      padding: 0 8px;
-    }
-    .rail__nav { display: flex; flex-direction: column; gap: 2px; }
-    .rail__item {
-      display: flex; align-items: center; gap: 9px;
-      padding: 9px 10px; border-radius: 9px;
-      background: transparent; cursor: pointer; text-align: left;
-      font-size: 13px; font-weight: 700; color: var(--tm-text-muted);
-      transition: background var(--tm-duration-fast) var(--tm-ease), color var(--tm-duration-fast) var(--tm-ease);
-    }
-    .rail__item:hover { background: var(--tm-canvas-2); color: var(--tm-text); }
-    .rail__item.is-active { background: var(--tm-green-tint, #e0f7fa); color: var(--tm-green); }
     .seg { display: inline-flex; gap: 4px; padding: 4px; align-self: flex-start; background: var(--tm-canvas-2); border-radius: 10px; }
     .seg__btn { padding: 8px 14px; border-radius: 8px; background: transparent; color: var(--tm-text-muted); font-size: 13px; font-weight: 700; cursor: pointer; }
     .seg__btn.is-on { background: var(--tm-surface); color: var(--tm-text); box-shadow: var(--tm-shadow-sm); }
@@ -609,9 +549,6 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
     .savebar__hint { font-size: 12px; color: var(--tm-text-muted); }
 
     @media (max-width: 1000px) {
-      .cs { grid-template-columns: 1fr; }
-      .rail { position: static; }
-      .rail__nav { flex-direction: row; flex-wrap: wrap; }
       .grid-3, .grid-4, .toggles, .media-grid { grid-template-columns: 1fr 1fr; }
     }
     /* Modal styles */
@@ -689,11 +626,14 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
     @media (max-width: 600px) { .copy-opts-grid { grid-template-columns: 1fr; } }
   `],
 })
-export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
+export class CitySettingsComponent implements OnInit, OnDestroy {
   cityId: number | null = null;
   form: CitySettings | null = null;
   loading = false;
   saving = false;
+  @Input() serviceMode: 'private' | 'fixed' | 'shuttle' | null = null;
+  @Input() serviceLabel = '';
+  private savedCancellationPercent: number | null = null;
   dispatcherSettings: DispatcherSetting[] = [];
   activeDispatcherKind: 'local' | 'outstation' = 'local';
 
@@ -713,18 +653,14 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   dispatchModes = DISPATCH_MODES;
   toggles = TOGGLES;
-  nav = NAV;
-  activeId = NAV[0].id;
 
   private sub?: Subscription;
-  private spy?: IntersectionObserver;
 
   constructor(
     private api: ApiService,
     private cityCtx: CityContextService,
     private toast: ToastService,
-    private host: ElementRef<HTMLElement>,
-    private cdr: ChangeDetectorRef,
+    readonly names: ServiceNamesService,
   ) {}
 
   sourcePreview: any = null;
@@ -812,53 +748,20 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.sub = this.cityCtx.cityId$.subscribe((id) => {
       this.cityId = id;
       this.form = null;
+      this.dispatcherSettings = [];
+      this.saving = false;
       if (id != null) {
         this.fetch();
         this.fetchDispatcherSettings();
       }
     });
-    this.cityCtx.cities$.subscribe((list) => {
+    this.sub.add(this.cityCtx.cities$.subscribe((list) => {
       this.allCities = list || [];
-    });
-  }
-
-  ngAfterViewInit(): void {
-    // Observer attaches once sections exist; re-armed after each fetch.
+    }));
   }
 
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
-    this.spy?.disconnect();
-  }
-
-  // ── section-nav ──
-  scrollTo(id: string): void {
-    this.activeId = id;
-    this.host.nativeElement.querySelector('#' + id)?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
-  }
-
-  private armScrollSpy(): void {
-    this.spy?.disconnect();
-    const sections = Array.from(
-      this.host.nativeElement.querySelectorAll<HTMLElement>('.sec[id]'),
-    );
-    if (!sections.length) return;
-    this.spy = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-        if (visible?.target.id) {
-          this.activeId = visible.target.id;
-          this.cdr.markForCheck();
-        }
-      },
-      { rootMargin: '-72px 0px -55% 0px', threshold: 0 },
-    );
-    sections.forEach((s) => this.spy!.observe(s));
   }
 
   // ── toggle helpers (typed access into the form object) ──
@@ -878,15 +781,18 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   fetchDispatcherSettings(): void {
-    if (this.cityId == null) { this.dispatcherSettings = []; return; }
+    if (this.cityId == null || this.serviceMode !== 'private') { this.dispatcherSettings = []; return; }
+    const cityId = this.cityId;
     this.api.get<{ data: DispatcherSetting[] }>(`/admin/cities/${this.cityId}/dispatcher-settings`).subscribe({
       next: (res) => {
+        if (cityId !== this.cityId) return;
         this.dispatcherSettings = (res.data ?? []).map((row) => ({ ...row }));
         if (!this.dispatcherSettings.some((row) => row.kind === this.activeDispatcherKind)) {
           this.activeDispatcherKind = this.dispatcherSettings[0]?.kind ?? 'local';
         }
       },
       error: () => {
+        if (cityId !== this.cityId) return;
         this.dispatcherSettings = [];
         this.toast.error('Failed to load private dispatcher settings');
       },
@@ -896,21 +802,22 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
   fetch(): void {
     if (this.cityId == null) return;
     this.loading = true;
+    const cityId = this.cityId;
     this.api
       .get<{ settings: CitySettings }>(`/admin/cities/${this.cityId}/settings`)
       .subscribe({
         next: (res) => {
+          if (cityId !== this.cityId) return;
           const s = res.settings;
           s.negotiation_floor_percent = Number(s.negotiation_floor_percent ?? 10);
           s.toll_mode = s.toll_mode ?? 'no';
           s.show_low_wallet_alert = !!s.show_low_wallet_alert;
           this.form = s;
+          this.savedCancellationPercent = s.cancellation_charge_percent;
           this.loading = false;
-          this.activeId = NAV[0].id;
-          // Sections render on the next tick — arm the scroll-spy then.
-          setTimeout(() => this.armScrollSpy(), 0);
         },
         error: () => {
+          if (cityId !== this.cityId) return;
           this.loading = false;
           this.toast.error('Failed to load settings');
         },
@@ -921,11 +828,18 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.cityId == null || !this.form || this.saving) return;
     this.saving = true;
 
+    const cityId = this.cityId;
     const f = this.form;
     const fd = new FormData();
     fd.append('_method', 'PATCH');
 
     const append = (key: string, val: unknown): void => {
+      if (!this.serviceMode && (key.startsWith('private_') || key.startsWith('fixed_') || key.startsWith('shuttle_')
+          || key === 'negotiation_floor_percent' || key === 'cancellation_charge_percent')) return;
+      if (this.serviceMode && !key.startsWith(this.serviceMode + '_')
+          && !(this.serviceMode === 'private' && key === 'negotiation_floor_percent')
+          && !(this.serviceMode !== 'fixed' && key === 'cancellation_charge_percent')) return;
+      if (key === 'cancellation_charge_percent' && val === this.savedCancellationPercent) return;
       if (val === null || val === undefined) return;
       if (typeof val === 'boolean') fd.append(key, val ? '1' : '0');
       else fd.append(key, String(val));
@@ -953,7 +867,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     append('support_email', f.support_email);
 
     const cityRequest = this.api.postMultipart<{ settings: CitySettings }>(`/admin/cities/${this.cityId}/settings`, fd);
-    const dispatcherRequests = this.dispatcherSettings.map((row) => this.api.patch<{ setting: DispatcherSetting }>(
+    const dispatcherRequests = (this.serviceMode === 'private' ? this.dispatcherSettings : []).map((row) => this.api.patch<{ setting: DispatcherSetting }>(
       `/admin/cities/${this.cityId}/dispatcher-settings/${row.id}`,
       {
         automatic_dispatcher_type: row.automatic_dispatcher_type,
@@ -978,6 +892,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
 
     forkJoin([cityRequest, ...dispatcherRequests]).subscribe({
       next: (responses) => {
+        if (cityId !== this.cityId) return;
         this.saving = false;
         const cityRes = responses[0] as { settings: CitySettings };
         if (cityRes.settings) {
@@ -985,11 +900,13 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
           cityRes.settings.toll_mode = cityRes.settings.toll_mode ?? 'no';
           cityRes.settings.show_low_wallet_alert = !!cityRes.settings.show_low_wallet_alert;
           this.form = cityRes.settings;
+          this.savedCancellationPercent = cityRes.settings.cancellation_charge_percent;
         }
         this.fetchDispatcherSettings();
         this.toast.success('City settings saved');
       },
       error: (err) => {
+        if (cityId !== this.cityId) return;
         this.saving = false;
         this.toast.error(err?.error?.message || 'Failed to save settings');
       },

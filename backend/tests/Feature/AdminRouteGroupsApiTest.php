@@ -110,6 +110,30 @@ class AdminRouteGroupsApiTest extends TestCase
         $this->assertDatabaseCount('route_groups', 2); $this->assertDatabaseMissing('route_groups', ['name' => 'New draft']);
     }
 
+    public function test_vehicle_form_saves_existing_and_new_types_without_assigning_routes_or_fares(): void
+    {
+        $type = DB::table('vehicle_types')->insertGetId(['name' => 'Existing minibus', 'is_active' => true]);
+        $payload = ['route_group_ids' => [], 'vehicles' => [
+            ['vehicle_type_id' => $type, 'display_name' => 'City minibus', 'max_people' => 9, 'luggage_capacity' => 0],
+            ['vehicle_type_name' => 'New coach', 'display_name' => 'Coach', 'max_people' => 30, 'luggage_capacity' => 4],
+        ]];
+        $url = "/api/admin/cities/{$this->cityId}/vehicle-types/batch";
+        $result = $this->postJson($url, $payload)->assertCreated();
+        $this->assertCount(2, $result->json('data'));
+        foreach ($payload['vehicles'] as $vehicle) {
+            $this->assertDatabaseHas('city_vehicle_types', [
+                'display_name' => $vehicle['display_name'], 'city_id' => $this->cityId,
+                'max_people' => $vehicle['max_people'], 'luggage_capacity' => $vehicle['luggage_capacity'],
+                'vehicle_set_id' => null, 'ride_type_id' => null,
+            ]);
+        }
+        $this->assertDatabaseCount('vehicle_sets', 0);
+        $this->assertDatabaseCount('pricing_rules', 0);
+        $payload['vehicles'][0]['display_name'] = 'Rolled back';
+        $this->postJson($url, $payload)->assertUnprocessable()->assertJsonValidationErrors('vehicles.1');
+        $this->assertDatabaseMissing('city_vehicle_types', ['display_name' => 'Rolled back']);
+    }
+
     public function test_multiple_vehicles_can_join_groups_and_a_failed_batch_creates_nothing(): void
     {
         $group = $this->postJson("/api/admin/cities/{$this->cityId}/route-groups", ['name' => 'Town'])->assertCreated()->json('route_group.id');

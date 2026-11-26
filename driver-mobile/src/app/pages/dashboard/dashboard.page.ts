@@ -1,3 +1,4 @@
+import { defaultServiceNames, loadServiceBranding, ServiceBranding, resolveArtworkUrl } from '../../core/service-branding';
 import { watchMapCamera, releaseMapCamera, resumeMapCamera, updateMapCamera } from '../../core/map-camera';
 import { DriverMapCamera, DRIVER_MAP_STYLE, fitDriverMap } from '../../core/driver-map';
 import { HomeSessionService } from '../../core/home-session.service';
@@ -7,7 +8,7 @@ import { DocumentRequirement, DocumentRequirementsModalComponent } from '../../s
 import { AfterViewInit, Component, ElementRef, HostListener, OnDestroy, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertController, ModalController } from '@ionic/angular';
-import { catchError, firstValueFrom, forkJoin, interval, of, Subscription } from 'rxjs';
+import { firstValueFrom, interval, Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { DriverServiceAccess } from '../../core/driver-service-access';
 import { AuthService, AuthUser } from '../../core/auth.service';
@@ -303,6 +304,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private syncTimer: ReturnType<typeof setInterval> | null = null;
 
   ionViewWillEnter(): void {
+    this.serviceCatalogCity = null;
     this.homeDate = new Date();
     this.dashboardActive = true;
     this.greetingInProgress = true;
@@ -417,28 +419,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   resolveBannerImageUrl(url: string | null | undefined): string {
-    const value = url?.trim();
-    if (!value) return '';
-    const apiBase = environment.apiUrl.replace(/\/api\/?$/i, '').replace(/\/$/, '');
-
-    try {
-      const apiOrigin = new URL(apiBase);
-      const imageUrl = new URL(value, `${apiBase}/`);
-      if (!['http:', 'https:'].includes(imageUrl.protocol)) return '';
-
-      if (['localhost', '127.0.0.1', '[::1]'].includes(imageUrl.hostname)) {
-        return `${apiBase}${imageUrl.pathname}${imageUrl.search}${imageUrl.hash}`;
-      }
-
-      // Older servers can return HTTP links for uploads on our HTTPS API host.
-      if (apiOrigin.protocol === 'https:' && imageUrl.protocol === 'http:'
-        && imageUrl.host === apiOrigin.host) {
-        imageUrl.protocol = 'https:';
-      }
-      return imageUrl.href;
-    } catch {
-      return '';
-    }
+    return resolveArtworkUrl(url);
   }
 
   async onBannerClick(banner: AppBanner | null): Promise<void> {
@@ -703,51 +684,23 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   readonly serviceIcons: Record<ServiceMode, string> = {
     private: 'car-sport-outline', fixed: 'bus-outline', shuttle: 'git-network-outline',
   };
-  serviceCatalog: Partial<Record<ServiceMode, { label: string; imageUrl: string }>> = {};
+  serviceCatalog: ServiceBranding = {};
   private serviceCatalogCity: number | null = null;
 
   private loadServiceCatalog(): void {
-    const cityId = Number(this.driver?.['city_id']);
-    if (!cityId || this.approvedServiceModes.length < 2 || this.serviceCatalogCity === cityId) return;
+    if (!this.driver) return;
+    const cityId = Number(this.driver['city_id']) || Number((this.driver['city_ids'] as number[])?.[0]) || 0;
+    if (this.serviceCatalogCity === cityId) return;
     this.serviceCatalogCity = cityId;
-    this.serviceCatalog = {};
-    type ServiceArtwork = {
-      scopes: { modes: { mode: ServiceMode; name: string; display_name?: string | null; image_url?: string | null }[] }[];
-      service_artwork?: { mode: ServiceMode; name: string; display_name?: string | null; image_url?: string | null }[];
-    };
-    forkJoin({
-      catalog: this.api.get<ServiceArtwork>(`/catalog/cities/${cityId}/driver-ride-products`),
-      // Pricing resolves city/vehicle-family artwork as well as operator images.
-      // This metadata only decorates the already-approved service tiles.
-      artwork: this.api.get<ServiceArtwork>(`/pricing/cities/${cityId}/products`).pipe(catchError(() => of(null))),
-    }).subscribe({
-      next: ({ catalog, artwork }) => {
-        if (this.serviceCatalogCity !== cityId) return;
-        for (const scope of [...(artwork?.scopes ?? []), ...(catalog.scopes ?? [])]) {
-          for (const item of scope.modes) {
-            const image = artwork?.scopes?.map(s => s.modes.find(mode => mode.mode === item.mode && mode.image_url?.trim()))
-              .find(mode => !!mode)?.image_url;
-            this.serviceCatalog[item.mode] = {
-              label: item.display_name || item.name,
-              imageUrl: this.resolveBannerImageUrl(image || item.image_url),
-            };
-          }
-        }
-        for (const item of catalog.service_artwork ?? []) {
-          this.serviceCatalog[item.mode] = {
-            label: item.display_name || item.name,
-            imageUrl: this.resolveBannerImageUrl(item.image_url) || this.serviceCatalog[item.mode]?.imageUrl || '',
-          };
-        }
-      },
-      error: () => {
-        if (this.serviceCatalogCity === cityId) this.serviceCatalogCity = null;
-      },
+    loadServiceBranding(this.api, cityId).subscribe(branding => {
+      if (this.serviceCatalogCity !== cityId) return;
+      if (Object.keys(branding).length) this.serviceCatalog = branding;
+      else this.serviceCatalogCity = null;
     });
   }
 
   servicePickerLabel(mode: ServiceMode): string {
-    return this.serviceCatalog[mode]?.label || this.serviceLabel(mode);
+    return this.serviceCatalog[mode]?.label || defaultServiceNames[mode];
   }
 
   get needsServiceSelection(): boolean {
@@ -820,13 +773,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.router.navigateByUrl(path);
   }
 
-
-  serviceLabel(mode: 'private' | 'fixed' | 'shuttle' | string | null | undefined = this.driveMode): string {
-    if (mode === 'fixed') return 'Fixed vehicle';
-    if (mode === 'shuttle') return 'Shuttle rides';
-    if (mode === 'private') return 'Private rides';
-    return 'Service';
-  }
 
   scopeLabel(scope: 'local' | 'outstation' | 'both' | string | null | undefined = this.driveScope): string {
     if (scope === 'both') return 'Local & Outstation';

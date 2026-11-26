@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Router, RouterOutlet, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { AuthService } from './core/auth.service';
+import { ServiceNamesService, servicePermissions } from './core/service-names.service';
 import { ShellComponent, TopbarComponent, CitySwitcherComponent, NavSection, NavItem } from './layout';
 import { ToastComponent } from './ui';
 
@@ -36,7 +37,6 @@ export class AppComponent implements OnInit {
     [/^\/drivers\/approvals/,       'Driver Approvals'],
     [/^\/drivers\/documents/,       'Document Catalog'],
     [/^\/contact-drivers/,          'Contact Drivers'],
-    [/^\/pricing/,                  'Pricing'],
     [/^\/vehicles/,                 ''],
     [/^\/promotions\/coupons/,      'Coupons'],
     [/^\/promotions\/banners/,      'App Banners'],
@@ -70,7 +70,6 @@ export class AppComponent implements OnInit {
    * page's data is per-city. Keep in sync with app.routes.ts.
    */
   private static readonly CITY_SCOPED: RegExp[] = [
-    /^\/pricing\b/,
     /^\/vehicles\b/,
     /^\/operations\b/,
     /^\/vehicle-seat-layouts\b/,
@@ -79,7 +78,7 @@ export class AppComponent implements OnInit {
     /^\/fixed-departures\b/,
     /^\/fixed-routes\b/,
     /^\/shuttle-bookings\b/,
-    /^\/rides\b/,
+    /^\/rides\/[^/?#]+/,
     /^\/settings\/(cities|city|fleets|vehicle-types|operator)\b/,
   ];
 
@@ -94,7 +93,7 @@ export class AppComponent implements OnInit {
     AppComponent.CITY_SCOPED.some((re) => re.test(this.url())),
   );
 
-  constructor(public router: Router, public auth: AuthService) {}
+  constructor(public router: Router, public auth: AuthService, private serviceNames: ServiceNamesService) {}
 
   ngOnInit(): void {
     if (typeof window !== 'undefined') {
@@ -129,11 +128,13 @@ export class AppComponent implements OnInit {
 
     // Sidebar groups follow the city onboarding workflow:
     //   Home        → Dashboard, pinned above everything else
+    //   Master      → individual ride services
     //   City Setup  → configure a city (dependency-ordered)
     //   Operations  → run the city day-to-day
     //   Insights    → analytics & reports
     //   Platform    → global, not city-scoped
     const home: NavItem[] = [];
+    const master: NavItem[] = [];
     const citySetup: NavItem[] = [];
     const operations: NavItem[] = [];
     const finance: NavItem[] = [];
@@ -143,20 +144,19 @@ export class AppComponent implements OnInit {
     // --- Home (top of nav, no section header) ---
     if (can('dashboard')) home.push({ label: 'Dashboard', icon: 'home', route: '/dashboard' });
 
+    if (can('vehicles')) master.push({ label: 'Vehicles', icon: 'car', route: '/operations/shared-vehicles' });
+    if (canAny(servicePermissions)) {
+      const labels = this.serviceNames.labels();
+      const images = this.serviceNames.images();
+      master.push({ label: labels.private, imageUrl: images.private, icon: 'car', route: '/operations/private' });
+      if (canAny(['vehicles', 'city_settings', 'operator_settings', 'rides'])) {
+        master.push({ label: labels.fixed, imageUrl: images.fixed, icon: 'road', route: '/operations/routes' });
+      }
+      master.push({ label: labels.shuttle, imageUrl: images.shuttle, icon: 'road', route: '/operations/shuttle' });
+    }
+
     // --- City Setup (dependency order) ---
-    // Vehicles is the single workspace for vehicle types, city vehicles, fares,
-    // fixed routes, route groups, drivers and seat layouts — the concerns that
-    // used to sprawl across several pages. Everything is edited in place.
     if (can('city_settings'))          citySetup.push({ label: 'Cities',        icon: 'map-marker', route: '/settings/cities' });
-    if (can('vehicles')) citySetup.push({
-      label: 'Master', icon: 'grid',
-      children: [
-        { label: 'Routes', icon: 'road', route: '/operations/routes' },
-        { label: 'Vehicle Configuration', icon: 'car', route: '/operations/vehicle-configuration' },
-      ],
-    });
-    if (can('pricing'))
-                                       citySetup.push({ label: 'Pricing',       icon: 'tag', route: '/pricing' });
     if (can('city_settings'))          citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
 
     if (can('coupons')) {
@@ -185,7 +185,6 @@ export class AppComponent implements OnInit {
         icon: 'road',
         children: filterTruthy([
           can('rides') && { label: 'History', icon: 'calendar', route: '/rides' },
-          can('rides') && { label: 'Live', icon: 'map-marker', route: '/fixed-departures' },
         ]),
       });
     }
@@ -248,6 +247,7 @@ export class AppComponent implements OnInit {
 
     return [
       { items: home },                            // unlabeled — sits at the very top
+      { label: 'Master', items: master },
       { label: 'City Setup', items: citySetup },
       { label: 'Operations', items: operations },
       { label: 'Finance',    items: finance },

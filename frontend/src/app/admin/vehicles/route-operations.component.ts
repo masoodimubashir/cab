@@ -5,7 +5,6 @@ import { ButtonComponent, DrawerComponent, IconComponent } from '../../ui';
 import { DriverRouteGroupsPanelComponent } from '../drivers/driver-route-groups-panel.component';
 import { MasterAction, MasterDriver, MasterGroup, MasterRoute, MasterVehicle, MasterExplorerComponent, RouteGrouping } from './master-explorer.component';
 import { RouteGroupSetupComponent, SetupVehicle, SetupVehicleSet } from './route-group-setup.component';
-import { AddVehiclesComponent } from './add-vehicles.component';
 import { RouteNetworkMapComponent } from './route-network-map.component';
 import { StandRenameComponent } from './stand-rename.component';
 import { RouteCopyComponent } from './route-copy.component';
@@ -16,11 +15,12 @@ type RouteDetailTab = 'overview' | 'browse' | 'ungrouped' | 'copied' | 'groups' 
 interface DirectoryRow { key: string; depth: number; name: string; kind: string; id?: number; ids: number[]; route?: MasterRoute; }
 @Component({
   selector: 'app-route-operations', standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, DrawerComponent, IconComponent, RouteGroupSetupComponent, DriverRouteGroupsPanelComponent, AddVehiclesComponent, RouteNetworkMapComponent, StandRenameComponent, RouteCopyComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, DrawerComponent, IconComponent, RouteGroupSetupComponent, DriverRouteGroupsPanelComponent, RouteNetworkMapComponent, StandRenameComponent, RouteCopyComponent],
   templateUrl: './route-operations.component.html', styleUrls: ['./route-operations.component.scss'],
 })
 export class RouteOperationsComponent implements OnChanges {
   @Input() cityId!: number;
+  @Output() manageSharedVehicles = new EventEmitter<'add' | number>();
   @Input() cityName = '';
   @Input() countryCode = '';
   @Input() loading = false;
@@ -98,7 +98,6 @@ export class RouteOperationsComponent implements OnChanges {
   selectedVehicleIds = new Set<number>();
   vehicleTypeId: number | null = null;
   vehicleSettingsId: number | null = null;
-  batchVehicleOpen = false;
   pageSize = 10;
   readonly pageSizes = [10, 25, 50, 100];
   private pageNumber = 1;
@@ -140,7 +139,6 @@ export class RouteOperationsComponent implements OnChanges {
       this.driverAssignment = null; this.routeStarterOpen = false;
       this.routeForGroup = null; this.routeForDrivers = null; this.initialRouteId = null; this.importStarter = false; this.newRouteVehicleId = null;
       this.selectedVehicleIds.clear(); this.vehicleTypeId = null; this.vehicleSettingsId = null;
-      this.batchVehicleOpen = false;
       this.pageNumber = 1; this.paginationFilterKey = '';
       this.explorer.expanded.clear(); this.restorePreferences();
       this.copiedSearch = ''; this.restoreCopiedRouteIds();
@@ -192,7 +190,7 @@ export class RouteOperationsComponent implements OnChanges {
   routeDrivers(routeId: number): MasterDriver[] { const ids = new Set(this.groupsForRoute(routeId).flatMap(group => group.driver_user_ids)); return this.drivers.filter(driver => ids.has(driver.user_id)); }
   vehicleForRoute(route: MasterRoute): MasterVehicle | undefined { return this.vehicles.find(vehicle => (vehicle.mode_row_ids ?? [vehicle.id]).includes(route.city_vehicle_type_id ?? -1)); }
   get moduleTitle(): string { return { routes: 'Routes', vehicles: 'Vehicles & sharing', drivers: 'Driver assignments' }[this.view]; }
-  get moduleDescription(): string { return { routes: 'Manage route maps, stops, fares and service areas.', vehicles: 'Configure vehicle options, capacity, pricing and shared sets.', drivers: 'Manage drivers, profiles and their assigned stands.' }[this.view]; }
+  get moduleDescription(): string { return { routes: 'Manage route maps, stops, fares and service areas.', vehicles: 'Manage vehicle names, passenger and luggage capacity, and seat layouts for this city.', drivers: 'Manage drivers, profiles and their assigned stands.' }[this.view]; }
   changeView(view: View): void {
     if (this.view === view) return;
     this.view = view; this.search = ''; this.status = 'all'; this.scope = 'all';
@@ -206,7 +204,8 @@ export class RouteOperationsComponent implements OnChanges {
     const index = views.indexOf(view);
     const target = event.key === 'ArrowRight' ? (index + 1) % views.length : event.key === 'ArrowLeft' ? (index + views.length - 1) % views.length : event.key === 'Home' ? 0 : event.key === 'End' ? views.length - 1 : -1;
     if (target < 0) return;
-    event.preventDefault(); this.changeView(views[target]);
+    event.preventDefault();
+    this.changeView(views[target]);
     (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[target]?.focus();
   }
   selectGroup(group: MasterGroup): void { this.openGroupManagement(); this.selectedGroupId = group.id; }

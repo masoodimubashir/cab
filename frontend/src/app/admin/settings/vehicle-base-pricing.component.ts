@@ -22,6 +22,7 @@ const FARE_SECTIONS: FareSection[] = [
     title: 'Base fare',
     fields: [
       { key: 'base_fare', label: 'Base fare', req: true },
+      { key: 'surge_multiplier', label: 'Base surge multiplier', req: true },
     ],
   },
   {
@@ -105,7 +106,8 @@ const ALL_KEYS: string[] = FARE_SECTIONS.flatMap((s) => s.fields.map((f) => f.ke
 
       <div class="bp__cue" *ngIf="loading">Loading rate card…</div>
 
-      <ng-container *ngIf="!loading">
+      <p *ngIf="loadFailed">Could not load this rate card. <button type="button" (click)="load()">Retry</button></p>
+      <ng-container *ngIf="!loading && !loadFailed">
         <section class="psec">
           <h4 class="psec__title">Commission</h4>
           <div class="seg">
@@ -196,6 +198,7 @@ export class VehicleBasePricingComponent implements OnChanges {
   commissionPercent: number | null = null;
   fixedCommission: number | null = null;
   loading = false;
+  loadFailed = false;
   saving = false;
 
   constructor(private api: ApiService, private toast: ToastService) {}
@@ -208,16 +211,19 @@ export class VehicleBasePricingComponent implements OnChanges {
 
   get canSave(): boolean {
     const filled = (v: unknown) => v !== null && v !== undefined && (v as any) !== '';
-    return filled(this.form['base_fare']);
+    return !this.loading && !this.loadFailed && filled(this.form['base_fare']) && filled(this.form['surge_multiplier']);
   }
 
   load(): void {
     if (this.cityId == null || this.cityVehicleTypeId == null) return;
     this.loading = true;
+    this.loadFailed = false;
+    const rowId = this.cityVehicleTypeId;
     const params = new URLSearchParams({ city_vehicle_type_id: String(this.cityVehicleTypeId) });
 
     this.api.get<{ rule: Record<string, any> | null }>(`/admin/pricing-rules/resolve?${params}`).subscribe({
       next: (res) => {
+        if (rowId !== this.cityVehicleTypeId) return;
         const rule = res?.rule ?? null;
         const f = this.blankForm();
         if (rule) {
@@ -226,13 +232,16 @@ export class VehicleBasePricingComponent implements OnChanges {
             f[k] = v === undefined || v === null ? null : Number(v);
           }
         }
+        f['surge_multiplier'] = Number(rule?.['surge_multiplier'] ?? 1);
         this.form = f;
         this.commissionType = rule?.['commission_type'] === 'fixed' ? 'fixed' : 'percent';
         this.commissionPercent = rule?.['commission_percent'] != null ? Number(rule['commission_percent']) : null;
         this.fixedCommission = rule?.['fixed_commission'] != null ? Number(rule['fixed_commission']) : null;
         this.loading = false;
       },
-      error: () => { this.loading = false; this.toast.error('Failed to load rate card'); },
+      error: () => {
+        if (rowId === this.cityVehicleTypeId) { this.loading = false; this.loadFailed = true; }
+      },
     });
   }
 
@@ -241,7 +250,6 @@ export class VehicleBasePricingComponent implements OnChanges {
     this.saving = true;
     const payload: Record<string, unknown> = {
       city_vehicle_type_id: this.cityVehicleTypeId,
-      surge_multiplier: 1,
       commission_type: this.commissionType,
       commission_percent: this.commissionType === 'percent' ? (this.commissionPercent ?? 0) : 0,
       fixed_commission: this.commissionType === 'fixed' ? (this.fixedCommission ?? 0) : 0,

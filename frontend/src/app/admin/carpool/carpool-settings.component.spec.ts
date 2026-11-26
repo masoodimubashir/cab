@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
+import { AuthService } from '../../core/auth.service';
 import { CarpoolSettingsComponent, parseWords } from './carpool-settings.component';
 
 const LIMITS = {
@@ -54,14 +55,19 @@ describe('CarpoolSettingsComponent', () => {
   let toast: jasmine.SpyObj<ToastService>;
   let c: CarpoolSettingsComponent;
 
+  let canBrand = false;
+  const operator = { settings: { carpool_service_name: 'Ride Share', carpool_service_image_url: 'http://x/tile.png' } };
+
   function open(data = settings()): void {
-    api.get.and.returnValue(of({ data }) as any);
+    api.get.and.callFake(((path: string) => of(path === '/admin/operator-settings' ? operator : { data })) as any);
+    TestBed.configureTestingModule({ providers: [{ provide: AuthService, useValue: { hasPermission: (p: string) => canBrand && p === 'operator_settings' } }] });
     c = TestBed.runInInjectionContext(() => new CarpoolSettingsComponent(api, toast));
     c.ngOnInit();
   }
 
   beforeEach(() => {
-    api = jasmine.createSpyObj<ApiService>('ApiService', ['get', 'patch', 'post', 'delete']);
+    api = jasmine.createSpyObj<ApiService>('ApiService', ['get', 'patch', 'post', 'delete', 'postMultipart']);
+    canBrand = false;
     toast = jasmine.createSpyObj<ToastService>('ToastService', ['success', 'error']);
   });
 
@@ -340,6 +346,81 @@ describe('CarpoolSettingsComponent', () => {
       c.wordFilter = '';
       expect(c.shownWords.length).toBe(3);
       expect(c.s?.banned_words.length).toBe(3);
+    });
+  });
+
+  describe('app tile name and picture', () => {
+    const sent = () => api.postMultipart.calls.mostRecent().args[1] as FormData;
+
+    it('is hidden, and not loaded, for staff without the Operator settings permission', () => {
+      open();
+      expect(c.canBrand).toBeFalse();
+      expect(c.tile).toBeNull();
+      expect(api.get).not.toHaveBeenCalledWith('/admin/operator-settings');
+    });
+
+    it('shows the saved name and picture', () => {
+      canBrand = true;
+      open();
+      expect(c.tile).toEqual({ name: 'Ride Share', image: 'http://x/tile.png' });
+      expect(c.tileName).toBe('Ride Share');
+      expect(c.tilePreview).toBe('http://x/tile.png');
+      expect(c.tileDirty).toBeFalse();
+    });
+
+    it('saves only the carpool name, as the same form the operator settings page sends', () => {
+      canBrand = true;
+      open();
+      api.postMultipart.and.returnValue(of({ settings: { carpool_service_name: 'Pool', carpool_service_image_url: 'http://x/tile.png' } }) as any);
+      c.tileName = '  Pool ';
+      expect(c.tileDirty).toBeTrue();
+      c.saveTile();
+      expect(api.postMultipart.calls.mostRecent().args[0]).toBe('/admin/operator-settings');
+      const fd = sent();
+      expect(fd.get('_method')).toBe('PATCH');
+      expect(fd.get('carpool_service_name')).toBe('Pool');
+      expect(fd.has('private_service_name')).toBeFalse();
+      expect(fd.has('carpool_service_image')).toBeFalse();
+      expect(fd.has('carpool_remove_service_image')).toBeFalse();
+      expect(c.tile?.name).toBe('Pool');
+      expect(c.tileDirty).toBeFalse();
+      expect(toast.success).toHaveBeenCalled();
+    });
+
+    it('sends a new picture, or asks to remove it', () => {
+      canBrand = true;
+      open();
+      api.postMultipart.and.returnValue(of(operator) as any);
+      const file = new File(['x'], 'tile.png', { type: 'image/png' });
+      c.pickTile({ target: { files: [file], value: 'tile.png' } } as unknown as Event);
+      c.saveTile();
+      expect(sent().get('carpool_service_image')).toEqual(file);
+
+      c.removeTile();
+      expect(c.tilePreview).toBeNull();
+      c.saveTile();
+      expect(sent().get('carpool_remove_service_image')).toBe('1');
+      expect(sent().has('carpool_service_image')).toBeFalse();
+    });
+
+    it('refuses a picture over 4 MB without sending it', () => {
+      canBrand = true;
+      open();
+      const big = { size: 5 * 1024 * 1024, name: 'big.png' } as File;
+      c.pickTile({ target: { files: [big], value: 'big.png' } } as unknown as Event);
+      expect(toast.error).toHaveBeenCalledWith('Choose a picture up to 4 MB.');
+      expect(c.tileDirty).toBeFalse();
+    });
+
+    it('keeps what was typed when saving fails', () => {
+      canBrand = true;
+      open();
+      api.postMultipart.and.returnValue(throwError(() => ({ status: 422, error: { errors: { carpool_service_name: ['Too long.'] } } })));
+      c.tileName = 'Pool';
+      c.saveTile();
+      expect(toast.error).toHaveBeenCalledWith('Too long.');
+      expect(c.tileName).toBe('Pool');
+      expect(c.tileBusy).toBeFalse();
     });
   });
 });

@@ -269,7 +269,7 @@ const LAYOUT_PRESETS: LayoutPreset[] = [
                     <option value="premium">Premium</option>
                   </select>
                 </label>
-                <label class="field">
+                <label class="field" *ngIf="editSeatPrices">
                   <span class="field__lbl">Price delta (₹)</span>
                   <input
                     type="number"
@@ -385,6 +385,7 @@ const LAYOUT_PRESETS: LayoutPreset[] = [
 })
 export class SeatLayoutDesignerComponent implements OnInit, OnDestroy {
   // ── embedded-mode inputs/outputs ──────────────────────────────────
+  @Input() editSeatPrices = true;
   @Input() embedded = false;
   @Input() embeddedCityId: number | null = null;
   @Input() embeddedVehicleTypeId: number | null = null;

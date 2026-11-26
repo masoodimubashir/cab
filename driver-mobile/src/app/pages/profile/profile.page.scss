@@ -2009,3 +2009,6 @@ ion-modal.pf-city-modal-white {
   li { padding: 9px 12px; border-radius: 10px; background: #f1f5f9; color: #101a2c; font-size: 14px; font-weight: 600; }
   small { display: block; margin-top: 3px; font-weight: 400; }
 }
+
+.approved-services, .approved-services span { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.approved-services img { width: 22px; height: 22px; object-fit: contain; }

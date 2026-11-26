@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, Input, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -101,7 +101,7 @@ const PAYMENT_STATUS_OPTIONS = [
     <div class="page">
       <header class="page__hero">
         <div>
-          <h1 class="page__title">Shuttle Bookings</h1>
+          <h1 class="page__title">{{ title }}</h1>
           <p class="page__sub">Read-only booking records with linked dispatch trip, driver, payment, and journey status.</p>
         </div>
       </header>
@@ -307,6 +307,7 @@ export class ShuttleBookingsComponent implements OnInit, OnDestroy {
   page = 1;
   pageSize = 25;
   loading = false;
+  @Input() title = 'Shuttle Bookings';
   cityId: number | null = null;
 
   query = '';

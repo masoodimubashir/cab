@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription, forkJoin, firstValueFrom, Observable } from 'rxjs';
+import { resolvedRideMode } from '../../core/service-names.service';
 import { ApiService } from '../../core/api.service';
 import { CityContextService, CityOption } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
@@ -12,6 +13,7 @@ import { ReturnToSetupComponent } from '../setup/return-to-setup.component';
 import { FixedRoutesComponent, ImportedRouteDraft } from '../fixed/fixed-routes.component';
 import { VehicleBasePricingComponent } from '../settings/vehicle-base-pricing.component';
 import { OutstationPackagesComponent } from '../settings/outstation-packages.component';
+import { AddVehiclesComponent } from './add-vehicles.component';
 import { SeatGridComponent } from '../vehicle-seat-layouts/seat-grid.component';
 import { SeatLayoutDesignerComponent } from '../vehicle-seat-layouts/seat-layout-designer.component';
 import { VehicleSeatLayout, VehicleSeatLayoutsService } from '../vehicle-seat-layouts/vehicle-seat-layouts.service';
@@ -22,13 +24,12 @@ import { RouteOperationsComponent } from './route-operations.component';
 import type { OperationsAction } from './route-operations.component';
 import type { SetupVehicleSet } from './route-group-setup.component';
 
-/** How a ride type behaves, derived from its name. Only the behaviour is
- *  inferred — every label shown to the operator comes from the database. */
+/** Stable catalogue mode, including support for older rows with only a name. */
 type ModeKind = 'private' | 'fixed' | 'shuttle';
 type CityVehicleStatus = 'all' | 'enabled' | 'disabled';
 
 interface VehicleTypeRow { id: number; name: string; is_active: boolean; }
-interface RideTypeRef { id: number; name: string; }
+interface RideTypeRef { id: number; name: string; mode?: ModeKind; }
 interface VehicleTypeRef { id: number; name: string; }
 
 interface CityVehicleRow {
@@ -43,6 +44,7 @@ interface CityVehicleRow {
   vehicle_type_id: number | null;
   vehicle_type_name?: string | null;
   ride_type_name: string | null;
+  ride_type_mode?: ModeKind;
   display_name: string;
   display_order: number;
   max_people: number;
@@ -132,18 +134,18 @@ interface TabDef { key: string; label: string; count?: number; }
     MasterExplorerComponent,
     MasterGroupEditorComponent,
     VehicleSetsEditorComponent,
-    RouteOperationsComponent,
+    RouteOperationsComponent, AddVehiclesComponent,
   ],
   template: `
     <div class="ws">
-      <app-return-to-setup></app-return-to-setup>
+      <app-return-to-setup *ngIf="!serviceMode && !sharedVehicles"></app-return-to-setup>
 
-      <header class="ws__head" *ngIf="masterSection !== 'routes'">
-        <div class="vehicle-page-heading"><h1>{{ masterHeading }}</h1><p>{{ masterSection && masterSection !== 'vehicle-configuration' ? 'Manage ' + cityName + ' routes, stands and driver allocations.' : 'Choose a vehicle to manage its routes, stands, drivers and fares.' }}</p></div>
+      <header class="ws__head" *ngIf="!serviceMode && masterSection !== 'routes'">
+        <div class="vehicle-page-heading"><h1>{{ masterHeading }}</h1><p>{{ masterSection && masterSection !== 'vehicle-configuration' ? 'Manage ' + cityName + ' routes, stands and driver allocations.' : 'Manage vehicles, capacity, seat layouts and driver assignments.' }}</p></div>
         <div class="vehicle-page-actions">
         <tm-button variant="outline" icon="cog" (clicked)="openTypes()">Vehicle types</tm-button>
         <tm-button variant="outline" [disabled]="cityId == null || loading" (clicked)="vehicleSetsOpen = true">Vehicle sets</tm-button>
-        <tm-button *ngIf="!masterSection || masterSection === 'vehicle-configuration'" variant="outline" icon="copy" [disabled]="cityId == null || !vehicles.length" (clicked)="openCopyModal()">Copy to location</tm-button>
+        <tm-button *ngIf="!serviceMode && (!masterSection || masterSection === 'vehicle-configuration')" variant="outline" icon="copy" [disabled]="cityId == null || !vehicles.length" (clicked)="openCopyModal()">Copy to location</tm-button>
         <tm-button variant="green" icon="plus" [disabled]="cityId == null || !vehicleTypeOptions.length" (clicked)="openCreate()">Add vehicle</tm-button>
         <tm-button *ngIf="masterSection" variant="outline" icon="refresh" [disabled]="loading" (clicked)="refresh()">Refresh</tm-button>
         </div>
@@ -157,11 +159,50 @@ interface TabDef { key: string; label: string; count?: number; }
       </div>
 
       <div class="grid" *ngIf="cityId != null">
-        @defer (when masterSection === 'routes') {
-          <app-route-operations *ngIf="masterSection === 'routes'" [cityId]="cityId!" [cityName]="cityName" [countryCode]="operationsCountryCode" [loading]="operationsLoading" [loadError]="operationsLoadError" [vehicles]="vehicles" [vehicleRows]="rows" [sets]="vehicleSets" [routes]="routes" [groups]="groups" [drivers]="cityDrivers" [fareModes]="fareRideTypes" [vehicleTypeOptions]="vehicleTypeOptions" [editId]="editId" [editField]="editField" [editValue]="editValue" (cellEdit)="handleOperationsCellEdit($event)" (action)="handleOperationsAction($event)" (refresh)="refresh()" />
-        } @placeholder { <p *ngIf="masterSection === 'routes'">Opening Routes workspace…</p> }
+        <section *ngIf="serviceMode || sharedVehicles" class="service-fares">
+          <h1 *ngIf="sharedVehicles">Vehicles</h1>
+          <div class="service-toolbar">
+            <label class="search">
+              <tm-icon name="search" [size]="16" />
+              <input type="search" aria-label="Search vehicles" placeholder="Search vehicles" [(ngModel)]="search" (ngModelChange)="vehiclePage = 1; applyView()" />
+            </label>
+            <tm-button *ngIf="sharedVehicles" variant="green" icon="plus" (clicked)="sharedCreateOpen = true">Add vehicle</tm-button>
+            <tm-button *ngIf="serviceMode && canManageVehicles" variant="outline" icon="car" (clicked)="goToSharedVehicles()">Manage vehicles</tm-button>
+          </div>
+          <p *ngIf="loading">Loading vehicles…</p>
+          <p *ngIf="!loading && supportErrors.has('vehicles')">Couldn’t load vehicles. <button type="button" (click)="refresh()">Retry</button></p>
+          <p *ngIf="!loading && !visible.length && !supportErrors.has('vehicles')">No matching vehicles in this city.</p>
+          <p *ngIf="serviceMode && !loading && visible.length && !fareRideTypes.length">This service has no ride type configured.</p>
+          <div class="service-grid">
+          <article *ngFor="let v of displayedFareVehicles; trackBy: trackVehicle" class="service-vehicle">
+            <div class="service-photo">
+              <img *ngIf="v.image_url; else vehicleIcon" [src]="v.image_url" alt="" loading="lazy" (error)="v.image_url = null" />
+              <ng-template #vehicleIcon><tm-icon name="car" [size]="36" /></ng-template>
+            </div>
+            <div><strong>{{ v.display_name }}</strong><small>{{ v.vehicle_type_name }} · {{ v.max_people }} {{ v.max_people === 1 ? 'seat' : 'seats' }} · {{ v.luggage_capacity }} bags</small></div>
+            <div class="service-actions" *ngIf="sharedVehicles">
+              <button type="button" class="btn-kb-outline" (click)="openCommonDrawer(v)">Edit details</button>
+              <button type="button" class="btn-kb-outline" (click)="openLayoutsList(v)">Seat layouts ({{ layoutCountFor(v) }})</button>
+            </div>
+            <div class="service-actions" *ngIf="serviceMode">
+              <button type="button" class="btn-kb-outline" *ngFor="let rt of fareRideTypes" [disabled]="!canManageVehicles && !fareConfigured(v, rt)" (click)="openFareDrawer(v, rt, $event)">
+                {{ fareConfigured(v, rt) ? 'Edit fare' : 'Set up fare' }}{{ fareRideTypes.length > 1 ? ' · ' + rt.name : '' }}
+              </button>
+
+            </div>
+          </article>
+          </div>
+          <nav class="vehicle-pages" aria-label="Vehicle pages" *ngIf="sharedVehicles && visible.length">
+            <span aria-live="polite">{{ (vehiclePage - 1) * vehiclesPerPage + 1 }}–{{ (vehiclePage - 1) * vehiclesPerPage + displayedFareVehicles.length }} of {{ visible.length }} vehicles</span>
+            <button type="button" class="btn-kb-outline" [disabled]="vehiclePage <= 1" (click)="vehiclePage = vehiclePage - 1">Previous</button>
+            <button type="button" class="btn-kb-outline" [disabled]="vehiclePage >= vehiclePages" (click)="vehiclePage = vehiclePage + 1">Next</button>
+          </nav>
+        </section>
+        @defer (when !sharedVehicles && masterSection === 'routes') {
+          <app-route-operations *ngIf="!sharedVehicles && masterSection === 'routes'" [cityId]="cityId!" [cityName]="cityName" (manageSharedVehicles)="goToSharedVehicles($event)" [countryCode]="operationsCountryCode" [loading]="operationsLoading" [loadError]="operationsLoadError" [vehicles]="vehicles" [vehicleRows]="rows" [sets]="vehicleSets" [routes]="routes" [groups]="groups" [drivers]="cityDrivers" [vehicleTypeOptions]="vehicleTypeOptions" [editId]="editId" [editField]="editField" [editValue]="editValue" (cellEdit)="handleOperationsCellEdit($event)" (action)="handleOperationsAction($event)" (refresh)="refresh()" />
+        } @placeholder { <p *ngIf="!sharedVehicles && masterSection === 'routes'">Opening Routes workspace…</p> }
         <app-master-explorer *ngIf="masterSection && masterSection !== 'vehicle-configuration' && masterSection !== 'routes'" [section]="masterSection" [cityId]="cityId" [cityName]="cityName" [loading]="loading" [vehicles]="vehicles" [routes]="routes" [groups]="groups" [drivers]="cityDrivers" [groupCreating]="groupSaving" [groupCreatedVersion]="masterGroupCreatedVersion" (groupCreate)="createMasterInlineGroup($event)" (action)="handleMasterAction($event)" />
-        <ng-container *ngIf="!masterSection || masterSection === 'vehicle-configuration'">
+        <ng-container *ngIf="!serviceMode && (!masterSection || masterSection === 'vehicle-configuration')">
         <!-- ─────────────── spreadsheet ─────────────── -->
         <!-- controls -->
         <div class="controls">
@@ -218,24 +259,15 @@ interface TabDef { key: string; label: string; count?: number; }
               <div class="vehicle-summary-title"><h2>{{ v.display_name }}</h2><span>{{ v.vehicle_type_name || 'Type not set' }} &middot; {{ v.max_people }} seats &middot; {{ v.luggage_capacity }} bags</span></div>
               <span class="pill" [class.success]="v.is_active" [class.neutral]="!v.is_active">{{ v.is_active ? 'Enabled' : 'Disabled' }}</span>
             </header>
-            <div class="vehicle-summary-stats">
-              <button type="button" (click)="openOperationsDrawer(v, 'all-routes', $event)"><b>{{ routesForVehicle(v).length }}</b><span>Routes</span></button>
-              <button type="button" (click)="openOperationsDrawer(v, 'groups', $event)"><b>{{ groupsForVehicle(v).length }}</b><span>Stands</span></button>
-              <button type="button" (click)="openOperationsDrawer(v, 'drivers', $event)"><b>{{ driversForVehicle(v).length }}</b><span>Drivers</span></button>
-            </div>
             <div class="vehicle-summary-actions">
-              <button type="button" class="btn-kb-primary" (click)="openOperationsDrawer(v, 'all-routes', $event)">Manage routes</button>
-              <button type="button" class="btn-kb-outline" (click)="openOperationsDrawer(v, 'groups', $event)">Stands &amp; drivers</button>
-              <button type="button" class="btn-kb-outline" (click)="newRouteFor(v)">Add route</button>
+              <button type="button" class="btn-kb-primary" (click)="openCommonDrawer(v)">Edit vehicle</button>
+              <button type="button" class="btn-kb-outline" (click)="openOperationsDrawer(v, 'drivers', $event)">Drivers</button>
             </div>
             <details class="vehicle-settings">
-              <summary>Fares, seat layout &amp; vehicle settings</summary>
+              <summary>Seat layout &amp; vehicle settings</summary>
               <div class="vehicle-settings-actions">
-                <button type="button" class="btn-kb-outline" *ngFor="let rt of fareRideTypes" (click)="openFareDrawer(v, rt, $event)">{{ rt.name }} fare: {{ fareConfigured(v, rt) ? 'Edit' : 'Set up' }}</button>
                 <button type="button" class="btn-kb-outline" (click)="openLayoutsList(v, $event)">Seat layouts ({{ layoutCountFor(v) }})</button>
                 <button type="button" class="btn-kb-outline" (click)="openAppAssets(v)">App Assets</button>
-                <button type="button" class="btn-kb-outline" (click)="triggerKmlImportFor(v)" [disabled]="importingKml">Import routes</button>
-                <button type="button" class="btn-kb-outline" (click)="openCommonDrawer(v)">Edit name &amp; capacity</button>
                 <button type="button" class="btn-kb-outline" (click)="toggleActiveFor(v, $event)">{{ v.is_active ? 'Disable vehicle' : 'Enable vehicle' }}</button>
               </div>
             </details>
@@ -254,8 +286,6 @@ interface TabDef { key: string; label: string; count?: number; }
                 <th>Type</th>
                 <th class="center">Seats</th>
                 <th class="center">Bags</th>
-                <th class="center" *ngFor="let rt of fareRideTypes">{{ rt.name }}</th>
-                <th>Fixed stands</th>
                 <th>Seat layout</th>
                 <th>Drivers</th>
                 <th class="center">Status</th>
@@ -297,14 +327,6 @@ interface TabDef { key: string; label: string; count?: number; }
                     <b *ngIf="!isEditing(v, 'bags')">{{ v.luggage_capacity }}</b>
                     <input *ngIf="isEditing(v, 'bags')" class="cin" type="number" [(ngModel)]="editValue" (keydown.enter)="commitCellEdit(v)" (keydown.escape)="cancelCellEdit()" (blur)="commitCellEdit(v)" />
                   </td>
-                  <td class="center" *ngFor="let rt of fareRideTypes"><button type="button" class="farelink" [class.set]="fareConfigured(v, rt)" (click)="openFareDrawer(v, rt, $event)">{{ fareConfigured(v, rt) ? 'Edit' : 'Set up' }}</button></td>
-                  <td>
-                    <span class="gchips" *ngIf="groupsForVehicle(v).length; else noGrp">
-                      <button type="button" class="gchip" *ngFor="let g of groupsForVehicle(v).slice(0, 2)" (click)="openOperationsDrawer(v, 'groups', $event)">{{ g.name }}</button>
-                      <button type="button" class="gchip more" *ngIf="groupsForVehicle(v).length > 2" (click)="openOperationsDrawer(v, 'groups', $event)">+{{ groupsForVehicle(v).length - 2 }}</button>
-                    </span>
-                    <ng-template #noGrp><button type="button" class="addlink" (click)="openOperationsDrawer(v, 'groups', $event)">+ Stand</button></ng-template>
-                  </td>
                   <td>
                     <button type="button" class="linkcell" (click)="openLayoutsList(v, $event)">
                       <span *ngIf="layoutCountFor(v)">{{ layoutCountFor(v) }} {{ layoutCountFor(v) === 1 ? 'layout' : 'layouts' }}</span>
@@ -331,7 +353,7 @@ interface TabDef { key: string; label: string; count?: number; }
               </ng-container>
             </tbody>
             <tfoot>
-              <tr class="addrow"><td [attr.colspan]="detailColspan + 1"><button type="button" class="addbtn" [disabled]="!vehicleTypeOptions.length" (click)="openCreate()"><tm-icon name="plus" [size]="16" /> Add vehicle</button></td></tr>
+              <tr class="addrow"><td colspan="9"><button type="button" class="addbtn" [disabled]="!vehicleTypeOptions.length" (click)="openCreate()"><tm-icon name="plus" [size]="16" /> Add vehicle</button></td></tr>
             </tfoot>
           </table>
 
@@ -353,6 +375,7 @@ interface TabDef { key: string; label: string; count?: number; }
       </div>
     </div>
 
+    <app-add-vehicles *ngIf="sharedVehicles && sharedCreateOpen && cityId" [cityId]="cityId" [types]="vehicleTypeOptions" (closed)="sharedCreateOpen = false" (saved)="refresh()" />
     <app-master-group-editor *ngIf="masterEditGroup as group" [group]="group" [cityId]="cityId!" [vehicleName]="selected?.display_name || ''" [routes]="masterEditRoutes" [drivers]="cityDrivers" (closed)="masterEditGroupId = null" (saved)="loadGroups()" (editRoute)="editMasterGroupRoute($event)" />
     <tm-drawer *ngIf="masterSection" [open]="masterGroupCreateOpen" title="Create stand" [width]="520" (closed)="masterGroupCreateOpen = false">
       <div slot="body" class="form"><label class="f"><span>Stand name</span><input aria-label="Stand name" [(ngModel)]="groupName" placeholder="For example Airport Routes" /></label><p class="meta">Vehicle: {{ selected?.display_name }} · {{ cityName }}</p></div>
@@ -375,7 +398,7 @@ interface TabDef { key: string; label: string; count?: number; }
         </label>
         <label class="f" *ngIf="create.vehicle_type_id === -1"><span>New vehicle type <i>*</i></span><input [(ngModel)]="create.vehicle_type_name" maxlength="120" placeholder="e.g. Tavera, Bus, Bicycle" /></label>
         <label class="f"><span>Display name (optional)</span><input type="text" [(ngModel)]="create.display_name" placeholder="Leave blank to use the vehicle type name" /></label>
-        <label class="f"><span>Vehicle set (optional)</span><select [(ngModel)]="create.vehicle_set_id"><option [ngValue]="null">No set</option><option *ngFor="let set of vehicleSets" [ngValue]="set.id">{{ set.name }}</option></select></label>
+        <label class="f" *ngIf="!serviceMode"><span>Vehicle set (optional)</span><select [(ngModel)]="create.vehicle_set_id"><option [ngValue]="null">No set</option><option *ngFor="let set of vehicleSets" [ngValue]="set.id">{{ set.name }}</option></select></label>
         <p class="note">Joining a set makes its shared stands available. Use Vehicle sets to create a set or change its stands.</p>
         <div class="fields">
           <label class="f"><span>Max people</span><input type="number" min="1" [(ngModel)]="create.max_people" /></label>
@@ -881,23 +904,28 @@ interface TabDef { key: string; label: string; count?: number; }
     </tm-drawer>
 
     <!-- Fare editor — opens the real fare form for one vehicle + ride type. -->
-    <tm-drawer [open]="fareDrawerOpen" [title]="(selected?.display_name || 'Vehicle') + ' — ' + (activeRideType?.name || 'fare')" [subtitle]="fareSubtitle" [width]="620" (closed)="closeFareDrawer()">
+    <tm-drawer [open]="fareDrawerOpen" [title]="(selected?.display_name || 'Vehicle') + ' — ' + (serviceLabel || activeRideType?.name || 'fare')" [subtitle]="fareSubtitle" [width]="620" (closed)="closeFareDrawer()">
       <div slot="body" class="form" *ngIf="activeRideType && !activeIsFixed">
         <ng-container *ngIf="activeRow; else preparingFare">
-          <div class="sec" *ngIf="activeKind === 'private'">
-            <div class="sec__head"><h3>{{ activeRideType.name }} unique fields</h3></div>
+          <div class="sec" *ngIf="activeKind === 'private' && canManageVehicles">
+            <div class="sec__head"><h3>{{ serviceLabel || activeRideType.name }} options</h3></div>
             <div class="inline">
               <label class="check"><input type="checkbox" [(ngModel)]="reverseBidding" /> <span>Reverse bidding</span></label>
               <tm-button variant="outline" size="sm" icon="check" [disabled]="savingUnique" (clicked)="saveUniqueFields()">{{ savingUnique ? 'Saving...' : 'Save unique fields' }}</tm-button>
             </div>
           </div>
+          <p *ngIf="!activeRow.is_outstation && !canManagePricing">Pricing permission is required to edit this fare card.</p>
           <div class="sec">
-            <app-vehicle-base-pricing *ngIf="!activeRow.is_outstation" [cityId]="cityId" [cityVehicleTypeId]="activeRow.id" [title]="activeRideType.name + ' Fare Settings'" [subtitle]="fareSubtitle"></app-vehicle-base-pricing>
-            <app-outstation-packages *ngIf="activeRow.is_outstation" [cityId]="cityId" [vehicleTypeId]="activeRow.id"></app-outstation-packages>
+            <app-vehicle-base-pricing *ngIf="!activeRow.is_outstation && canManagePricing" [cityId]="cityId" [cityVehicleTypeId]="activeRow.id" [title]="(serviceLabel || activeRideType.name) + ' Fare Settings'" [subtitle]="fareSubtitle"></app-vehicle-base-pricing>
+            <app-outstation-packages *ngIf="activeRow.is_outstation && canManageVehicles" [cityId]="cityId" [vehicleTypeId]="activeRow.id"></app-outstation-packages>
           </div>
         </ng-container>
         <ng-template #preparingFare>
-          <div class="cue cue--flat"><tm-icon name="rupee" [size]="22" /><strong>Preparing {{ activeRideType.name }} fare form…</strong><span>Setting up {{ activeRideType.name }} fare for {{ selected?.display_name }}.</span></div>
+          <div class="cue cue--flat">
+            <span *ngIf="creatingRideTypeId != null">Preparing the fare card…</span>
+            <tm-button *ngIf="creatingRideTypeId == null && canManageVehicles" variant="outline" (clicked)="createFareSetup(activeRideType)">Set up fare for {{ selected?.display_name }}</tm-button>
+            <span *ngIf="!canManageVehicles">A vehicle manager can enable this service for the vehicle.</span>
+          </div>
         </ng-template>
       </div>
       <div slot="footer"><tm-button variant="ghost" (clicked)="closeFareDrawer()">Done</tm-button></div>
@@ -922,7 +950,6 @@ interface TabDef { key: string; label: string; count?: number; }
       <button type="button" (click)="closeRowMenu(); openCommonDrawer(v)"><tm-icon name="edit" [size]="15" /> Edit vehicle</button>
       <button type="button" (click)="closeRowMenu(); openLayoutsList(v)"><tm-icon name="grid" [size]="15" /> Seat layouts</button>
       <button type="button" (click)="closeRowMenu(); openAppAssets(v)"><tm-icon name="upload" [size]="15" /> App Assets</button>
-      <button type="button" (click)="closeRowMenu(); toggleExpand(v)"><tm-icon name="road" [size]="15" /> Stands</button>
       <button type="button" (click)="closeRowMenu(); openCopyModal(v)"><tm-icon name="copy" [size]="15" /> Copy to location</button>
       <div class="rowmenu__div"></div>
       <button type="button" (click)="closeRowMenu(); toggleActiveFor(v)"><tm-icon name="refresh" [size]="15" /> {{ v.is_active ? 'Disable' : 'Enable' }}</button>
@@ -931,7 +958,7 @@ interface TabDef { key: string; label: string; count?: number; }
     <!-- Seat-layout designer — wide side drawer, opens over the workspace. -->
     <div class="ldr-scrim" *ngIf="layoutDrawerOpen" (click)="closeLayoutDrawer()"></div>
     <div class="ldr" *ngIf="layoutDrawerOpen && selected">
-      <app-seat-layout-designer
+      <app-seat-layout-designer [editSeatPrices]="!sharedVehicles"
         [embedded]="true"
         [embeddedCityId]="cityId"
         [embeddedVehicleTypeId]="selected.vehicle_type_id"
@@ -1113,6 +1140,21 @@ interface TabDef { key: string; label: string; count?: number; }
     <input #bulkKmlInput type="file" accept=".kml,.kmz" multiple hidden (change)="onBulkKmlFileSelected($event)" />
   `,
   styles: [`
+    .service-fares { width: 100%; min-width: 0; container-type: inline-size; }
+    .service-toolbar, .service-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .service-toolbar { justify-content: space-between; margin-bottom: 16px; }
+    .service-toolbar .search { flex: 1 1 180px; max-width: 330px; height: 40px; box-sizing: border-box; background: var(--tm-surface); }
+    .service-toolbar .search:focus-within { border-color: var(--tm-green); outline: 1px solid var(--tm-green); }
+    .service-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    @container (max-width: 720px) { .service-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @container (max-width: 450px) { .service-grid { grid-template-columns: minmax(0, 1fr); } }
+    .service-vehicle { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 16px; border: 1px solid var(--tm-line); border-radius: 16px; background: var(--tm-surface); overflow-wrap: anywhere; }
+    .service-photo { display: grid; place-items: center; height: 116px; padding: 8px; box-sizing: border-box; border-radius: 10px; background: var(--tm-canvas); color: var(--tm-text-muted); }
+    .service-photo img { width: 100%; height: 100px; object-fit: contain; }
+    .service-actions { margin-top: auto; }
+    .vehicle-pages { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+    .vehicle-pages span { margin-right: auto; font-size: 13px; color: var(--tm-text-muted); }
+    .service-vehicle small { display: block; margin-top: 4px; color: var(--tm-text-muted); }
     .ws { display: flex; flex-direction: column; gap: 14px; }
     .echoice__lead { margin: 0 0 14px; color: var(--tm-text-muted); }
     .rchip2--nopr { border-color: #ffe2a8; background: #fff7e6; }
@@ -2358,6 +2400,13 @@ interface TabDef { key: string; label: string; count?: number; }
   `],
 })
 export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
+  @Input() serviceMode: 'private' | 'shuttle' | null = null;
+  @Input() serviceLabel = '';
+  @Input() canManageVehicles = true;
+  @Input() canManagePricing = true;
+  private sharedTarget: string | null = null;
+  sharedCreateOpen = false;
+  @Input() sharedVehicles = false;
   @Input() masterSection: MasterSection | null = null;
   masterEditGroupId: number | null = null;
   get masterEditGroup(): GroupRow | null { return this.groups.find(group => group.id === this.masterEditGroupId) ?? null; }
@@ -2443,6 +2492,14 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   /** Filtered view of `vehicles` — a field, not a getter, so change detection
    *  doesn't re-filter the whole list on every tick. */
   visible: CityVehicleRow[] = [];
+  vehiclePage = 1;
+  readonly vehiclesPerPage = 9;
+  get vehiclePages(): number { return Math.max(1, Math.ceil(this.visible.length / this.vehiclesPerPage)); }
+  get displayedFareVehicles(): CityVehicleRow[] {
+    if (!this.sharedVehicles) return this.visible;
+    const start = (this.vehiclePage - 1) * this.vehiclesPerPage;
+    return this.visible.slice(start, start + this.vehiclesPerPage);
+  }
 
   types: VehicleTypeRow[] = [];
   vehicleTypeOptions: VehicleTypeRef[] = [];
@@ -2505,7 +2562,6 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   creatingRideTypeId: number | null = null;
   /** vehicle+ride-type keys we've already tried to auto-create, so a failed
    *  create can never loop into duplicate rows on the next recompute. */
-  private autoFareAttempted = new Set<string>();
 
   createOpen = false;
   creating = false;
@@ -2540,9 +2596,8 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   layoutsListOpen = false;
 
   /** Ride types that own a fare column (everything except the fixed one). */
-  get fareRideTypes(): RideTypeRef[] { return this.rideTypes.filter((rt) => this.kindOf(rt.name) !== 'fixed'); }
+  get fareRideTypes(): RideTypeRef[] { return this.rideTypes.filter((rt) => this.serviceMode ? this.modeFor(rt) === this.serviceMode : this.modeFor(rt) !== 'fixed'); }
   /** Columns after the gutter — used for the detail row + footer colspans. */
-  get detailColspan(): number { return 9 + this.fareRideTypes.length; }
   /** Distinct vehicle names for the vehicle filter dropdown. */
   get vehicleNames(): string[] {
     return Array.from(new Set(this.vehicles.map((v) => v.display_name))).sort((a, b) => a.localeCompare(b));
@@ -3178,6 +3233,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
 
   private subs: Subscription[] = [];
   private deepLinkId: number | null = null;
+  private linkedFareType: number | null = null;
   /** Guards against the city stream re-emitting the same id and refetching. */
   private loadedCityId: number | null = null;
 
@@ -3191,10 +3247,12 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    if (this.sharedVehicles) this.sharedTarget = this.route.snapshot.queryParamMap.get('open');
     this.cityCtx.ensureCitiesLoaded().subscribe();
     this.subs.push(
       this.route.paramMap.subscribe((p) => {
-        const raw = p.get('vehicleRowId');
+        const raw = this.serviceMode ? this.route.snapshot.queryParamMap.get('vehicle') : p.get('vehicleRowId');
+        this.linkedFareType = this.serviceMode ? Number(this.route.snapshot.queryParamMap.get('rideType')) : null;
         this.deepLinkId = raw ? Number(raw) : null;
         if (this.deepLinkId != null && this.vehicles.length) { this.applyDeepLink(); this.applyView(); }
       }),
@@ -3203,6 +3261,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
         this.cityName = list.find((c) => c.id === this.cityId)?.name ?? '';
       }),
       this.cityCtx.cityId$.subscribe((id) => {
+        if (this.cityId !== id) { this.vehiclePage = 1; this.sharedCreateOpen = false; this.closeCommonDrawer(); this.layoutsListOpen = false; this.layoutDrawerOpen = false; }
         this.cityId = id;
         this.cityName = this.allCities.find(city => city.id === id)?.name ?? '';
         if (id == null) { this.loadedCityId = null; this.resetData(); return; }
@@ -3239,24 +3298,37 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
       next: (res) => {
         if (this.cityId !== cityId) return;
         this.rows = res.data ?? [];
-        this.rideTypes = res.available_ride_types ?? [];
+        this.rideTypes = (res.available_ride_types ?? []).map(rt => ({ ...rt, mode: rt.mode ?? this.rows.find(row => row.ride_type_id === rt.id && row.ride_type_mode)?.ride_type_mode }));
         this.vehicleTypeOptions = res.available_vehicle_types ?? [];
+        const previous = this.selected;
         this.vehicles = this.groupRows(this.rows);
+        if (this.serviceMode && previous) this.selectedId = this.vehicles.find(v => this.groupKey(v) === this.groupKey(previous))?.id ?? null;
         this.loading = false;
         this.applyDeepLink();
         this.applyView();
+        if (this.sharedTarget) {
+          const vehicle = this.vehicles.find(v => v.id === Number(this.sharedTarget));
+          if (this.sharedTarget === 'add') this.sharedCreateOpen = true;
+          else if (vehicle) this.openCommonDrawer(vehicle);
+          this.sharedTarget = null;
+        }
       },
       error: () => { if (this.cityId !== cityId) return; this.loading = false; this.supportErrors.add('vehicles'); this.toast.error('Failed to load vehicles'); },
     });
 
-    this.api.get<{ data: VehicleTypeRow[] }>('/admin/vehicle-types-global').subscribe({
-      next: (res) => { this.types = res.data ?? []; },
-      error: () => { this.types = []; },
-    });
-    this.layoutsSvc.list(cityId).subscribe({
-      next: (res) => { if (this.cityId !== cityId) return; this.layouts = res.data ?? []; this.recompute(); },
-      error: () => { if (this.cityId !== cityId) return; this.layouts = []; },
-    });
+    if (!this.serviceMode) {
+      this.api.get<{ data: VehicleTypeRow[] }>('/admin/vehicle-types-global').subscribe({
+        next: (res) => { this.types = res.data ?? []; },
+        error: () => { this.types = []; },
+      });
+    }
+    if (!this.serviceMode) {
+      this.layoutsSvc.list(cityId).subscribe({
+        next: (res) => { if (this.cityId !== cityId) return; this.layouts = res.data ?? []; this.recompute(); },
+        error: () => { if (this.cityId !== cityId) return; this.layouts = []; },
+      });
+    }
+    if (this.serviceMode) return;
     this.loadRoutes();
     this.loadGroups();
     this.loadDrivers();
@@ -3348,7 +3420,14 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     if (!raw) return;
     const key = this.groupKey(raw);
     const match = this.vehicles.find((v) => this.groupKey(v) === key);
-    if (match) this.selectedId = match.id;
+    if (match) {
+      this.selectedId = match.id;
+      const rt = this.fareRideTypes.find(type => type.id === this.linkedFareType);
+      if (this.serviceMode && rt) {
+        this.tab = 'mode:' + rt.id;
+        this.fareDrawerOpen = true;
+      }
+    }
     this.deepLinkId = null;
   }
 
@@ -3364,6 +3443,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
       return `${v.display_name} ${v.vehicle_type_name ?? ''} ${this.fareModesLabel(v)}`.toLowerCase().includes(q);
     });
 
+    this.vehiclePage = Math.min(this.vehiclePage, this.vehiclePages);
     if (this.selectedId != null && !this.vehicles.some((v) => v.id === this.selectedId)) {
       this.selectedId = null;
     }
@@ -3432,10 +3512,10 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     // Tabs: one per ride type using its DB name, then Seat layouts. (Common
     // setup moved to a per-row drawer opened by the pen icon in the list.)
     this.tabList = [
-      ...this.rideTypes.map((rt) => ({
+      ...(this.serviceMode ? this.fareRideTypes : this.rideTypes).map((rt) => ({
         key: 'mode:' + rt.id,
         label: rt.name,
-        count: this.kindOf(rt.name) === 'fixed' ? myRoutes.length : undefined,
+        count: this.modeFor(rt) === 'fixed' ? myRoutes.length : undefined,
       })),
       { key: 'layouts', label: 'Seat layouts', count: this.selLayouts.length },
     ];
@@ -3472,7 +3552,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.activeRideType = this.rideTypes.find((rt) => rt.id === id) ?? null;
     if (!this.activeRideType) { this.activeRow = null; this.activeIsFixed = false; return; }
 
-    this.activeKind = this.kindOf(this.activeRideType.name);
+    this.activeKind = this.modeFor(this.activeRideType);
     this.activeIsFixed = this.activeKind === 'fixed';
     const key = this.groupKey(this.selected);
     this.activeRow = this.rows.find((r) => this.groupKey(r) === key && r.ride_type_id === id) ?? null;
@@ -3481,16 +3561,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
       ? ''
       : 'Fare card used by the current customer and driver flow.';
 
-    // A non-fixed ride type with no fare row yet: create it automatically so the
-    // fare form is shown directly instead of a "create fare" button. Guarded so
-    // it runs at most once per vehicle+ride-type and never while data is loading.
-    if (!this.activeIsFixed && !this.activeRow && !this.loading && this.creatingRideTypeId == null) {
-      const attemptKey = key + ':' + id;
-      if (!this.autoFareAttempted.has(attemptKey)) {
-        this.autoFareAttempted.add(attemptKey);
-        this.createFareSetup(this.activeRideType, true);
-      }
-    }
+
   }
 
   select(v: CityVehicleRow): void {
@@ -3525,11 +3596,8 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
 
   // ── labels & lookups ───────────────────────────────────────
   /** Behaviour only. Every label the operator sees is the database's own name. */
-  private kindOf(name: string | null): ModeKind {
-    const lower = (name ?? '').toLowerCase();
-    if (lower.includes('shuttle')) return 'shuttle';
-    if (lower.includes('fixed')) return 'fixed';
-    return 'private';
+  private modeFor(type: RideTypeRef): ModeKind {
+    return resolvedRideMode(type.mode, type.name);
   }
 
   fareModesLabel(row: CityVehicleRow): string {
@@ -3584,12 +3652,9 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
       display_name: this.common.display_name.trim(),
       max_people: this.common.max_people,
       luggage_capacity: this.common.luggage_capacity,
-      is_active: this.common.is_active,
     };
-    const key = this.groupKey(v);
-    const siblings = this.rows.filter((r) => this.groupKey(r) === key);
     this.savingCommon = true;
-    forkJoin(siblings.map((r) => this.api.patch(`/admin/cities/${this.cityId}/vehicle-types/${r.id}`, payload))).subscribe({
+    this.api.patch(`/admin/cities/${this.cityId}/vehicle-types/${v.id}/shared-details`, payload).subscribe({
       next: () => { this.savingCommon = false; this.commonDrawerOpen = false; this.commonDrawerVehicle = null; this.toast.success('City vehicle saved'); this.load(); },
       error: (err) => { this.savingCommon = false; this.toast.error(err?.error?.message || 'Failed to save city vehicle'); },
     });
@@ -3642,7 +3707,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
    * the tab, so this can never fail on a missing ride type — the tab only
    * exists because the row does.
    */
-  createFareSetup(rt: RideTypeRef, silent = false): void {
+  createFareSetup(rt: RideTypeRef): void {
     const v = this.selected;
     if (!v || this.cityId == null || this.creatingRideTypeId != null) return;
     this.creatingRideTypeId = rt.id;
@@ -3653,11 +3718,11 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
       display_name: v.display_name,
       max_people: v.max_people,
       luggage_capacity: v.luggage_capacity,
-      reverse_bidding_enabled: this.kindOf(rt.name) === 'private' ? !!v.reverse_bidding_enabled : false,
+      reverse_bidding_enabled: this.modeFor(rt) === 'private' ? !!v.reverse_bidding_enabled : false,
     }).subscribe({
       next: (res) => {
         this.creatingRideTypeId = null;
-        if (!silent) this.toast.success(res.message || `${rt.name} fare setup created`);
+        this.toast.success(res.message || `${rt.name} fare setup created`);
         this.load();
       },
       error: (err) => {
@@ -3665,6 +3730,10 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
         this.toast.error(err?.error?.message || `Failed to create ${rt.name} fare setup`);
       },
     });
+  }
+
+  goToSharedVehicles(target?: 'add' | number): void {
+    void this.router.navigate(['/operations/shared-vehicles'], { queryParams: { open: target } });
   }
 
   // ── add vehicle ────────────────────────────────────────────
@@ -4130,8 +4199,14 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   fareConfigured(v: CityVehicleRow, rt: RideTypeRef): boolean { return (v.mode_ids ?? []).includes(rt.id); }
   openFareDrawer(v: CityVehicleRow, rt: RideTypeRef, ev?: Event): void {
     ev?.stopPropagation();
+    const mode = this.modeFor(rt);
+    if (!this.serviceMode && mode !== 'fixed') {
+      void this.router.navigate(['/operations', mode], {queryParams: {view: 'fares', vehicle: v.id, rideType: rt.id}});
+      return;
+    }
     this.select(v);
-    this.setTab('mode:' + rt.id); // drives activeRideType/activeRow (+ auto-creates the fare row)
+    this.setTab('mode:' + rt.id); // Resolve the exact vehicle and ride type before opening its editor.
+    if (this.serviceMode && this.canManageVehicles && !this.activeRow) this.createFareSetup(rt);
     this.fareDrawerOpen = true;
   }
   closeFareDrawer(): void { this.fareDrawerOpen = false; }
@@ -4522,7 +4597,9 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     });
     const order = this.rideTypes.map((rt) => rt.id);
     return Array.from(buckets.values()).map((bucket) => {
-      const rep = bucket.find((r) => this.kindOf(r.ride_type_name) === 'private') ?? bucket[0];
+      const rep = (this.serviceMode && bucket.find(row => row.ride_type_id != null &&
+        this.rideTypes.some(type => type.id === row.ride_type_id && this.modeFor(type) === this.serviceMode)))
+        || bucket.find(r => resolvedRideMode(r.ride_type_mode, r.ride_type_name) === 'private') || bucket[0];
       const mode_ids = order.filter((id) => bucket.some((row) => row.ride_type_id === id));
       return { ...rep, mode_ids, mode_row_ids: bucket.map(row => row.id), vehicle_set_ids: [...new Set(bucket.flatMap(row => row.vehicle_set_id ? [row.vehicle_set_id] : []))] };
     });

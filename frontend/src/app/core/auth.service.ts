@@ -131,7 +131,7 @@ export class AuthService {
       ['reports', '/analytics/reports'],
       ['live_operations', '/maps'],
       ['vehicles', '/vehicles'],
-      ['pricing', '/pricing'],
+      ['pricing', '/operations/private?view=surge'],
       ['city_settings', '/settings/cities'],
       ['coupons', '/promotions/coupons'],
       ['subscriptions', '/subscriptions'],

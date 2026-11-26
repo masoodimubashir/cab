@@ -187,6 +187,16 @@ describe('Driver reference Home safeguards', () => {
     expect(page.approvedServiceModes).toEqual(['private', 'fixed']);
   });
 
+  it('uses global branding for a single approved service even without an assigned city', () => {
+    const page: any = setup({ city_id: null, service_modes: ['fixed'] }).componentInstance;
+    api.get.and.callFake((url: string) => of(url === '/catalog/cities' ? { data: [{ id: 7 }] }
+      : { service_artwork: [{ mode: 'fixed', display_name: 'Book A Seat', image_url: '/storage/fixed.png' }] }));
+    page.loadServiceCatalog();
+    expect(page.servicePickerLabel('fixed')).toBe('Book A Seat');
+    expect(page.serviceCatalog.fixed.imageUrl).toContain('/storage/fixed.png');
+    expect(page.approvedServiceModes).toEqual(['fixed']);
+  });
+
   it('retains catalogue images when the city artwork request fails', () => {
     const page: any = setup({ city_id: 7, service_modes: ['private', 'fixed'] }).componentInstance;
     api.get.and.callFake((url: string) => url.startsWith('/pricing/') ? throwError(() => new Error('offline'))
