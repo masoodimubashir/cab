@@ -1,3 +1,4 @@
+import { defaultServiceNames, loadServiceBranding, ServiceBranding } from '../../core/service-branding';
 import { watchMapCamera, releaseMapCamera } from '../../core/map-camera';
 import { DriverMapCamera, DRIVER_MAP_STYLE, fitDriverMap, offsetPassengerMarker } from '../../core/driver-map';
 import { Component, OnDestroy, OnInit } from '@angular/core';
@@ -337,7 +338,11 @@ export class RidesPage implements OnInit, OnDestroy {
   }
 
   /** Called on every tab switch back to Rides — same auto-resume semantics. */
+  serviceBranding: ServiceBranding = {};
+  readonly defaultServiceNames = defaultServiceNames;
+
   ionViewWillEnter(): void {
+    loadServiceBranding(this.api).subscribe(branding => this.serviceBranding = branding);
     if (!this.lastTrip) {
       this.resumeActiveTrip();
     }

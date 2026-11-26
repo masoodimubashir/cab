@@ -5,11 +5,11 @@ describe('Quick vehicle creation', () => {
   let form: AddVehiclesComponent;
   let api: any;
   beforeEach(() => { api = { post: jasmine.createSpy().and.returnValue(of({})) }; form = new AddVehiclesComponent(api, { success: jasmine.createSpy() } as any); form.cityId = 1; form.types = [{ id: 5, name: 'Sumo' }]; });
-  it('adds vehicles, new types and group sharing in one request', () => {
+  it('adds vehicles and new types without assigning routes', () => {
     form.rows[0].typeId = 5; form.rows[0].seats = 9; form.addRow();
-    form.rows[1].typeId = -1; form.rows[1].typeName = 'Bus'; form.rows[1].seats = 30; form.groupIds.add(7); form.groupIds.add(8);
+    form.rows[1].typeId = -1; form.rows[1].typeName = 'Bus'; form.rows[1].seats = 30;
     expect(form.valid).toBeTrue(); form.save();
-    expect(api.post).toHaveBeenCalledOnceWith('/admin/cities/1/vehicle-types/batch', { vehicles: [{ vehicle_type_id: 5, vehicle_type_name: null, display_name: 'Sumo', max_people: 9, luggage_capacity: 0, is_active: true }, { vehicle_type_id: null, vehicle_type_name: 'Bus', display_name: 'Bus', max_people: 30, luggage_capacity: 0, is_active: true }], vehicle_set_id: null, set_name: null, route_group_ids: [7, 8] });
+    expect(api.post).toHaveBeenCalledOnceWith('/admin/cities/1/vehicle-types/batch', { vehicles: [{ vehicle_type_id: 5, vehicle_type_name: null, display_name: 'Sumo', max_people: 9, luggage_capacity: 0, is_active: true }, { vehicle_type_id: null, vehicle_type_name: 'Bus', display_name: 'Bus', max_people: 30, luggage_capacity: 0, is_active: true }], route_group_ids: [] });
   });
   it('copies settings without sharing a draft or silently duplicating its name', () => {
     form.rows[0].typeId = 5; form.rows[0].name = 'Town Sumo'; form.rows[0].seats = 9; form.addRow(true);

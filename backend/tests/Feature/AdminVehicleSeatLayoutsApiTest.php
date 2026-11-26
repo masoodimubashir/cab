@@ -80,6 +80,32 @@ class AdminVehicleSeatLayoutsApiTest extends TestCase
         ], $overrides);
     }
 
+    public function test_vehicle_details_are_shared_while_layout_identity_and_service_prices_are_preserved(): void
+    {
+        $url = "/api/admin/cities/{$this->cityId}/vehicle-types";
+        $vehicle = ['vehicle_type_id' => $this->ertigaId, 'display_name' => 'Ertiga', 'max_people' => 6, 'luggage_capacity' => 1];
+        $shared = $this->postJson($url, $vehicle)->assertCreated()->json('vehicle_type.id');
+        $layout = $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-seat-layouts", $this->ertigaPayload())
+            ->assertCreated()->json('layout.id');
+
+        $serviceIds = [];
+        foreach (['private' => 200, 'shuttle' => 40] as $mode => $fare) {
+            $ride = DB::table('ride_types')->insertGetId(['name' => "Test $mode", 'mode' => $mode]);
+            $id = $this->postJson($url, $vehicle + ['ride_type_id' => $ride])->assertCreated()->json('vehicle_type.id');
+            $serviceIds[$mode] = $id;
+            $this->postJson('/api/admin/pricing-rules', ['city_vehicle_type_id' => $id, 'base_fare' => $fare, 'surge_multiplier' => 1])->assertSuccessful();
+        }
+        $details = ['display_name' => 'Ertiga XL', 'max_people' => 7, 'luggage_capacity' => 3];
+        $this->patchJson("$url/$shared/shared-details", $details)->assertOk();
+        foreach ([$shared, ...array_values($serviceIds)] as $id) {
+            $this->assertDatabaseHas('city_vehicle_types', ['id' => $id] + $details);
+        }
+        $this->postJson('/api/admin/pricing-rules', ['city_vehicle_type_id' => $serviceIds['shuttle'], 'base_fare' => 55, 'surge_multiplier' => 2])->assertSuccessful();
+        $this->assertDatabaseHas('pricing_rules', ['city_vehicle_type_id' => $serviceIds['private'], 'base_fare' => 200, 'surge_multiplier' => 1]);
+        $this->assertDatabaseMissing('pricing_rules', ['city_vehicle_type_id' => $shared]);
+        $this->assertDatabaseHas('vehicle_seat_layouts', ['id' => $layout, 'vehicle_type_id' => $this->ertigaId]);
+    }
+
     public function test_create_layout_with_cells(): void
     {
         $res = $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-seat-layouts", $this->ertigaPayload());

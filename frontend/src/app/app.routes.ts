@@ -1,6 +1,7 @@
-import { Routes } from '@angular/router';
+import { servicePermissions } from './core/service-names.service';
+import { inject } from '@angular/core';
+import { CanActivateFn, Router, Routes } from '@angular/router';
 import { AdminDashboardComponent } from './admin/admin-dashboard.component';
-import { PricingComponent } from './admin/pricing/pricing.component';
 import { AdminTripsComponent } from './admin/admin-trips.component';
 import { CustomersListComponent } from './admin/customers/customers-list.component';
 import { CustomerDetailComponent } from './admin/customers/customer-detail.component';
@@ -22,9 +23,7 @@ import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component
 import { CouponsComponent } from './admin/promotions/coupons.component';
 import { BannersComponent } from './admin/promotions/banners.component';
 import { SubscriptionsComponent } from './admin/subscriptions/subscriptions.component';
-import { FixedDeparturesComponent } from './admin/fixed/fixed-departures.component';
 import { FixedRoutesHubComponent } from './admin/fixed/fixed-routes-hub.component';
-import { ShuttleBookingsComponent } from './admin/shuttle/shuttle-bookings.component';
 import { RolesPermissionsComponent } from './admin/rbac/roles-permissions.component';
 import { ManagersComponent } from './admin/rbac/managers.component';
 import { AnalyticsRealTimeComponent } from './admin/analytics/analytics-real-time.component';
@@ -32,6 +31,11 @@ import { AnalyticsGraphsComponent } from './admin/analytics/analytics-graphs.com
 import { AnalyticsReportsComponent } from './admin/analytics/analytics-reports.component';
 import { SigninComponent } from './auth/signin.component';
 import { adminAuthGuard } from './auth/admin-auth.guard';
+
+const redirectSharedSurge: CanActivateFn = route =>
+  route.queryParamMap.get('view') === 'surge' && route.queryParamMap.get('scope') === 'shared'
+    ? inject(Router).createUrlTree(['/operations/shared-surge'])
+    : true;
 
 export const routes: Routes = [
   { path: '', redirectTo: 'signin', pathMatch: 'full' },
@@ -46,7 +50,7 @@ export const routes: Routes = [
   // Fleet Setup and the standalone fare page are now tabs of the vehicle
   // workspace. Both legacy URLs land on the same page.
   { path: 'fleet', redirectTo: 'vehicles', pathMatch: 'full' },
-  { path: 'pricing', component: PricingComponent, canActivate: [adminAuthGuard], data: { permission: 'pricing' } },
+  { path: 'pricing', pathMatch: 'full', redirectTo: '/operations/shared-surge' },
   { path: 'vehicles/:vehicleRowId/fares', redirectTo: 'vehicles/:vehicleRowId', pathMatch: 'full' },
   { path: 'trips', component: AdminTripsComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
   { path: 'customers', component: CustomersListComponent, canActivate: [adminAuthGuard], data: { permission: 'customers' } },
@@ -104,12 +108,15 @@ export const routes: Routes = [
   // Vehicle workspace — city vehicle list + Common/Normal/Fixed/Shuttle/Drivers/
   // Seat-layout tabs on one page. `:vehicleRowId` deep-links a single vehicle.
   { path: 'vehicles', loadComponent: () => import('./admin/vehicles/vehicle-workspace.component').then(m => m.VehicleWorkspaceComponent), canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
-  {
-    path: 'operations',
-    loadComponent: () => import('./admin/vehicles/operations-workspace.component').then((m) => m.OperationsWorkspaceComponent),
-    canActivate: [adminAuthGuard],
-    data: { permission: 'vehicles' },
-  },
+  { path: 'operations/shared-surge', loadComponent: () => import('./admin/pricing/shared-surge.component').then(m => m.SharedSurgeComponent), canActivate: [adminAuthGuard], data: { permission: 'pricing' } },
+  { path: 'operations/shared-vehicles', loadComponent: () => import('./admin/vehicles/operations-workspace.component').then(m => m.OperationsWorkspaceComponent), canActivate: [adminAuthGuard], data: { permission: 'vehicles', sharedVehicles: true } },
+  { path: 'operations', redirectTo: 'operations/routes', pathMatch: 'full' },
+  ...(['private', 'fixed', 'shuttle'] as const).map(service => ({
+    path: service === 'fixed' ? 'operations/routes' : 'operations/' + service,
+    loadComponent: () => import('./admin/vehicles/service-workspace.component').then(m => m.ServiceWorkspaceComponent),
+    canActivate: service === 'fixed' ? [adminAuthGuard] : [adminAuthGuard, redirectSharedSurge],
+    data: { permissions: service === 'fixed' ? servicePermissions.filter(p => p !== 'pricing') : servicePermissions, service },
+  })),
   { path: 'operations/drivers', redirectTo: 'drivers', pathMatch: 'full' },
   { path: 'operations/route-groups', redirectTo: 'operations/routes', pathMatch: 'full' },
   {
@@ -146,9 +153,9 @@ export const routes: Routes = [
 
   { path: 'subscriptions', component: SubscriptionsComponent, canActivate: [adminAuthGuard], data: { permission: 'subscriptions' } },
 
-  { path: 'fixed-departures', component: FixedDeparturesComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
-  { path: 'fixed-routes', redirectTo: 'fixed-departures', pathMatch: 'full' },
-  { path: 'shuttle-bookings', component: ShuttleBookingsComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
+  { path: 'fixed-departures', redirectTo: '/operations/routes?view=live', pathMatch: 'full' },
+  { path: 'fixed-routes', redirectTo: '/operations/routes?view=live', pathMatch: 'full' },
+  { path: 'shuttle-bookings', redirectTo: '/operations/shuttle?view=bookings', pathMatch: 'full' },
 
   // B5 — customer-refund register (fixed + shuttle, manual settlement).
   {

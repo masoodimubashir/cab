@@ -1,8 +1,10 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, Input, OnDestroy, OnInit } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
+import { ServiceNamesService } from '../../core/service-names.service';
 import { ToastService } from '../../core/toast.service';
 import {
   ButtonComponent,
@@ -67,6 +69,7 @@ type SectionKey =
   | 'services'
   | 'serviceNames'
   | 'notifications'
+  | 'fixedEmails'
   | 'templates';
 
 /** Service catalogue rows (scope → modes) from /admin/cities/{id}/ride-products. */
@@ -106,7 +109,7 @@ interface SectionMeta {
   ],
   template: `
     <div class="page">
-      <header class="page-head">
+      <header class="page-head" *ngIf="!serviceMode">
         <h1 class="page-head__title">Operator Settings</h1>
         <p class="page-head__sub">
           Global, non-city-scoped configuration that applies platform-wide. Each section saves independently.
@@ -118,9 +121,44 @@ interface SectionMeta {
         <span>Loading settings…</span>
       </div>
 
-      <div *ngIf="!loading && settings" class="layout">
+      <ng-container *ngIf="serviceMode && !canEditBranding" [ngTemplateOutlet]="availability"></ng-container>
+      <ng-template #availability>
+              <div class="chan-note">
+                <span class="chan-note__title">Switches apply to every city, in both apps, instantly</span>
+                <span class="chan-note__sub">Each switch saves immediately and controls availability for customers and drivers in every city. At least one service must stay enabled.</span>
+              </div>
+
+              <div class="loading" *ngIf="servicesLoading"><span class="spinner" aria-hidden="true"></span><span>Loading services…</span></div>
+              <p class="chan-note chan-note--error" *ngIf="!servicesLoading && servicesError">{{ servicesError }}</p>
+
+              <div class="svc-scope" *ngFor="let scope of servicesScopes">
+                <h3 *ngIf="serviceMode">{{ scope.name }}{{ scope.is_active ? '' : ' (disabled)' }}</h3>
+                <label class="switch-row svc-scope__head" *ngIf="!serviceMode">
+                  <span class="switch-row__text">
+                    <span class="switch-row__title">{{ scope.name }}</span>
+                    <span class="switch-row__sub">{{ scope.scope === 'local' ? 'Rides inside the city.' : 'Rides between cities.' }} Master switch — off hides everything below it.</span>
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" [checked]="scope.is_active" [disabled]="servicesBusy !== null" (change)="toggleScope(scope)" />
+                    <span class="switch__track"><span class="switch__thumb"></span></span>
+                  </span>
+                </label>
+
+                <label class="switch-row svc-scope__mode" [class.svc-scope__mode--off]="!scope.is_active" *ngFor="let mode of visibleModes(scope)">
+                  <span class="switch-row__text">
+                    <span class="switch-row__title">{{ mode.display_name || mode.name }}</span>
+                    <span class="switch-row__sub">{{ modeSub(mode) }}</span>
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" [checked]="mode.is_active" [disabled]="servicesBusy !== null" (change)="toggleMode(scope, mode)" />
+                    <span class="switch__track"><span class="switch__thumb"></span></span>
+                  </span>
+                </label>
+              </div>
+      </ng-template>
+      <div *ngIf="!loading && settings" class="layout" [style.display]="serviceMode ? 'block' : null">
         <!-- ===================== Left nav ===================== -->
-        <nav class="nav" aria-label="Settings sections">
+        <nav *ngIf="!serviceMode" class="nav" aria-label="Settings sections">
           <button
             *ngFor="let s of sections"
             type="button"
@@ -136,7 +174,7 @@ interface SectionMeta {
 
         <!-- ===================== Content panel ===================== -->
         <section class="panel">
-          <header class="panel__head">
+          <header class="panel__head" *ngIf="!serviceMode">
             <div>
               <h2 class="panel__title">{{ currentSection.label }}</h2>
               <p class="panel__desc">{{ currentSection.desc }}</p>
@@ -323,11 +361,11 @@ interface SectionMeta {
 
             <!-- ============= SERVICES (ride catalogue) ============= -->
             <ng-container *ngIf="activeSection === 'services'">
-              <section class="svc-scope svc-names" aria-labelledby="service-names-title">
+              <section *ngIf="serviceMode" class="svc-scope svc-names" aria-labelledby="service-names-title">
                 <h3 id="service-names-title">Service names and images</h3>
                 <p class="chan-note__sub">Names and images apply to Local and Outstation in every city. Leave a name blank to use the default. Images can be JPG, PNG or WebP up to 4 MB.</p>
                 <div class="svc-names__fields">
-                  <div class="svc-branding" *ngFor="let service of serviceBranding">
+                  <div class="svc-branding" *ngFor="let service of visibleBranding">
                     <tm-input [label]="service.label + ' display name'" [placeholder]="service.label" [(ngModel)]="settings[service.nameField]" />
                     <div class="svc-branding__preview">
                       <input #imageInput hidden type="file" accept="image/jpeg,image/png,image/webp"
@@ -355,37 +393,26 @@ interface SectionMeta {
                 <tm-button variant="ink" icon="check" [loading]="saving.serviceNames" (clicked)="save('serviceNames')">Save service details</tm-button>
               </section>
 
-              <div class="chan-note">
-                <span class="chan-note__title">Switches apply to every city, in both apps, instantly</span>
-                <span class="chan-note__sub">These settings are global — turning a service off here hides it from the customer booking screen and from driver signup/profile in every city, not just the one selected above. Switching off Local or Outstation takes its three services with it. Every switch saves on its own — no Save button needed. At least one service must always stay on.</span>
+              <section class="svc-scope" *ngIf="serviceMode === 'fixed'">
+                <h3>Booking emails</h3>
+                <p *ngIf="!settings.notifications_email_enabled">Email delivery is disabled in Operator Settings.</p>
+              <div class="fields fields--spaced">
+                <div class="field field--full">
+                  <span class="field__label">Customer emails</span>
+                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_customer_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email receipts and fixed booking records</span><span class="mini-check__sub">Booking receipt, cancellation/refund details, boarding code, and completed trip summary.</span></span></label>
+                </div>
+                <div class="field field--full">
+                  <span class="field__label">Driver emails</span>
+                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_driver_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email for driver fixed summaries</span><span class="mini-check__sub">End-of-ride or shift summaries only, not live driving alerts.</span></span></label>
+                </div>
+                <div class="field field--full">
+                  <span class="field__label">Admin emails</span>
+                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_admin_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email for fixed reports and summaries</span><span class="mini-check__sub">Daily or shift summaries, cancellation/refund reports, and operational exception summaries.</span></span></label>
+                </div>
               </div>
-
-              <div class="loading" *ngIf="servicesLoading"><span class="spinner" aria-hidden="true"></span><span>Loading services…</span></div>
-              <p class="chan-note chan-note--error" *ngIf="!servicesLoading && servicesError">{{ servicesError }}</p>
-
-              <div class="svc-scope" *ngFor="let scope of servicesScopes">
-                <label class="switch-row svc-scope__head">
-                  <span class="switch-row__text">
-                    <span class="switch-row__title">{{ scope.name }}</span>
-                    <span class="switch-row__sub">{{ scope.scope === 'local' ? 'Rides inside the city.' : 'Rides between cities.' }} Master switch — off hides everything below it.</span>
-                  </span>
-                  <span class="switch">
-                    <input type="checkbox" [checked]="scope.is_active" [disabled]="servicesBusy !== null" (change)="toggleScope(scope)" />
-                    <span class="switch__track"><span class="switch__thumb"></span></span>
-                  </span>
-                </label>
-
-                <label class="switch-row svc-scope__mode" [class.svc-scope__mode--off]="!scope.is_active" *ngFor="let mode of scope.modes">
-                  <span class="switch-row__text">
-                    <span class="switch-row__title">{{ mode.display_name || mode.name }}</span>
-                    <span class="switch-row__sub">{{ modeSub(mode) }}</span>
-                  </span>
-                  <span class="switch">
-                    <input type="checkbox" [checked]="mode.is_active" [disabled]="servicesBusy !== null" (change)="toggleMode(scope, mode)" />
-                    <span class="switch__track"><span class="switch__thumb"></span></span>
-                  </span>
-                </label>
-              </div>
+                <tm-button variant="ink" [loading]="saving.fixedEmails" (clicked)="save('fixedEmails')">Save email settings</tm-button>
+              </section>
+              <ng-container *ngIf="canToggleServices" [ngTemplateOutlet]="availability"></ng-container>
             </ng-container>
 
             <!-- ============= NOTIFICATIONS ============= -->
@@ -410,20 +437,6 @@ interface SectionMeta {
                 </span>
               </label>
 
-              <div class="fields fields--spaced">
-                <div class="field field--full">
-                  <span class="field__label">Fixed customer emails</span>
-                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_customer_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email receipts and fixed booking records</span><span class="mini-check__sub">Booking receipt, cancellation/refund details, boarding code, and completed trip summary.</span></span></label>
-                </div>
-                <div class="field field--full">
-                  <span class="field__label">Fixed driver emails</span>
-                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_driver_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email for driver fixed summaries</span><span class="mini-check__sub">End-of-ride or shift summaries only, not live driving alerts.</span></span></label>
-                </div>
-                <div class="field field--full">
-                  <span class="field__label">Fixed admin emails</span>
-                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_admin_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email for fixed reports and summaries</span><span class="mini-check__sub">Daily or shift summaries, cancellation/refund reports, and operational exception summaries.</span></span></label>
-                </div>
-              </div>
             </ng-container>
 
             <!-- ============= TEMPLATES ============= -->
@@ -712,6 +725,13 @@ interface SectionMeta {
   `],
 })
 export class OperatorSettingsComponent implements OnInit, OnDestroy {
+  @Input() serviceMode: ServiceMode | null = null;
+  @Input() canToggleServices = true;
+  @Input() canEditBranding = true;
+  private citySub?: Subscription;
+  get visibleBranding() { return this.serviceBranding.filter(service => service.mode === this.serviceMode); }
+  visibleModes(scope: RideScope) { return scope.modes.filter(mode => mode.mode === this.serviceMode); }
+
   settings: OperatorSettings | null = null;
   readonly serviceBranding = [
     { mode: 'private', label: 'Private', nameField: 'private_service_name' },
@@ -729,7 +749,7 @@ export class OperatorSettingsComponent implements OnInit, OnDestroy {
     { key: 'payments',     label: 'Payments',          icon: 'handshake',     desc: 'Which payment methods the apps offer everywhere: Online, GPay and Cash. Cash takes an upfront online deposit; the rest is paid to the driver in cash at trip end.' },
     { key: 'wallet',       label: 'Wallet',            icon: 'rupee',         desc: 'Cash-wallet limits and the terms shown to users.' },
     { key: 'subscription', label: 'Subscription',      icon: 'star',          desc: 'Copy for the driver subscription promo popup.' },
-    { key: 'services',     label: 'Services',          icon: 'car',           desc: 'Which ride services the apps offer: Local & Outstation, each with Private, Fixed and Shuttle. Off = hidden in both the customer and driver apps.' },
+    { key: 'services',     label: 'Services',          icon: 'car',           desc: 'Local and Outstation availability across all services and cities.' },
     { key: 'notifications', label: 'Notifications',     icon: 'bell',          desc: 'Email switches for fixed module messages. SMS is OTP-only; push is managed per user from their profile page.' },
     { key: 'templates',    label: 'Templates',         icon: 'envelope',      desc: 'Notification copy with dynamic placeholders.' },
   ];
@@ -743,6 +763,7 @@ export class OperatorSettingsComponent implements OnInit, OnDestroy {
     services: false,
     serviceNames: false,
     notifications: false,
+    fixedEmails: false,
     templates: false,
   };
 
@@ -793,11 +814,11 @@ export class OperatorSettingsComponent implements OnInit, OnDestroy {
       'subscription_popup_button2',
     ],
     services: [], // per-toggle instant PATCH, not part of the settings form
-    serviceNames: ['private_service_name', 'fixed_service_name', 'shuttle_service_name'],
+    serviceNames: [],
     // SMS keys dropped from the UI on purpose: SMS is OTP-only (login +
     // boarding, always on) so the old SMS toggles are dead switches.
-    notifications: [
-      'notifications_email_enabled',
+    notifications: ['notifications_email_enabled'],
+    fixedEmails: [
       'fixed_customer_email_enabled',
       'fixed_driver_email_enabled',
       'fixed_admin_email_enabled',
@@ -805,13 +826,15 @@ export class OperatorSettingsComponent implements OnInit, OnDestroy {
     templates: ['customer_ride_accept_msg', 'ride_cancellation_msg'],
   };
 
-  constructor(private api: ApiService, private toast: ToastService, private cityCtx: CityContextService) {}
+  constructor(private api: ApiService, private toast: ToastService, private cityCtx: CityContextService,
+              readonly serviceNames: ServiceNamesService) {}
 
   ngOnInit(): void {
-    this.fetch();
+    if (this.serviceMode) this.activeSection = 'services';
+    if (this.canEditBranding) this.fetch();
     // City known up-front (or switched later) → (re)load the services tree.
     this.cityCtx.ensureCitiesLoaded().subscribe();
-    this.cityCtx.cityId$.subscribe((id) => {
+    this.citySub = this.cityCtx.cityId$.subscribe((id) => {
       if (id != null && id !== this.servicesCityId) {
         this.servicesCityId = id;
         this.loadServices();
@@ -820,6 +843,7 @@ export class OperatorSettingsComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.citySub?.unsubscribe();
     this.clearServiceImageEdits();
   }
 
@@ -899,7 +923,8 @@ export class OperatorSettingsComponent implements OnInit, OnDestroy {
     const fd = new FormData();
     fd.append('_method', 'PATCH');
 
-    const fields = this.sectionFields[section];
+    const fields = this.serviceMode && section === 'serviceNames'
+      ? [this.serviceMode + '_service_name'] : this.sectionFields[section];
     for (const field of fields) {
       const raw = (this.settings as unknown as Record<string, unknown>)[field];
       if (raw === undefined) continue;
@@ -929,6 +954,7 @@ export class OperatorSettingsComponent implements OnInit, OnDestroy {
           this.saving[section] = false;
           this.settings = res.settings;
           if (section === 'serviceNames') {
+            this.serviceNames.updateSavedNames(res.settings);
             this.clearServiceImageEdits();
             this.loadServices();
           }
@@ -946,12 +972,14 @@ export class OperatorSettingsComponent implements OnInit, OnDestroy {
 
   private titleFor(section: SectionKey): string {
     if (section === 'serviceNames') return 'Service details';
+    if (section === 'fixedEmails') return 'Booking email settings';
     return this.sections.find((s) => s.key === section)?.label ?? 'Settings';
   }
 
   // ===================== Services (ride catalogue) =====================
 
   loadServices(): void {
+    if (!this.canToggleServices) return;
     const cityId = this.servicesCityId ?? this.cityCtx.currentCityId;
     if (cityId == null) return;
     this.servicesCityId = cityId;

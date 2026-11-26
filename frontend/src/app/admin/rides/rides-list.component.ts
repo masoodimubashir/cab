@@ -50,7 +50,7 @@ type StatusFilter =
   | 'CANCELLED';
 
 interface RideTypeOption { id: number; name: string; }
-interface CityVehicleTypeOption { id: number; display_name: string; }
+interface CityVehicleTypeOption { id: number; display_name: string; ride_type_id: number | null; }
 interface TripRow {
   id: number;
   status: string;
@@ -236,7 +236,7 @@ const STATUS_OPTIONS: { value: Exclude<StatusFilter, 'all'>; label: string }[] =
           </div>
 
           <!-- Ride type -->
-          <div class="state-select" [class.has-value]="rideTypeId != null" [class.is-open]="rideTypeOpen">
+          <div *ngIf="serviceRideTypeId == null" class="state-select" [class.has-value]="rideTypeId != null" [class.is-open]="rideTypeOpen">
             <button
               type="button"
               class="state-select__trigger"
@@ -650,6 +650,7 @@ const STATUS_OPTIONS: { value: Exclude<StatusFilter, 'all'>; label: string }[] =
 })
 export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnDestroy {
   @Input({ required: true }) category!: RideCategory;
+  @Input() serviceRideTypeId?: number;
   @Input() title = 'Rides';
   @Input() emptyMessage = 'No rides found.';
 
@@ -679,7 +680,6 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
   cvtOptions: CityVehicleTypeOption[] = [];
   cityOptions: CityOption[] = [];
   cityLocked = false;
-  private currentCityId: number | null = null;
   private citySub: Subscription | null = null;
   private citiesSub: Subscription | null = null;
 
@@ -703,29 +703,29 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
   }
 
   ngOnInit(): void {
-    this.loadRideTypes();
-    this.cityLocked = this.cityCtx.isLocked;
+    if (this.serviceRideTypeId == null) this.loadRideTypes();
+    this.cityLocked = this.serviceRideTypeId != null || this.cityCtx.isLocked;
     this.cityCtx.ensureCitiesLoaded().subscribe();
     this.citiesSub = this.cityCtx.cities$.subscribe((list) => {
       this.cityOptions = list ?? [];
       // Scoped managers can only ever see their own city — lock the filter to it.
       if (this.cityLocked && this.cityCtx.lockedCityId != null && this.cityId == null) {
-        this.cityId = this.cityCtx.lockedCityId;
-        this.fetch();
+        this.selectCity(this.cityCtx.lockedCityId);
       }
     });
-    this.citySub = this.cityCtx.cityId$.subscribe((id) => {
-      this.currentCityId = id;
-      // Reset CVT filter when city changes — the previous selection probably
-      // doesn't exist in the new city.
-      this.cityVehicleTypeId = null;
-      this.loadCityVehicleTypes();
+    if (this.serviceRideTypeId != null) {
+      this.citySub = this.cityCtx.cityId$.subscribe(id => this.selectCity(id));
+    } else {
       this.fetch();
-    });
+    }
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['category'] && !changes['category'].firstChange) {
+    if (changes['serviceRideTypeId'] && !changes['serviceRideTypeId'].firstChange) {
+      this.cityVehicleTypeId = null;
+      this.loadCityVehicleTypes();
+    }
+    if ((changes['category'] && !changes['category'].firstChange) || (changes['serviceRideTypeId'] && !changes['serviceRideTypeId'].firstChange)) {
       this.page = 1;
       this.fetch();
     }
@@ -785,15 +785,14 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
     this.cityOpen = false;
     if (this.cityId === id) return;
     this.cityId = id;
+    this.cityVehicleTypeId = null;
+    this.loadCityVehicleTypes();
     this.page = 1;
     this.fetch();
   }
   clearCity(): void {
     if (this.cityLocked) return;
-    if (this.cityId == null) return;
-    this.cityId = null;
-    this.page = 1;
-    this.fetch();
+    this.selectCity(null);
   }
 
   // ── City vehicle type ───────────────────────────────────────────
@@ -974,30 +973,38 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
   }
 
   private loadCityVehicleTypes(): void {
-    if (this.currentCityId == null) {
-      this.cvtOptions = [];
+    this.cvtOptions = [];
+    if (this.cityId == null) {
       return;
     }
+    const cityId = this.cityId;
     this.api.get<{ data: CityVehicleTypeOption[] }>(
-      `/admin/cities/${this.currentCityId}/vehicle-types`,
+      `/admin/cities/${cityId}/vehicle-types`,
     ).subscribe({
-      next: (res) => { this.cvtOptions = res?.data || []; },
-      error: () => { this.cvtOptions = []; },
+      next: (res) => {
+        if (cityId === this.cityId) this.cvtOptions = (res.data ?? []).filter(row => this.serviceRideTypeId == null || row.ride_type_id === this.serviceRideTypeId);
+      },
+      error: () => { if (cityId === this.cityId) this.cvtOptions = []; },
     });
   }
 
+  private lastRequest = 0;
   private fetch(): void {
+    const request = ++this.lastRequest;
+    if (this.serviceRideTypeId != null && this.cityId == null) { this.trips = []; this.total = 0; this.loading = false; return; }
     this.loading = true;
     this.error = null;
     const qs = this.buildQuery();
     this.api.get<any>(`/admin/trips${qs}`).subscribe({
       next: (res) => {
+        if (request !== this.lastRequest) return;
         const page = res?.data || {};
         this.trips = (page.data as TripRow[]) ?? [];
         this.total = page.total ?? this.trips.length;
         this.loading = false;
       },
       error: (err) => {
+        if (request !== this.lastRequest) return;
         this.error = err?.error?.message || 'Failed to load rides';
         this.loading = false;
       },
@@ -1011,7 +1018,8 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
     params.set('per_page', String(this.pageSize));
     if (this.dateFrom) params.set('date_from', this.dateFrom);
     if (this.dateTo) params.set('date_to', this.dateTo);
-    if (this.rideTypeId != null) params.set('ride_type_id', String(this.rideTypeId));
+    const typeId = this.serviceRideTypeId ?? this.rideTypeId;
+    if (typeId != null) params.set('ride_type_id', String(typeId));
     if (this.cityVehicleTypeId != null) params.set('city_vehicle_type_id', String(this.cityVehicleTypeId));
     if (this.cityId != null) params.set('city_id', String(this.cityId));
     if (this.phone.trim()) params.set('phone', this.phone.trim());

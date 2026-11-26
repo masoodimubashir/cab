@@ -1,4 +1,4 @@
-import { CanActivateFn, Router, UrlTree } from '@angular/router';
+import { CanActivateFn, Router } from '@angular/router';
 import { inject } from '@angular/core';
 import { map } from 'rxjs/operators';
 import { AuthService } from '../core/auth.service';
@@ -13,11 +13,12 @@ export const adminAuthGuard: CanActivateFn = (route) => {
   }
 
   const permission = route.data?.['permission'] as string | undefined;
-  if (!permission) {
+  const permissions = (route.data?.['permissions'] as string[] | undefined) ?? (permission ? [permission] : []);
+  if (!permissions.length) {
     return true;
   }
 
   return auth.ensureLoaded().pipe(
-    map(() => auth.hasPermission(permission) ? true : router.parseUrl(auth.landingRoute())),
+    map(() => auth.hasAnyPermission(permissions) ? true : router.parseUrl(auth.landingRoute())),
   );
 };

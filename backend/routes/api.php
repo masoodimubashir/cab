@@ -378,9 +378,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::patch('/admin/cities/{city}/dispatcher-settings/{setting}', [AdminDispatcherSettingsController::class, 'update'])->middleware('permission:city_settings');
 
         // ── Service catalogue (ride-products): operator can toggle modes/scopes ──
-        Route::get('/admin/cities/{city}/ride-products', [AdminCityRideProductsController::class, 'index'])->middleware('permission:city_settings');
-        Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}', [AdminCityRideProductsController::class, 'updateScope'])->middleware('permission:city_settings');
-        Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}/modes/{mode}', [AdminCityRideProductsController::class, 'updateMode'])->middleware('permission:city_settings');
+        Route::get('/admin/cities/{city}/ride-products', [AdminCityRideProductsController::class, 'index'])->middleware('permission:city_settings|rides');
+        Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}', [AdminCityRideProductsController::class, 'updateScope'])->middleware('permission:city_settings|rides');
+        Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}/modes/{mode}', [AdminCityRideProductsController::class, 'updateMode'])->middleware('permission:city_settings|rides');
         Route::post('/admin/cities/{city}/ride-products/scopes/{scope}/modes/{mode}', [AdminCityRideProductsController::class, 'updateMode'])->middleware('permission:city_settings');
 
         Route::get('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'index'])->middleware('permission:vehicles|pricing|manual_dispatch|rides');
@@ -388,6 +388,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::post('/admin/cities/{city}/vehicle-types/batch', [AdminVehicleTypesController::class, 'storeBatch'])->middleware('permission:vehicles');
         Route::post('/admin/cities/{city}/vehicle-types/copy-to-city', [AdminVehicleTypesController::class, 'copyToCity'])->middleware('permission:vehicles');
         Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'show'])->middleware('permission:vehicles|pricing');
+        Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/shared-details', [AdminVehicleTypesController::class, 'updateSharedDetails'])->middleware('permission:vehicles');
         Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update'])->middleware('permission:vehicles');
         Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update'])->middleware('permission:vehicles');
         Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'destroy'])->middleware('permission:vehicles');
@@ -632,13 +633,6 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
 });
 
 Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rides'])->group(function () {
-    // Service catalogue: scope (Local/Outstation) → mode (Private/Fixed/Shuttle)
-    // toggles that gate what BOTH apps offer (customer booking + driver signup).
-    Route::get('/admin/cities/{city}/ride-products', [AdminCityRideProductsController::class, 'index']);
-    // Keyed by scope/mode strings, not row ids — the catalogue is global now.
-    Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}', [AdminCityRideProductsController::class, 'updateScope']);
-    Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}/modes/{mode}', [AdminCityRideProductsController::class, 'updateMode']);
-
     Route::get('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'index']);
     Route::post('/admin/cities/{city}/fixed-routes/import-kml', [AdminFixedRoutesController::class, 'importKml']);
     Route::post('/admin/cities/{city}/fixed-routes/import-kml-bulk', [AdminFixedRoutesController::class, 'bulkImportKml']);

@@ -53,7 +53,7 @@
               <ion-icon name="person-circle-outline" aria-hidden="true"></ion-icon>
             </div>
             <div class="dc-row__text">
-              <small>{{ isShuttleTrip() ? 'Shuttle rider' : (isForOther ? 'Rider · booked for a friend' : 'Customer') }}</small>
+              <small>{{ isShuttleTrip() ? ((serviceBranding.shuttle?.label || defaultServiceNames.shuttle) + ' rider') : (isForOther ? 'Rider · booked for a friend' : 'Customer') }}</small>
               <strong>{{ customerName }}</strong>
             </div>
             <button type="button" class="rider-call dc-press" *ngIf="customerPhone" (click)="call(customerPhone)" aria-label="Call rider">
@@ -289,8 +289,9 @@
               Requested for you
             </span>
             <span class="dc-badge badge shuttle-badge" *ngIf="t.service_mode === 'shuttle'">
-              <ion-icon name="bus-outline" aria-hidden="true"></ion-icon>
-              Shuttle
+              <img *ngIf="serviceBranding.shuttle?.imageUrl as image; else shuttleIcon" width="18" height="18" style="object-fit:contain" [src]="image" alt="" (error)="serviceBranding.shuttle!.imageUrl = ''">
+              <ng-template #shuttleIcon><ion-icon name="bus-outline" aria-hidden="true"></ion-icon></ng-template>
+              {{ serviceBranding.shuttle?.label || defaultServiceNames.shuttle }}
             </span>
             <span class="dc-badge badge prepaid-badge" *ngIf="t.service_mode === 'shuttle'">
               <ion-icon name="card-outline" aria-hidden="true"></ion-icon>
@@ -458,9 +459,9 @@
         <div class="ir-header-title-box">
           <span class="ir-live-pill" [class.is-shuttle]="activeIncomingTrip.service_mode === 'shuttle'">
             <span class="ir-live-dot"></span>
-            {{ activeIncomingTrip.service_mode === 'shuttle' ? 'INCOMING SHUTTLE REQUEST' : (activeIncomingTrip.is_selected_for_me ? 'REQUESTED FOR YOU' : 'INCOMING RIDE REQUEST') }}
+            {{ activeIncomingTrip.service_mode === 'shuttle' ? ('Incoming ' + (serviceBranding.shuttle?.label || defaultServiceNames.shuttle) + ' request') : (activeIncomingTrip.is_selected_for_me ? 'REQUESTED FOR YOU' : 'INCOMING RIDE REQUEST') }}
           </span>
-          <h2 class="ir-main-title">{{ activeIncomingTrip.vehicle_name || activeIncomingTrip.ride_type_name || (activeIncomingTrip.service_mode === 'shuttle' ? 'Shared Shuttle' : 'Private Cab') }}</h2>
+          <h2 class="ir-main-title">{{ activeIncomingTrip.vehicle_name || activeIncomingTrip.ride_type_name || (activeIncomingTrip.service_mode === 'shuttle' ? (serviceBranding.shuttle?.label || defaultServiceNames.shuttle) : (serviceBranding.private?.label || defaultServiceNames.private)) }}</h2>
         </div>
 
         <!-- Circular Countdown Timer -->
@@ -489,7 +490,7 @@
             </div>
             <div class="ir-cust-details">
               <h3 class="ir-cust-name">
-                {{ activeIncomingTrip.is_for_other ? ('For ' + (activeIncomingTrip.booked_for_name || 'Friend')) : (activeIncomingTrip.service_mode === 'shuttle' ? 'Shuttle Rider' : 'Passenger Request') }}
+                {{ activeIncomingTrip.is_for_other ? ('For ' + (activeIncomingTrip.booked_for_name || 'Friend')) : (activeIncomingTrip.service_mode === 'shuttle' ? ((serviceBranding.shuttle?.label || defaultServiceNames.shuttle) + ' rider') : 'Passenger Request') }}
               </h3>
               <div class="ir-cust-meta">
                 <span class="ir-badge-seats" *ngIf="activeIncomingTrip.payment_method">
@@ -498,7 +499,7 @@
                 </span>
                 <span class="ir-badge-seats" *ngIf="activeIncomingTrip.service_mode === 'shuttle'">
                   <ion-icon name="bus-outline"></ion-icon>
-                  Shuttle
+                  {{ serviceBranding.shuttle?.label || defaultServiceNames.shuttle }}
                 </span>
               </div>
             </div>

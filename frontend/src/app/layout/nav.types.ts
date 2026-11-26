@@ -15,6 +15,7 @@ import { IconName } from '../ui/icon/icon-registry';
 export interface NavItem {
   label: string;
   icon: IconName;
+  imageUrl?: string | null;
   route?: string;
   /** Optional query params appended to the route (e.g. {insights: 'leaderboard'}). */
   queryParams?: Record<string, string | number | boolean>;
