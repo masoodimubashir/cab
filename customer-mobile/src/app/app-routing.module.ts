@@ -1,9 +1,10 @@
-import { NgModule } from '@angular/core';
+import { NgModule, inject } from '@angular/core';
+import { AuthService } from './core/auth.service';
 import { PreloadAllModules, RouterModule, Routes } from '@angular/router';
 import { AuthGuard } from './core/auth.guard';
 import { GuestGuard } from './core/guest.guard';
 
-const routes: Routes = [
+export const routes: Routes = [
   {
     path: 'welcome',
     loadChildren: () => import('./pages/welcome/welcome.module').then( m => m.WelcomePageModule),
@@ -65,10 +66,6 @@ const routes: Routes = [
     loadChildren: () => import('./pages/privacy/privacy.module').then((m) => m.PrivacyPageModule),
   },
   {
-    path: 'splash',
-    loadChildren: () => import('./pages/splash/splash.module').then( m => m.SplashPageModule)
-  },
-  {
     // Search and Results need carpool switched on (CarpoolEnabledGuard inside);
     // a rider's own carpool pages keep opening while it's off (A36).
     path: 'carpool',
@@ -76,13 +73,14 @@ const routes: Routes = [
     canActivate: [AuthGuard],
   },
   {
+    // No splash: opening the app goes straight to the welcome page, or to Home when signed in.
     path: '',
-    redirectTo: 'splash',
+    redirectTo: () => (inject(AuthService).isLoggedIn() ? '/customer-tabs/go' : '/welcome'),
     pathMatch: 'full',
   },
   {
     path: '**',
-    redirectTo: 'splash',
+    redirectTo: '',
   }
 ];
 

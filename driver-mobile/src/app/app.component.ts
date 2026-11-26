@@ -62,7 +62,7 @@ export class AppComponent implements OnInit {
       .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
       .subscribe((event) => {
         const url = event.urlAfterRedirects || event.url;
-        if (!url || url.includes('/splash')) return;
+        if (!url) return;
 
         const cleanUrl = url.split('?')[0].split('#')[0];
 
@@ -125,7 +125,6 @@ export class AppComponent implements OnInit {
         currentUrl === '/welcome' ||
         currentUrl === '/auth/login' ||
         currentUrl === '/intro' ||
-        currentUrl === '/splash' ||
         currentUrl === '/' ||
         currentUrl === '';
 

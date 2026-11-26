@@ -7,6 +7,8 @@ const config: CapacitorConfig = {
   appId: 'product.driver.dreamcab',
   appName: 'CABBIES',
   webDir: 'www',
+  // The web view's colour before the first page paints: white like the welcome page (dark mode showed grey).
+  backgroundColor: '#FFFFFF',
   // Production API and websockets use HTTPS.
   server: {
     cleartext: carpoolTest,

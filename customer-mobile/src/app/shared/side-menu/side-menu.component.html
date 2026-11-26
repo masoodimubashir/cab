@@ -1,4 +1,4 @@
-<ion-menu side="start" menuId="customer-menu" contentId="main-content">
+<ion-menu side="start" menuId="customer-menu" contentId="main-content" [disabled]="!user">
   <ion-content class="menu-content">
     <div class="account-drawer">
       <header class="drawer-title"><h1>Account</h1><button type="button" (click)="closeMenu()" aria-label="Close account menu"><ion-icon name="close-outline" aria-hidden="true"></ion-icon></button></header>

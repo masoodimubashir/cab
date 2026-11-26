@@ -1,4 +1,5 @@
-import { NgModule } from '@angular/core';
+import { NgModule, inject } from '@angular/core';
+import { AuthService } from './core/auth.service';
 import { PreloadAllModules, RouterModule, Routes } from '@angular/router';
 import { AuthGuard } from './core/auth.guard';
 import { CarpoolEnabledGuard } from './pages/carpool/carpool-enabled.guard';
@@ -6,11 +7,7 @@ import { DriverTypeGuard } from './pages/carpool/signup/driver-type.guard';
 import { GuestGuard } from './core/guest.guard';
 import { ApprovedDriverGuard } from './core/approved-driver.guard';
 
-const routes: Routes = [
-  {
-    path: 'splash',
-    loadChildren: () => import('./pages/splash/splash.module').then((m) => m.SplashPageModule),
-  },
+export const routes: Routes = [
   {
     path: 'welcome',
     loadChildren: () => import('./pages/welcome/welcome.module').then((m) => m.WelcomePageModule),
@@ -112,13 +109,14 @@ const routes: Routes = [
     canActivate: [AuthGuard, CarpoolEnabledGuard],
   },
   {
+    // No splash: opening the app goes straight to the welcome page, or to the dashboard when signed in.
     path: '',
-    redirectTo: 'splash',
+    redirectTo: () => (inject(AuthService).isLoggedIn() ? '/tabs/dashboard' : '/welcome'),
     pathMatch: 'full',
   },
   {
     path: '**',
-    redirectTo: 'splash',
+    redirectTo: '',
   },
 ];
 

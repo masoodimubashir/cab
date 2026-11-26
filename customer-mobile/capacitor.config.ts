@@ -8,6 +8,8 @@ const config: CapacitorConfig = {
   appId: 'product.customer.dreamcab',
   appName: 'DREAMCABS',
   webDir: 'www',
+  // The web view's colour before the first page paints: white like the welcome page (dark mode showed grey).
+  backgroundColor: '#FFFFFF',
   // Production API and websockets use HTTPS. Keep the existing local WebView
   // origin so stored sessions survive upgrades; it is not a remote API URL.
   server: {

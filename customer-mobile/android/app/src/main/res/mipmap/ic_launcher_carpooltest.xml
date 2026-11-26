@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PLACEHOLDER icon for the carpool TEST build only (Saqib will send the real artwork). Replace before sharing widely; see Hardening-Log section D. -->
+<!-- Android 7 (no adaptive icons): a round flat background with the same symbol. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape android:shape="oval"><solid android:color="@color/carpooltest_icon_background"/></shape></item>
+    <item android:drawable="@drawable/ic_carpooltest_foreground"/>
+</layer-list>

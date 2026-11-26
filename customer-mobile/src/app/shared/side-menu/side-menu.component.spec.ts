@@ -28,6 +28,18 @@ describe('Account reference sidebar', () => {
     expect(root.textContent).not.toContain('Wallet balance');
     expect(root.textContent).not.toContain('Refer and earn');
   });
+  it('cannot be opened or swiped open while nobody is signed in (welcome, sign-in)', () => {
+    const view = TestBed.createComponent(SideMenuComponent);
+    const auth = TestBed.inject(AuthService) as any;
+    const signedIn = auth.getUser;
+    auth.getUser = () => null;
+    view.detectChanges();
+    const menu = view.nativeElement.querySelector('ion-menu') as any;
+    expect(menu.disabled).toBeTrue();
+    auth.getUser = signedIn;
+    view.detectChanges();
+    expect(menu.disabled).toBeFalse();
+  });
   it('shows all prior service and legal entries directly without an accordion', () => {
     const view = TestBed.createComponent(SideMenuComponent); view.detectChanges();
     expect(view.nativeElement.querySelectorAll('.service-bookings button').length).toBe(4);

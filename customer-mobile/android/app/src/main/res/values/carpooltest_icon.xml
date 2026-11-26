@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PLACEHOLDER icon for the carpool TEST build only (Saqib will send the real artwork). Replace before sharing widely; see Hardening-Log section D. -->
+<resources>
+    <color name="carpooltest_icon_background">#FF087F50</color>
+</resources>
