@@ -55,6 +55,8 @@ interface Detail extends Row {
   reports: { id: number; reason: string; reason_label?: string | null; status: string; created_at: string }[];
   timeline: { at: string; label: string }[];
   history: HistoryEntry[];
+  /** L1.5: when the driver's phone first shared its location on this ride; null when it never did. */
+  location_shared_at?: string | null;
 }
 
 interface Strip { upcoming: number; past_departure: number; in_progress: number; open_reports: number }
@@ -136,6 +138,7 @@ type Ask = null | { kind: 'cancel' } | { kind: 'end' } | { kind: 'remove'; req: 
           <ng-container *ngIf="d.plate_now && d.plate_now !== d.plate"><dt>Car now</dt><dd>{{ d.car_now }} · {{ d.plate_now }} <span class="tag tag--warn">changed</span></dd></ng-container>
           <dt>City</dt><dd>{{ d.city || '—' }}</dd>
           <dt>Distance</dt><dd>{{ d.distance_km }} km</dd>
+          <ng-container *ngIf="locationLine(d) as loc"><dt>Driver location</dt><dd>{{ loc }}</dd></ng-container>
           <dt>Seats</dt><dd>{{ d.seats_taken }} of {{ d.seats_total }} taken</dd>
           <dt>Price</dt><dd>{{ d.is_free ? 'Free' : '₹' + d.price_per_seat + ' per seat, paid to the driver' }}</dd>
           <ng-container *ngIf="d.cancel_note"><dt>Cancel note</dt><dd>{{ d.cancel_note }}</dd></ng-container>
@@ -346,6 +349,12 @@ export class CarpoolListingsComponent implements OnInit {
   }
 
   when(iso: string | null): string { return inTime(iso); }
+
+  /** L1.5: whether the driver's phone shared its location; only for rides that were started. */
+  locationLine(d: Detail): string | null {
+    if (!['in_progress', 'completed', 'auto_completed', 'ended_by_admin'].includes(d.status)) return null;
+    return d.location_shared_at ? `Shared, from ${this.when(d.location_shared_at)}` : 'No location shared';
+  }
   label(r: Row): string { return listingStatusLabel(r.status, r.cancel_reason); }
   tone(r: Row): StatusTone { return listingStatusTone(r.status); }
   reqLabel(r: Req): string { return requestStatusLabel(r); }

@@ -36,6 +36,10 @@ interface Values {
   plan_push_hours: number;
   document_warning_days: number;
   report_retention_days: number;
+  /** L1.5: live location. */
+  no_show_wait_minutes: number;
+  arrival_radius_m: number;
+  position_retention_days: number;
 }
 type Key = keyof Values;
 
@@ -77,6 +81,9 @@ const TIPS: Record<Key | 'enabled' | 'banned_words', string> = {
   plan_push_hours: "This setting decides how many hours before a plan ends the driver gets one reminder on their phone. Example: 24 hours means a plan ending Friday 9 pm sends it on Thursday 9 pm. No reminder is sent when the driver's next plan is already waiting.",
   document_warning_days: "This setting decides how many days before a dated document, like the car insurance, runs out the driver app starts warning the driver and sends one reminder. Example: 7 days means insurance ending on the 30th is flagged from the 23rd. After that day the driver can't publish later carpools until a new copy is approved.",
   report_retention_days: "This setting decides how long a closed report keeps the reported message and its details. After this many days the text is cleared; the report, who reported whom and the outcome stay.",
+  no_show_wait_minutes: "This setting decides how long a driver waits at a pickup before they can mark the rider as a no-show. The wait starts when the car reaches the pickup. Example: 5 minutes means the driver arrives at 8:40 and can mark a no-show from 8:45. If the driver's location is off, No-show is open any time.",
+  arrival_radius_m: "This setting decides how close the car must be to a pickup to count as arrived. Example: 100 metres means the wait starts once the car is within 100 metres of the rider's pickup. Too small and a car parked across the road never counts; too large and it counts too early.",
+  position_retention_days: "This setting decides how long we keep the driver's car positions from a ride. Riders see the car only during the ride. Example: 1 day means positions are deleted one day after they were recorded. The ride details still say whether the location was shared.",
   banned_words: "This list helps you block bad words in chat. Paste many at once, separated by commas or new lines. A message with one of these words shows dots instead. Switch a word off to pause it.",
 };
 interface Group { id: string; title: string; desc: string; rows: Row[] }
@@ -85,6 +92,7 @@ const KEYS: Key[] = [
   'search_distance_km', 'publish_horizon_days', 'start_early_minutes', 'pending_expire_minutes',
   'auto_complete_hours', 'missed_departure_days', 'plan_grace_days', 'chat_retention_days',
   'plan_warning_days', 'plan_push_hours', 'report_retention_days', 'document_warning_days',
+  'no_show_wait_minutes', 'arrival_radius_m', 'position_retention_days',
 ];
 /** Changing one of these reaches carpools that are already booked, so Save asks first. */
 const TIMING: Key[] = ['publish_horizon_days', 'start_early_minutes', 'pending_expire_minutes', 'missed_departure_days', 'plan_grace_days'];
@@ -487,12 +495,15 @@ export class CarpoolSettingsComponent implements OnInit, OnDestroy {
     {
       id: 'on-the-day',
       title: 'On the day',
-      desc: 'When a ride can start, when waiting requests close and what happens to a carpool nobody started.',
+      desc: 'When a ride can start, when waiting requests close, what happens to a carpool nobody started, and the live car.',
       rows: [
         { key: 'start_early_minutes', label: 'Start ride opens', help: 'How long before departure the driver can press Start ride.' },
         { key: 'pending_expire_minutes', label: 'Waiting request closes', help: 'A request still waiting once the car is on the road closes this long after its planned pickup.' },
         { key: 'auto_complete_hours', label: 'Auto-complete after', help: 'A started carpool nobody completes closes itself after this long.' },
         { key: 'missed_departure_days', label: 'Cancel a carpool nobody started', help: 'When a carpool the driver never started is cancelled. Riders and the driver are told.' },
+        { key: 'no_show_wait_minutes', label: 'Wait before No-show', help: 'How long the driver waits at a pickup before No-show opens. Open any time when location is off.' },
+        { key: 'arrival_radius_m', label: 'Arrival distance', help: 'How close to a pickup the car must be to count as arrived.' },
+        { key: 'position_retention_days', label: 'Car positions kept for', help: "The driver's positions from a ride are deleted after this long." },
       ],
     },
     {

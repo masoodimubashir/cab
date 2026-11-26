@@ -101,6 +101,16 @@ describe('Carpool admin pages', () => {
       expect(api.post).toHaveBeenCalledWith('/admin/carpool/listings/7/end', { note: 'Stuck on the road' });
     });
 
+    it('says in the ride details whether the driver shared their location (L1.5)', () => {
+      const c = make();
+      const at = '2026-11-26T08:31:00+05:30';
+      expect(c.locationLine({ status: 'completed', location_shared_at: at } as any)).toBe('Shared, from ' + c.when(at));
+      expect(c.locationLine({ status: 'auto_completed', location_shared_at: at } as any)).toBe('Shared, from ' + c.when(at));
+      expect(c.locationLine({ status: 'in_progress', location_shared_at: null } as any)).toBe('No location shared');
+      expect(c.locationLine({ status: 'published', location_shared_at: null } as any)).toBeNull();
+      expect(c.locationLine({ status: 'cancelled', location_shared_at: null } as any)).toBeNull();
+    });
+
     it('keeps the dialog content while it closes', () => {
       const c = make();
       c.detail = { id: 7 } as any;

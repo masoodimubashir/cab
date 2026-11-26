@@ -18,6 +18,9 @@ const LIMITS = {
   plan_push_hours: { min: 1, max: 72, default: 24, unit: 'hours', nullable: false },
   document_warning_days: { min: 1, max: 30, default: 7, unit: 'days', nullable: false },
   report_retention_days: { min: 30, max: 730, default: 180, unit: 'days', nullable: false },
+  no_show_wait_minutes: { min: 1, max: 30, default: 5, unit: 'minutes', nullable: false },
+  arrival_radius_m: { min: 30, max: 500, default: 100, unit: 'metres', nullable: false },
+  position_retention_days: { min: 1, max: 30, default: 1, unit: 'days', nullable: false },
 };
 
 function settings(over: Record<string, unknown> = {}) {
@@ -36,6 +39,9 @@ function settings(over: Record<string, unknown> = {}) {
     plan_push_hours: 24,
     document_warning_days: 7,
     report_retention_days: 180,
+    no_show_wait_minutes: 5,
+    arrival_radius_m: 100,
+    position_retention_days: 1,
     limits: LIMITS,
     upcoming_carpools: 0,
     carpools_on_the_road: 0,
@@ -158,6 +164,23 @@ describe('CarpoolSettingsComponent', () => {
     c.f.plan_push_hours = 6;
     c.save();
     expect(api.patch).toHaveBeenCalledOnceWith('/admin/carpool/settings', { plan_push_hours: 6, version: 'v1' });
+  });
+
+  it('offers the three live-location numbers at the end of On the day (L1.5)', () => {
+    open();
+    const keys = c.groups.find((g) => g.id === 'on-the-day')!.rows.map((r) => r.key);
+    expect(keys.slice(-3)).toEqual(['no_show_wait_minutes', 'arrival_radius_m', 'position_retention_days']);
+    for (const k of ['no_show_wait_minutes', 'arrival_radius_m', 'position_retention_days'] as const) {
+      expect(c.tip(k)).withContext(k).toContain('This setting');
+      expect(c.f[k]).withContext(k).toBe(settings()[k]);
+    }
+    c.f.arrival_radius_m = 20;
+    expect(c.err('arrival_radius_m')).toBeTruthy();
+    c.f.arrival_radius_m = 150;
+    api.patch.and.returnValue(of({ data: settings({ version: 'v2', arrival_radius_m: 150, no_show_wait_minutes: 3 }) }) as any);
+    c.f.no_show_wait_minutes = 3;
+    c.save();
+    expect(api.patch).toHaveBeenCalledOnceWith('/admin/carpool/settings', { no_show_wait_minutes: 3, arrival_radius_m: 150, version: 'v1' });
   });
 
   it('offers the document expiry warning days (S11)', () => {
