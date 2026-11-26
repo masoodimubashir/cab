@@ -1,0 +1,132 @@
+// New look for carpool sign-up (mockup 1 to 1i, Dev-Plan W13 and W14).
+// Sign-up steps: navy drop-down header (one fixed size on every step, CL-049) and a docked button.
+// Status and Plans: Home style; carpool-driver.scss supplies the shared Home pieces.
+
+:host {
+  --nv-ink: #0d1b2a;
+  --nv-green: #087f50;
+  --nv-green-bright: #12b35b;
+  --nv-green-soft: #edf7f1;
+  --nv-green-line: #98d6b4;
+  --nv-warn-bg: #fff2d0;
+  --nv-warn: #925700;
+  --nv-muted: #5a6a80;
+  --nv-line: #e2e8f0;
+}
+
+// ── Navy drop-down header (sign-up 1 to 1e) ──────────────────────────
+ion-header.nv-head { box-shadow: none; }
+ion-header.nv-head::after { display: none; }
+.nv-drop {
+  position: relative;
+  box-sizing: border-box;
+  height: calc(165px + env(safe-area-inset-top));
+  overflow: hidden;
+  padding: calc(4px + env(safe-area-inset-top)) 16px 18px;
+  border-radius: 0 0 28px 28px;
+  background: var(--nv-ink);
+  color: #fff;
+  font-family: Roboto, "Segoe UI", system-ui, sans-serif;
+}
+.nv-top { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; height: 44px; margin: 2px 0 10px; }
+.nv-back {
+  width: 44px; height: 44px; flex: none;
+  display: grid; place-items: center;
+  padding: 0; border: 0; border-radius: 50%;
+  background: #ffffff1a; color: #fff; font-size: 20px; cursor: pointer;
+  &:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+}
+.nv-step { margin-left: auto; padding: 5px 11px; border-radius: 999px; background: #ffffff1a; font-size: 12px; font-weight: 700; color: #dbe3ee; }
+.nv-drop h1 {
+  position: relative; z-index: 1; margin: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 23px; font-weight: 800; line-height: 1.2; letter-spacing: -.01em; color: #fff;
+}
+.nv-drop p { position: relative; z-index: 1; margin: 6px 0 0; height: 2.9em; overflow: hidden; max-width: 36ch; font-size: 13px; line-height: 1.45; color: #b9c5d4; }
+.nv-bars { position: relative; z-index: 1; display: flex; gap: 6px; margin-top: 16px; }
+.nv-bars i { flex: 1; height: 4px; border-radius: 2px; background: #ffffff26; }
+.nv-bars i.on { background: var(--nv-green-bright); }
+
+// Docked main button under the sign-up steps (mockup .d-dock, .d-go).
+ion-footer.nv-foot { box-shadow: none; }
+ion-footer.nv-foot::before { display: none; }
+.nv-dock { padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid #e4e9ef; background: #fff; }
+.nv-dock > * { max-width: 520px; margin: 0 auto; }
+.nv-go {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; min-height: 56px; border: 0; border-radius: 14px;
+  background: linear-gradient(100deg, #12b35b, #00974c); color: #fff;
+  font: 700 15px Roboto, "Segoe UI", system-ui, sans-serif; cursor: pointer;
+  &:disabled { opacity: .45; cursor: default; }
+  &:focus-visible { outline: 2px solid var(--nv-green); outline-offset: 2px; }
+  ion-spinner { width: 20px; height: 20px; color: #fff; }
+}
+
+// ── Status and Plans in Home style (1f to 1i) ───────────────────────
+// Banner in one place and one size on every screen (CL-049): the row above is one height.
+.v13 .hm-top, .v13 .d-head { height: 52px; min-height: 52px; margin-bottom: 16px; }
+.v13 .d-head h1 { font-size: 22px; }
+.v13 .hm-hero { box-sizing: border-box; height: 142px; }
+.v13 .hm-hero h2 { max-width: 210px; }
+.v13 .hm-hero h2, .v13 .hm-hero p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.hm-hero.warm { background: radial-gradient(circle at 18% 10%, #c98a10 0, #a86b00 55%, #8f5a00 100%); }
+.hm-hero.warm .hm-chip { color: #8f5a00; }
+.hm-hero.calm { background: radial-gradient(circle at 18% 10%, #2d4a74 0, #16294a 60%, #101a2c 100%); }
+.hm-hero.calm .hm-chip { color: #16294a; }
+
+.v-av { width: 52px; height: 52px; font-size: 16px; background: var(--nv-green-soft); color: var(--nv-green); border: 1px solid var(--nv-green-line); }
+.v-out { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 1px solid var(--nv-line); border-radius: 22px; background: #fff; color: var(--nv-ink); font-size: 13px; font-weight: 700; }
+.v-out ion-icon { font-size: 17px; }
+
+.v-big { margin-top: 16px; padding: 16px; border-radius: 20px; background: #fff; border: 1px solid #edf1ef; }
+.v-big h3 { font-size: 16px; font-weight: 800; }
+.v-meter { height: 8px; margin-top: 12px; border-radius: 4px; background: #e6efe9; overflow: hidden; }
+.v-meter i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--nv-green) 0, #12b35b 50%, var(--nv-green) 100%); transition: width .4s ease; }
+
+.v-list { padding: 4px 16px; border: 1px solid #edf1ef; border-radius: 20px; background: #fff; }
+.v-row { display: flex; align-items: center; gap: 12px; min-height: 56px; }
+.v-row + .v-row { border-top: 1px solid #eef2f0; }
+.v-ic { width: 38px; height: 38px; flex: none; display: grid; place-items: center; border-radius: 12px; background: var(--nv-green-soft); color: var(--nv-green); font-size: 19px; }
+.v-ic.w { background: var(--nv-warn-bg); color: var(--nv-warn); }
+.v-ic.g { background: #eef1f4; color: var(--nv-muted); }
+.v-row .grow b { display: block; font-size: 14px; font-weight: 700; }
+.v-row .grow small { display: block; font-size: 12px; color: var(--nv-muted); }
+.v-chip { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 12px; font-size: 12px; font-weight: 700; background: var(--nv-green-soft); color: var(--nv-green); }
+.v-chip.wait { background: #eef1f4; color: var(--nv-muted); }
+.v-chip.wait::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #8794a6; }
+.v-chip.w { background: var(--nv-warn-bg); color: var(--nv-warn); }
+
+.v-link { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 1px solid #edf1ef; border-radius: 16px; background: #fff; text-align: left; color: var(--nv-ink); font-size: 14px; font-weight: 700; }
+.v-link .grow small { display: block; font-size: 12px; font-weight: 400; color: var(--nv-muted); }
+.v-link > ion-icon:last-child { font-size: 18px; color: var(--nv-muted); }
+
+// Plans (1h, 1i)
+.v-ring { position: absolute; right: 16px; top: 16px; width: 78px; height: 78px; }
+.v-ring text { fill: #fff; font-family: Roboto, sans-serif; text-anchor: middle; }
+.v-opt { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 72px; padding: 12px 14px; border: 1px solid #edf1ef; border-radius: 18px; background: #fff; text-align: left; color: var(--nv-ink); }
+.v-opt + .v-opt { margin-top: 10px; }
+.v-opt.on { border: 2px solid var(--nv-green); background: #f7fcf9; }
+.v-opt .dot { width: 22px; height: 22px; flex: none; border: 2px solid #b8c3cf; border-radius: 50%; }
+.v-opt.on .dot { border: 7px solid var(--nv-green); }
+.v-opt b { display: block; font-size: 15px; font-weight: 800; }
+.v-opt small { display: block; font-size: 12px; color: var(--nv-muted); }
+.v-opt .pr { text-align: right; }
+.v-opt .pr b { font-size: 19px; }
+.v-opt .v-chip { margin-left: 4px; vertical-align: 2px; }
+
+// Dock with soft hills behind the button (1f to 1i)
+// Every bottom bar: a solid white strip with one thin line on top, nothing drawn inside (Saqib, 2026-11-26).
+.v-dock { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid #e4e9ef; background: #fff; }
+.v-dock > * { width: 100%; max-width: 560px; margin: 0 auto; }
+.v-dock .row2 { display: flex; gap: 10px; }
+.v-dock .row2 .d-btn.line { flex: 0 0 auto; padding: 0 18px; }
+.v-dock .d-btn ion-icon { font-size: 20px; }
+.v-dock .sub { text-align: center; font-size: 12px; color: var(--nv-muted); }
+.v-center { margin-top: 12px; text-align: center; font-size: 12px; color: var(--nv-muted); }
+.v-err { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: #fdecee; color: #a2232f; font-size: 13px; }
+
+// Page background for status and Plans: Home's tint only, no shapes (Saqib, 2026-11-26).
+ion-content.v-page { --background: #f6f8f7; }
+ion-footer.v-foot { box-shadow: none; background: #fff; }
+ion-footer.v-foot::before { display: none; }
+

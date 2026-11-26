@@ -1,8 +1,12 @@
-<ion-content class="cr">
+<ion-content class="cr" (click)="menuOpen && $any($event.target).closest('.pop, .menu-btn') === null ? (menuOpen = false) : null">
   <div class="map ride-map">
     <div class="gm" #mapEl></div>
     <p class="map-msg" *ngIf="mapFailed">The map couldn't load.</p>
     <button class="icon-btn float" aria-label="Back" (click)="back()"><ion-icon name="chevron-back-outline"></ion-icon></button>
+    <button class="icon-btn float right menu-btn" *ngIf="menuItems.length" aria-label="More options" aria-haspopup="menu" [attr.aria-expanded]="menuOpen" (click)="menuOpen = !menuOpen"><ion-icon name="ellipsis-horizontal"></ion-icon></button>
+  </div>
+  <div class="pop" role="menu" *ngIf="menuOpen && menuItems.length">
+    <button role="menuitem" class="danger" *ngFor="let m of menuItems" (click)="pick(m)"><ion-icon name="close-circle-outline"></ion-icon>{{ m.label }}</button>
   </div>
 
   <div class="skel" *ngIf="loading"><i class="skel-l w60"></i><i class="skel-c"></i><i class="skel-c"></i><i class="skel-l w40"></i></div>
@@ -16,33 +20,7 @@
   </div>
 
   <div class="cr-wrap below-map" *ngIf="ride && !loading">
-    <div class="split title">
-      <div><h1>{{ title }}</h1><p class="t13 muted">{{ subtitle }}</p></div>
-      <span class="price-tag" [class.free]="ride.is_free" *ngIf="view === 'open'">
-        <ng-container *ngIf="!ride.is_free; else freeTag">₹{{ ride.price_per_seat }} <small>/seat</small></ng-container>
-        <ng-template #freeTag>Free</ng-template>
-      </span>
-    </div>
-
-    <div class="statehead" [ngClass]="head.cls || ''" *ngIf="head as head">
-      <span class="live" *ngIf="head.live"></span>
-      <ion-icon *ngIf="head.icon" [name]="head.icon"></ion-icon>
-      <span>{{ head.text }}<small *ngIf="head.small">{{ head.small }}</small></span>
-    </div>
-
-    <!-- 8i: the driver changed the time or route -->
-    <div class="statehead warn" *ngIf="changeLine as c">
-      <ion-icon name="time-outline"></ion-icon>
-      <span>{{ c.text }}<small *ngIf="c.small">{{ c.small }}</small></span>
-    </div>
-
-    <!-- 4, 4b: seats left -->
-    <div class="seat-box" *ngIf="view === 'open'">
-      <ion-icon name="people-outline"></ion-icon>
-      <span class="grow">
-        <span class="sb-n"><b>{{ ride.seats_free }} of {{ ride.seats_total }}</b> seats left</span>
-      </span>
-    </div>
+    <cp-ride-banner *ngIf="banner as b" [b]="b"></cp-ride-banner>
 
     <!-- pickup and drop -->
     <div class="c-card trip-card" *ngIf="points">
@@ -55,8 +33,6 @@
         <span><span class="label">{{ pickupLabel }}</span>{{ pickupName }}</span>
         <span><span class="label">{{ dropLabel }}</span>{{ dropName }}</span>
       </div>
-      <p class="ask-note in-card" *ngIf="view === 'open'"><ion-icon name="information-circle-outline" aria-hidden="true"></ion-icon><span>Closest points on the route to your search. You can move the pickup when you ask to join.</span></p>
-      <p class="meta" *ngIf="view !== 'open' && mine"><span class="chip"><ion-icon name="people-outline" aria-hidden="true"></ion-icon>{{ seatWord(mine.seats) }}</span><span class="chip"><ion-icon name="cash-outline" aria-hidden="true"></ion-icon>{{ moneyLine }}</span></p>
     </div>
 
     <!-- A shared link without a search: the driver's route only -->
@@ -66,7 +42,6 @@
         <span><span class="label">From</span>{{ ride.start.name }}</span>
         <span><span class="label">To</span>{{ ride.end.name }}</span>
       </div>
-      <p class="ask-note in-card"><ion-icon name="information-circle-outline" aria-hidden="true"></ion-icon><span>Search with your own pickup and drop to ask to join.</span></p>
     </div>
 
     <button class="c-card drv-card" (click)="openDriver()">
@@ -90,13 +65,8 @@
     <!-- 8d: request sent -->
     <ng-container *ngIf="view === 'sent'">
       <p class="t12 muted" style="margin-top: 12px; line-height: 1.5">Your code appears here once {{ first }} accepts.</p>
-      <div class="acts-row"><button class="c-go redline" (click)="openSheet('cancel')">Cancel request</button></div>
     </ng-container>
 
-    <!-- 8b: accepted, before the ride starts -->
-    <div class="acts-row" *ngIf="view === 'accepted' && ride.status === 'published'">
-      <button class="c-go redline" (click)="openSheet('leave')">Leave carpool</button>
-    </div>
   </div>
 
   <div slot="fixed" class="errbar float" role="alert" *ngIf="loadError">

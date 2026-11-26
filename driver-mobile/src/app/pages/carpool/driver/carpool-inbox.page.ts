@@ -55,7 +55,7 @@ interface Box {
                   <ion-icon class="chev" name="chevron-down-outline"></ion-icon>
                 </button>
                 <div class="rq-b">
-                  <div class="hm-route"><span class="hm-rail"><i></i><b></b><i class="end"></i></span><span><span class="hm-l">Pickup</span>{{ r.pickup.name }}</span><span><span class="hm-l">Drop</span>{{ r.drop.name }}</span></div>
+                  <div class="pdx"><div class="pd-row"><span class="pd-k"><span class="ring" aria-hidden="true"></span>Pickup</span><span class="pd-v">{{ r.pickup.name }}</span></div><div class="pd-row"><span class="pd-k"><ion-icon name="location" aria-hidden="true"></ion-icon>Drop</span><span class="pd-v">{{ r.drop.name }}</span></div></div>
                   <p class="hm-warn" *ngIf="r.pickup_passed_min !== null"><ion-icon name="time-outline" aria-hidden="true"></ion-icon><span>By the plan the car {{ r.pickup_passed_min > 0 ? 'passed this pickup about ' + r.pickup_passed_min + ' min ago' : 'is reaching this pickup' }}. You can still accept.</span></p>
                   <div class="row" style="gap: 10px" *ngIf="!done[r.id]">
                     <button class="d-btn line" [disabled]="busy === r.id" (click)="answer(r, 'decline')">Decline</button>

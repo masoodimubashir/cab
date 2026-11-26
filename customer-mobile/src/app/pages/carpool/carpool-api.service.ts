@@ -22,6 +22,8 @@ import {
   CarpoolPlan,
   CarpoolPlanPurchase,
   CarpoolPlanState,
+  CarpoolPositionInput,
+  CarpoolRidePosition,
   CarpoolPickupInput,
   CarpoolPublishInput,
   CarpoolReportInput,
@@ -178,6 +180,16 @@ export class CarpoolApiService {
 
   completeRide(id: number): Observable<CarpoolListing> {
     return this.api.post<{ data: CarpoolListing }>(`/carpool/driver/listings/${id}/complete`, {}).pipe(map((r) => r.data));
+  }
+
+  /** L1: the driver's phone sends where the car is; `stored` is false for a point the server skipped. */
+  sendPosition(id: number, p: CarpoolPositionInput): Observable<{ stored: boolean }> {
+    return this.api.post<{ data: { stored: boolean } }>(`/carpool/driver/listings/${id}/position`, p).pipe(map((r) => r.data));
+  }
+
+  /** L1: a rider on the carpool reads the newest position of the car. */
+  ridePosition(id: number): Observable<CarpoolRidePosition> {
+    return this.api.get<{ data: CarpoolRidePosition }>(`/carpool/rides/${id}/position`).pipe(map((r) => r.data));
   }
 
   checkCode(requestId: number, code: string): Observable<CarpoolCodeCheck> {

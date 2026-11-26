@@ -1,53 +1,90 @@
-<ion-header class="ion-no-border">
-  <ion-toolbar>
-    <ion-buttons slot="start">
-      <ion-back-button defaultHref="/carpool-signup/status" text=""></ion-back-button>
-    </ion-buttons>
-    <ion-title>Plans</ion-title>
-  </ion-toolbar>
-</ion-header>
-
-<ion-content [fullscreen]="true" class="dc-content cps">
+<ion-content class="cp v-page">
   <ion-refresher slot="fixed" (ionRefresh)="load(); $any($event).target.complete()">
     <ion-refresher-content></ion-refresher-content>
   </ion-refresher>
 
-  <div class="cps__wrap">
-    <div class="cps__loading" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
-    <p class="cps__error" role="alert" *ngIf="error">{{ error }}</p>
+  <div class="cp-wrap hm home v13">
+    <div class="d-head">
+      <button type="button" class="icon-btn ring" aria-label="Back" (click)="back()"><ion-icon name="chevron-back-outline"></ion-icon></button>
+      <h1>Plans</h1>
+    </div>
+
+    <div class="center" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
+    <p class="v-err" role="alert" *ngIf="error">{{ error }}</p>
 
     <ng-container *ngIf="!loading">
-      <h1 class="cps__title">Your plan</h1>
-
-      <div class="cps-card" *ngIf="state?.plan as p; else noPlan">
-        <h2 class="cps-card__title">{{ p.title }}</h2>
-        <p class="cps-card__line">Active until {{ fmt(p.expires_at) }}</p>
-        <p class="cps-card__line" *ngIf="state?.next_plan as n">Next: {{ n.title }}, starts {{ fmt(n.starts_at) }}</p>
-        <p class="cps-card__line" *ngIf="state?.ending_soon">Your plan ends soon. Carpools after it ends are cancelled. Buy a plan to keep them.</p>
+      <!-- Banner: one place and one size on every screen (CL-049) -->
+      <div class="hm-hero" [class.warm]="view === 'ending'">
+        <svg *ngIf="view !== 'none'; else noPlanArt" class="v-ring" viewBox="0 0 80 80" aria-hidden="true">
+          <circle cx="40" cy="40" r="32" fill="none" stroke="#ffffff33" stroke-width="7"/>
+          <circle cx="40" cy="40" r="32" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-dasharray="201" [attr.stroke-dashoffset]="ring" transform="rotate(-90 40 40)"/>
+          <text x="40" y="42" font-size="22" font-weight="800">{{ left }}</text><text x="40" y="56" font-size="9">{{ left === 1 ? 'day left' : 'days left' }}</text>
+        </svg>
+        <ng-template #noPlanArt>
+          <svg class="hm-art" viewBox="0 0 190 150" aria-hidden="true">
+            <path d="M0 150C40 108 100 96 190 104V150Z" fill="#ffffff22"/>
+            <path d="M78 150C104 128 140 118 190 116" fill="none" stroke="#ffffff55" stroke-width="16" stroke-linecap="round"/>
+            <path d="M84 150C108 132 142 123 190 121" fill="none" stroke="#ffffffaa" stroke-width="2" stroke-dasharray="7 7"/>
+            <rect x="112" y="34" width="58" height="38" rx="8" fill="#fff"/><rect x="112" y="44" width="58" height="8" fill="#cfe9da"/><rect x="120" y="60" width="20" height="5" rx="2.5" fill="#e3efe8"/>
+            <g transform="translate(96 96) rotate(-8)">
+              <path d="M4 22c0-6 4-9 10-10l10-9c3-2 6-3 10-3h14c4 0 7 2 9 5l6 7c5 1 8 4 8 9v4H4z" fill="#fff"/>
+              <path d="M26 4h10v9H17zM40 4h7c2 0 4 1 5 3l4 6H40z" fill="#cfe9da"/>
+              <circle cx="17" cy="26" r="6" fill="#0d1b2a"/><circle cx="53" cy="26" r="6" fill="#0d1b2a"/>
+            </g>
+          </svg>
+        </ng-template>
+        <span class="hm-chip"><ion-icon [name]="hero.icon"></ion-icon>{{ hero.chip }}</span>
+        <h2>{{ hero.title }}</h2>
+        <p>{{ hero.sub }}</p>
       </div>
-      <ng-template #noPlan>
-        <div class="cps-card">
-          <h2 class="cps-card__title">No active plan</h2>
-          <p class="cps-card__line">You need an active plan to publish carpools.</p>
+
+      <!-- Next plan waiting: nothing to buy, so no plan list (1i) -->
+      <ng-container *ngIf="view === 'waiting'">
+        <div class="hm-sec"><h2>Your plans</h2></div>
+        <div class="v-list">
+          <div class="v-row" *ngIf="state?.plan as p">
+            <span class="v-ic w"><ion-icon name="time-outline"></ion-icon></span>
+            <span class="grow"><b>{{ p.title }}</b><small>Ends {{ fmt(p.expires_at) }}</small></span>
+            <span class="v-chip w">Now</span>
+          </div>
+          <div class="v-row" *ngIf="state?.next_plan as n">
+            <span class="v-ic"><ion-icon name="calendar-outline"></ion-icon></span>
+            <span class="grow"><b>{{ n.title }}</b><small>{{ fmt(n.starts_at) }} to {{ fmt(n.expires_at) }}</small></span>
+            <span class="v-chip">Paid</span>
+          </div>
         </div>
-      </ng-template>
+        <p class="v-center" *ngIf="state?.next_plan as n">You can buy again from {{ fmt(n.starts_at) }}.</p>
+      </ng-container>
 
-      <h2 class="cps__title" style="font-size: 18px; margin-top: 20px">Buy a plan</h2>
-      <p class="cps__sub">Pay once by UPI. No commission, and it doesn't renew by itself.</p>
-
-      <p class="cps__empty" *ngIf="!plans.length">No plans are available in your city yet. Check back soon.</p>
-
-      <div class="cps-card" *ngFor="let plan of plans">
-        <h2 class="cps-card__title">{{ plan.title }}</h2>
-        <p class="cps-card__line" *ngIf="plan.subtitle">{{ plan.subtitle }}</p>
-        <p class="cps-card__line">₹{{ plan.amount | number: '1.0-2' }} for {{ daysLabel(plan.days_count) }}</p>
-        <p class="cps-card__line" *ngIf="plan.terms">{{ plan.terms }}</p>
-        <ion-button expand="block" class="cps__cta" [disabled]="!canBuy || buyingId !== null" (click)="buy(plan)">
-          <ion-spinner name="dots" *ngIf="buyingId === plan.id"></ion-spinner>
-          <ng-container *ngIf="buyingId !== plan.id">{{ state?.plan ? 'Buy next plan' : 'Buy with UPI' }}</ng-container>
-        </ion-button>
-      </div>
-      <p class="cps__note" *ngIf="!canBuy">A plan is already waiting to start. You can buy another once it begins.</p>
+      <ng-container *ngIf="view !== 'waiting'">
+        <div class="hm-sec">
+          <h2>{{ view === 'none' ? 'Plans' : 'Next plan' }}</h2>
+          <span class="hm-live" *ngIf="view !== 'none' && state?.plan?.expires_at">Starts {{ fmt(state!.plan!.expires_at) }}</span>
+        </div>
+        <p class="v-center" *ngIf="!plans.length">No plans in your city yet. Check back soon.</p>
+        <button type="button" class="v-opt" *ngFor="let p of plans" role="radio" [attr.aria-checked]="selectedId === p.id"
+                [class.on]="selectedId === p.id" (click)="selectedId = p.id">
+          <span class="dot"></span>
+          <span class="grow"><b>{{ daysLabel(p.days_count) }}<span class="v-chip" *ngIf="p.id === bestId">Best value</span></b><small>{{ perDay(p) }}</small></span>
+          <span class="pr"><b>₹{{ p.amount | number: '1.0-2' }}</b></span>
+        </button>
+      </ng-container>
     </ng-container>
   </div>
 </ion-content>
+
+<ion-footer class="ion-no-border v-foot" *ngIf="showBuy">
+  <div class="v-dock">
+    <button type="button" class="d-btn tall" [disabled]="!selected || buyingId !== null" (click)="selected && buy(selected)">
+      <ion-spinner name="dots" *ngIf="buyingId !== null"></ion-spinner>
+      <ng-container *ngIf="buyingId === null && selected">Buy {{ daysLabel(selected.days_count) }} · ₹{{ selected.amount | number: '1.0-2' }}</ng-container>
+    </button>
+    <span class="sub">UPI only. No auto-renew.</span>
+  </div>
+</ion-footer>
+
+<ion-footer class="ion-no-border v-foot" *ngIf="showHome">
+  <div class="v-dock">
+    <button type="button" class="d-btn tall" (click)="goHome()"><ion-icon name="home-outline"></ion-icon>Go to Home</button>
+  </div>
+</ion-footer>

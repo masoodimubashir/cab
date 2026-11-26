@@ -1,52 +1,136 @@
-<ion-content [fullscreen]="true" class="dc-content cps">
+<ion-content class="cp v-page">
   <ion-refresher slot="fixed" (ionRefresh)="load(); $any($event).target.complete()">
     <ion-refresher-content></ion-refresher-content>
   </ion-refresher>
 
-  <div class="cps__wrap">
-    <div class="cps__loading" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
-    <p class="cps__error" role="alert" *ngIf="error">{{ error }}</p>
+  <div class="cp-wrap hm home v13">
+    <div class="center" *ngIf="loading && !view"><ion-spinner name="crescent"></ion-spinner></div>
+    <p class="v-err" role="alert" *ngIf="error">{{ error }}</p>
 
-    <ng-container *ngIf="!loading && approval">
-      <div class="cps-status" [class.is-approved]="approval === 'approved'" [class.is-rejected]="docsNeedingWork.length">
-        <ion-icon [name]="approval === 'approved' ? 'checkmark-circle' : docsNeedingWork.length ? 'alert-circle' : 'hourglass-outline'" aria-hidden="true"></ion-icon>
-        <ng-container *ngIf="approval === 'approved'">
-          <h1 class="cps__title">You're approved{{ firstName ? ', ' + firstName : '' }}</h1>
-          <p class="cps__sub">Carpool opens to riders soon. We'll let you know when you can publish.</p>
-        </ng-container>
-        <ng-container *ngIf="approval !== 'approved' && docsNeedingWork.length">
-          <h1 class="cps__title">A few things need your attention</h1>
-          <p class="cps__sub">Send the documents below, then we'll check your sign-up.</p>
-        </ng-container>
-        <ng-container *ngIf="approval !== 'approved' && !docsNeedingWork.length">
-          <h1 class="cps__title">We're checking your sign-up</h1>
-          <p class="cps__sub">Every carpool driver is checked by hand. This page updates by itself.</p>
-        </ng-container>
+    <ng-container *ngIf="view && view !== 'home'">
+      <div class="hm-top">
+        <span class="av v-av">{{ initials || '?' }}</span>
+        <div class="grow"><p class="t13 muted">Welcome,</p><h1 class="ell">{{ firstName || 'there' }}</h1></div>
+        <button type="button" class="v-out" (click)="logout()"><ion-icon name="log-out-outline"></ion-icon>Log out</button>
       </div>
 
-      <div class="cps-card" *ngIf="car">
-        <h2 class="cps-card__title">Your car</h2>
-        <p class="cps-card__line">{{ car.colour }} {{ car.make }} {{ car.model }}</p>
-        <p class="cps-card__line cps-card__plate">{{ car.plate }} · {{ car.seats }} seats</p>
+      <!-- Banner: one place and one size on every screen (CL-049) -->
+      <div class="hm-hero" [class.warm]="view === 'fix'" [class.calm]="view === 'opens-soon'" [ngSwitch]="view">
+        <svg *ngSwitchCase="'checking'" class="hm-art" viewBox="0 0 190 150" aria-hidden="true">
+          <path d="M0 150C40 108 100 96 190 104V150Z" fill="#ffffff22"/>
+          <path d="M30 150C70 120 120 112 190 122V150Z" fill="#ffffff26"/>
+          <rect x="104" y="26" width="62" height="80" rx="8" fill="#fff"/>
+          <rect x="114" y="38" width="30" height="5" rx="2.5" fill="#cfe9da"/>
+          <rect x="114" y="50" width="42" height="4" rx="2" fill="#e3efe8"/>
+          <rect x="114" y="60" width="36" height="4" rx="2" fill="#e3efe8"/>
+          <rect x="114" y="70" width="40" height="4" rx="2" fill="#e3efe8"/>
+          <circle cx="154" cy="92" r="8" fill="#12b35b"/><path d="M150 92l3 3 5-6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="112" cy="70" r="15" fill="#ffffff30" stroke="#fff" stroke-width="5"/><path d="M101 81l-13 13" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+        </svg>
+        <svg *ngSwitchCase="'fix'" class="hm-art" viewBox="0 0 190 150" aria-hidden="true">
+          <path d="M0 150C40 108 100 96 190 104V150Z" fill="#ffffff22"/>
+          <rect x="108" y="26" width="58" height="76" rx="8" fill="#fff"/>
+          <rect x="118" y="38" width="28" height="5" rx="2.5" fill="#f6dfa8"/>
+          <rect x="118" y="50" width="38" height="4" rx="2" fill="#f3ead2"/>
+          <rect x="118" y="60" width="32" height="4" rx="2" fill="#f3ead2"/>
+          <circle cx="156" cy="90" r="9" fill="#a86b00"/><path d="M156 85v6M156 94v.5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+        </svg>
+        <svg *ngSwitchCase="'approved-no-plan'" class="hm-art" viewBox="0 0 190 150" aria-hidden="true">
+          <path d="M0 150C40 108 100 96 190 104V150Z" fill="#ffffff22"/>
+          <path d="M30 150C70 120 120 112 190 122V150Z" fill="#ffffff26"/>
+          <circle cx="146" cy="52" r="30" fill="#ffffff2e"/><circle cx="146" cy="52" r="21" fill="#fff"/><path d="M136 52l7 7 13-14" fill="none" stroke="#087f50" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+          <g transform="translate(92 106) rotate(-6)">
+            <path d="M4 22c0-6 4-9 10-10l10-9c3-2 6-3 10-3h14c4 0 7 2 9 5l6 7c5 1 8 4 8 9v4H4z" fill="#fff"/>
+            <path d="M26 4h10v9H17zM40 4h7c2 0 4 1 5 3l4 6H40z" fill="#cfe9da"/>
+            <circle cx="17" cy="26" r="6" fill="#0d1b2a"/><circle cx="53" cy="26" r="6" fill="#0d1b2a"/>
+          </g>
+        </svg>
+        <svg *ngSwitchCase="'approved-has-plan'" class="hm-art" viewBox="0 0 190 150" aria-hidden="true">
+          <path d="M0 150C40 108 100 96 190 104V150Z" fill="#ffffff22"/>
+          <path d="M30 150C70 120 120 112 190 122V150Z" fill="#ffffff26"/>
+          <path d="M78 150C104 128 140 118 190 116" fill="none" stroke="#ffffff55" stroke-width="16" stroke-linecap="round"/>
+          <path d="M84 150C108 132 142 123 190 121" fill="none" stroke="#ffffffaa" stroke-width="2" stroke-dasharray="7 7"/>
+          <path d="M150 46a10 10 0 0 1 10 10c0 8-10 18-10 18s-10-10-10-18a10 10 0 0 1 10-10z" fill="#fff"/><circle cx="150" cy="56" r="3.5" fill="#087f50"/>
+          <g transform="translate(96 94) rotate(-10)">
+            <path d="M4 22c0-6 4-9 10-10l10-9c3-2 6-3 10-3h14c4 0 7 2 9 5l6 7c5 1 8 4 8 9v4H4z" fill="#fff"/>
+            <path d="M26 4h10v9H17zM40 4h7c2 0 4 1 5 3l4 6H40z" fill="#cfe9da"/>
+            <circle cx="17" cy="26" r="6" fill="#0d1b2a"/><circle cx="17" cy="26" r="2.4" fill="#cfd6de"/>
+            <circle cx="53" cy="26" r="6" fill="#0d1b2a"/><circle cx="53" cy="26" r="2.4" fill="#cfd6de"/>
+          </g>
+        </svg>
+        <svg *ngSwitchCase="'opens-soon'" class="hm-art" viewBox="0 0 190 150" aria-hidden="true">
+          <path d="M0 150C40 108 100 96 190 104V150Z" fill="#ffffff18"/>
+          <circle cx="146" cy="44" r="18" fill="#fff3c4"/><circle cx="154" cy="38" r="16" fill="#1c3157"/>
+          <g fill="#ffffffaa"><circle cx="96" cy="30" r="1.8"/><circle cx="118" cy="60" r="1.4"/><circle cx="176" cy="74" r="1.6"/><circle cx="84" cy="70" r="1.2"/></g>
+          <g fill="#ffffff35"><path d="M120 116l12-30 12 30z"/><path d="M146 116l9-22 9 22z"/></g>
+          <g transform="translate(66 108) rotate(-4)">
+            <path d="M4 22c0-6 4-9 10-10l10-9c3-2 6-3 10-3h14c4 0 7 2 9 5l6 7c5 1 8 4 8 9v4H4z" fill="#fff"/>
+            <path d="M26 4h10v9H17zM40 4h7c2 0 4 1 5 3l4 6H40z" fill="#cfd9ea"/>
+            <circle cx="17" cy="26" r="6" fill="#0d1b2a"/><circle cx="53" cy="26" r="6" fill="#0d1b2a"/>
+          </g>
+        </svg>
+
+        <span class="hm-chip"><ion-icon [name]="hero.icon"></ion-icon>{{ hero.chip }}</span>
+        <h2>{{ hero.title }}</h2>
+        <p>{{ hero.sub }}</p>
       </div>
 
-      <div class="cps-card" *ngIf="docs.length">
-        <h2 class="cps-card__title">Documents</h2>
-        <div class="cps-card__row" *ngFor="let d of docs">
-          <span>{{ d.name }}</span>
-          <span class="cps-chip" [class.is-ok]="d.status === 'approved'" [class.is-bad]="d.status === 'rejected' || d.status === 'missing'">{{ docLabel(d) }}</span>
+      <div class="v-big">
+        <div class="row"><span class="v-ic"><ion-icon name="document-text-outline"></ion-icon></span><h3 class="grow">{{ progress.approved }} of {{ progress.total }} documents approved</h3></div>
+        <div class="v-meter" role="progressbar" [attr.aria-valuenow]="progress.percent" aria-valuemin="0" aria-valuemax="100"><i [style.width.%]="progress.percent"></i></div>
+      </div>
+
+      <!-- While being checked: the documents -->
+      <ng-container *ngIf="view === 'checking' || view === 'fix'">
+        <div class="hm-sec"><h2>Documents</h2></div>
+        <div class="v-list">
+          <div class="v-row" *ngFor="let d of realDocs">
+            <span class="v-ic" [class.w]="d.status === 'rejected' || d.status === 'missing'" [class.g]="d.status === 'pending'"><ion-icon [name]="docIcon(d)"></ion-icon></span>
+            <span class="grow"><b>{{ d.name }}</b><small *ngIf="reason(d) as r">{{ r }}</small></span>
+            <span class="v-chip" [class.wait]="d.status === 'pending'" [class.w]="d.status === 'rejected' || d.status === 'missing'">{{ docLabel(d) }}</span>
+          </div>
         </div>
-      </div>
+      </ng-container>
 
-      <ion-button *ngIf="approval === 'approved'" expand="block" class="cps__cta" routerLink="/carpool-signup/plans">
-        Plans
-      </ion-button>
-
-      <ion-button *ngIf="approval !== 'approved' && docsNeedingWork.length" expand="block" class="cps__cta" (click)="fix()">
-        Send documents
-      </ion-button>
+      <!-- Approved: the plan -->
+      <ng-container *ngIf="view === 'approved-no-plan' || view === 'approved-has-plan'">
+        <div class="hm-sec"><h2>Your plan</h2></div>
+        <div class="v-list">
+          <div class="v-row" *ngIf="plan?.plan as p; else noPlanRow">
+            <span class="v-ic"><ion-icon name="card-outline"></ion-icon></span>
+            <span class="grow"><b>{{ p.title }}</b><small>Active until {{ fmt(p.expires_at) }}</small></span>
+            <span class="v-chip">Active</span>
+          </div>
+        </div>
+      </ng-container>
+      <ng-container *ngIf="view === 'opens-soon'">
+        <div class="hm-sec"><h2>Your plan</h2></div>
+        <button type="button" class="v-link" routerLink="/carpool-signup/plans">
+          <span class="v-ic" [class.w]="!plan?.plan"><ion-icon name="card-outline"></ion-icon></span>
+          <span class="grow" *ngIf="plan?.plan as p; else noPlanText">{{ p.title }}<small>Active until {{ fmt(p.expires_at) }}</small></span>
+          <ng-template #noPlanText><span class="grow">No plan yet<small *ngIf="cheapest as c">From ₹{{ c.amount | number: '1.0-2' }} for {{ c.days_count }} days</small></span></ng-template>
+          <ion-icon name="chevron-forward-outline"></ion-icon>
+        </button>
+      </ng-container>
+      <ng-template #noPlanRow>
+        <div class="v-row">
+          <span class="v-ic w"><ion-icon name="card-outline"></ion-icon></span>
+          <span class="grow"><b>No plan yet</b><small *ngIf="cheapest as c">From ₹{{ c.amount | number: '1.0-2' }} for {{ c.days_count }} days</small></span>
+        </div>
+      </ng-template>
     </ng-container>
-
-    <ion-button expand="block" fill="clear" class="cps__secondary" (click)="logout()">Log out</ion-button>
   </div>
 </ion-content>
+
+<ion-footer class="ion-no-border v-foot" *ngIf="hasDock">
+  <div class="v-dock" [ngSwitch]="view">
+    <button *ngSwitchCase="'checking'" type="button" class="d-btn line tall" routerLink="/support"><ion-icon name="help-circle-outline"></ion-icon>Get help</button>
+    <button *ngSwitchCase="'opens-soon'" type="button" class="d-btn line tall" routerLink="/support"><ion-icon name="help-circle-outline"></ion-icon>Get help</button>
+    <div *ngSwitchCase="'fix'" class="row2">
+      <button type="button" class="d-btn line tall" routerLink="/support"><ion-icon name="help-circle-outline"></ion-icon>Help</button>
+      <button type="button" class="d-btn tall" (click)="fix()"><ion-icon name="camera-outline"></ion-icon>Fix documents</button>
+    </div>
+    <button *ngSwitchCase="'approved-no-plan'" type="button" class="d-btn tall" routerLink="/carpool-signup/plans"><ion-icon name="card-outline"></ion-icon>Choose a plan</button>
+    <button *ngSwitchCase="'approved-has-plan'" type="button" class="d-btn tall" (click)="goHome()"><ion-icon name="home-outline"></ion-icon>Go to Home</button>
+  </div>
+</ion-footer>

@@ -2,16 +2,18 @@ import { Component } from '@angular/core';
 import { NavController, ToastController } from '@ionic/angular';
 import { CarpoolApiService } from '../carpool-api.service';
 import { CarpoolPaymentResult, CarpoolPlan, CarpoolPlanState, CarpoolUpiOrder } from '../carpool.models';
+import { PlanView, bestValueId, daysLeft, perDay, planView, ringOffset } from './signup-look';
 
 /**
  * Carpool Plans: time-based, no commission, UPI only, no auto-renew
  * (Carpool.md P4). Opened from Profile and the Home plan banner, or from the
- * approved status page while carpool is still closed.
+ * approved status page while carpool is still closed. New look (mockup 1h, 1i,
+ * W13): pick one plan, one docked Buy button; while a next plan waits, nothing to buy.
  */
 @Component({
   selector: 'app-carpool-plans',
   templateUrl: './carpool-plans.page.html',
-  styleUrls: ['./carpool-signup.page.scss'],
+  styleUrls: ['../driver/carpool-driver.scss', './carpool-signup-look.scss'],
   standalone: false,
 })
 export class CarpoolPlansPage {
@@ -20,6 +22,52 @@ export class CarpoolPlansPage {
   plans: CarpoolPlan[] = [];
   state: CarpoolPlanState | null = null;
   buyingId: number | null = null;
+  selectedId: number | null = null;
+  readonly perDay = perDay;
+
+  get view(): PlanView {
+    return planView(this.state);
+  }
+
+  get left(): number {
+    return daysLeft(this.state?.plan?.expires_at ?? null);
+  }
+
+  get ring(): number {
+    return ringOffset(this.left, this.state?.plan?.days_count ?? 0);
+  }
+
+  get bestId(): number | null {
+    return bestValueId(this.plans);
+  }
+
+  get selected(): CarpoolPlan | null {
+    return this.plans.find((p) => p.id === this.selectedId) ?? null;
+  }
+
+  /** The Buy dock shows only when something can be bought. */
+  get showBuy(): boolean {
+    return !this.loading && this.canBuy && this.plans.length > 0;
+  }
+
+  /** Nothing to buy while a next plan waits (1i): the bar holds Go to Home instead. */
+  get showHome(): boolean {
+    return !this.loading && this.view === 'waiting';
+  }
+
+  get hero(): { chip: string; icon: string; title: string; sub: string } {
+    const p = this.state?.plan;
+    switch (this.view) {
+      case 'active':
+        return { chip: 'Active', icon: 'checkmark-circle', title: p?.title ?? 'Your plan', sub: `Until ${this.fmt(p?.expires_at ?? null)}` };
+      case 'ending':
+        return { chip: 'Ending soon', icon: 'time-outline', title: p?.title ?? 'Your plan', sub: `Ends ${this.fmt(p?.expires_at ?? null)}. Later carpools get cancelled.` };
+      case 'waiting':
+        return { chip: "You're covered", icon: 'checkmark-circle', title: 'Next plan lined up', sub: 'No gap between plans.' };
+      default:
+        return { chip: 'No plan', icon: 'card-outline', title: 'Pick a plan', sub: 'Pay once. No commission.' };
+    }
+  }
 
   constructor(
     private carpool: CarpoolApiService,
@@ -41,6 +89,8 @@ export class CarpoolPlansPage {
     this.carpool.plans().subscribe({
       next: (p) => {
         this.plans = p;
+        // Keep the choice across reloads; otherwise start on the best value (or the only) plan.
+        if (!p.some((x) => x.id === this.selectedId)) this.selectedId = bestValueId(p) ?? p[0]?.id ?? null;
         this.loading = false;
       },
       error: () => {
@@ -109,6 +159,10 @@ export class CarpoolPlansPage {
         },
         error: (err) => this.fail(err, 'We could not confirm your payment. If money was taken, contact support.'),
       });
+  }
+
+  goHome(): void {
+    void this.nav.navigateRoot('/carpool/home');
   }
 
   back(): void {

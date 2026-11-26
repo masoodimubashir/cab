@@ -1,9 +1,17 @@
-<ion-content [fullscreen]="true" class="dc-content cps">
-  <div class="cps__wrap">
-    <p class="cps__step">Step 1 of 5</p>
-    <h1 class="cps__title">How will you drive with Dream Cabs?</h1>
-    <p class="cps__sub">You can't switch later without a new review.</p>
+<ion-header class="ion-no-border nv-head">
+  <div class="nv-drop">
+    <div class="nv-top">
+      <button type="button" class="nv-back" aria-label="Back to the welcome screen (logs out)" (click)="logout()"><ion-icon name="chevron-back-outline"></ion-icon></button>
+      <span class="nv-step">Step 1 of 5</span>
+    </div>
+    <h1>How will you drive?</h1>
+    <p>You can't switch later without a new review.</p>
+    <div class="nv-bars" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i><i></i></div>
+  </div>
+</ion-header>
 
+<ion-content [fullscreen]="false" class="dc-content cps">
+  <div class="cps__wrap">
     <div class="cps__choices" role="radiogroup" aria-label="Driver type">
       <button type="button" class="cps-choice" role="radio"
               [attr.aria-checked]="choice === 'commercial'" [class.is-on]="choice === 'commercial'"
@@ -28,8 +36,11 @@
     <p class="cps__note" *ngIf="choice === 'carpool'">
       Next: your photo, city, car and documents. Every carpool driver is checked by hand.
     </p>
-
-    <ion-button expand="block" class="cps__cta" [disabled]="!choice" (click)="continue()">Continue</ion-button>
-    <ion-button expand="block" fill="clear" class="cps__secondary" (click)="logout()">Log out</ion-button>
   </div>
 </ion-content>
+
+<ion-footer class="ion-no-border nv-foot">
+  <div class="nv-dock">
+    <button type="button" class="nv-go" [disabled]="!choice" (click)="continue()">Continue</button>
+  </div>
+</ion-footer>

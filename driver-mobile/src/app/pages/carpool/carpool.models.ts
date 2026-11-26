@@ -411,6 +411,11 @@ export interface CarpoolJoinRequest {
   picked_up_at: string | null;
   dropped_at: string | null;
   no_show_at: string | null;
+  /** L1: when the car reached this pickup, and when No-show opens (null: any time, the location isn't shared). */
+  arrived_at?: string | null;
+  no_show_opens_at?: string | null;
+  /** L1.4: any (location not shared, open any time), not_arrived, waiting or open. */
+  no_show_state?: 'any' | 'not_arrived' | 'waiting' | 'open' | null;
   code_verified: boolean;
   code_locked_until: string | null;
   pickup: CarpoolRoutePoint & { name: string };
@@ -574,4 +579,25 @@ export interface CarpoolReportInput {
   message_id?: number;
   user_id?: number;
   listing_id?: number;
+}
+
+/** L1: one position from the driver's phone while the ride is on the road. */
+export interface CarpoolPositionInput {
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+  speed: number | null;
+  heading: number | null;
+  /** The phone's time of the fix, in ms. */
+  at: number;
+}
+
+/** L1: what a rider on the carpool sees of the car, until they are dropped. */
+export interface CarpoolRidePosition {
+  position: { lat: number; lng: number; heading: number | null; at: string; age_s: number } | null;
+  /** No position for over a minute: show "can't see the car" and the times from the plan. */
+  stale: boolean;
+  target: 'pickup' | 'drop';
+  metres: number | null;
+  minutes: number | null;
 }

@@ -39,7 +39,7 @@ import { askedMarker, createMap, drawRoutes, flatMetres, focusMap, loadCarpoolMa
   styles: [`
     .pinview { position: fixed; inset: 0; z-index: 30; background: #eef1f4; font-family: Roboto, "Segoe UI", system-ui, sans-serif; color: #0d1b2a; }
     .pinview .bsheet { position: absolute; z-index: 31; }
-    .mchip { position: absolute; top: calc(12px + env(safe-area-inset-top)); left: 72px; right: 16px; z-index: 5; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 22px; background: #fff; box-shadow: 0 3px 12px #192d3e18; font-size: 13px; font-weight: 700; }
+    .mchip { position: absolute; top: calc(12px + env(safe-area-inset-top)); left: 72px; right: 16px; z-index: 5; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 22px; background: #fff; font-size: 13px; font-weight: 700; border: 1px solid #e2e8f0; }
     .mchip ion-icon { flex: none; font-size: 17px; color: #087f50; }
     .label { font-size: 12px; font-weight: 700; color: #5a6a80; }
     .st.ok { color: #087f50; }

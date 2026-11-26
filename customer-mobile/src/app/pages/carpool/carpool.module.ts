@@ -7,6 +7,8 @@ import { CarpoolDriverProfilePage } from './rider/carpool-driver-profile.page';
 import { CarpoolResultsPage } from './rider/carpool-results.page';
 import { CarpoolRidePage } from './rider/carpool-ride.page';
 import { CarpoolSearchPage } from './rider/carpool-search.page';
+import { CarpoolMapPickComponent } from './ui/carpool-map-pick.component';
+import { CarpoolRideBannerComponent } from './ui/carpool-ride-banner.component';
 import { CarpoolMessagesPage } from './rider/carpool-messages.page';
 import { CarpoolPickupPage } from './rider/carpool-pickup.page';
 import { CarpoolChatPage } from './chat/carpool-chat.page';
@@ -28,7 +30,7 @@ function loadCarpoolFont(): void {
 /** The carpool feature, rider side (Carpool-Integration-Guide section 5). UI kit pieces live in ./ui. */
 @NgModule({
   declarations: [CarpoolSearchPage, CarpoolResultsPage, CarpoolRidePage, CarpoolDriverProfilePage, CarpoolMessagesPage, CarpoolPickupPage, CarpoolChatPage],
-  imports: [CommonModule, FormsModule, IonicModule, CarpoolRoutingModule],
+  imports: [CommonModule, FormsModule, IonicModule, CarpoolRoutingModule, CarpoolMapPickComponent, CarpoolRideBannerComponent],
 })
 export class CarpoolModule {
   constructor() {

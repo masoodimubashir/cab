@@ -4,14 +4,14 @@ import { AuthService } from '../../../core/auth.service';
 import { DriverTypeChoice, DriverTypeMemory } from './carpool-signup.models';
 
 /**
- * Sign-up step 1 of 5: "How will you drive with Dream Cabs?"
+ * Sign-up step 1 of 5: "How will you drive?"
  * (mockup screen 1). Commercial drivers go on to the existing wizard;
  * private car owners get the short carpool sign-up.
  */
 @Component({
   selector: 'app-driver-type',
   templateUrl: './driver-type.page.html',
-  styleUrls: ['./carpool-signup.page.scss'],
+  styleUrls: ['./carpool-signup.page.scss', './carpool-signup-look.scss'],
   standalone: false,
 })
 export class DriverTypePage {
@@ -30,7 +30,7 @@ export class DriverTypePage {
     if (!this.choice) return;
     DriverTypeMemory.set(this.auth.getUser()?.id, this.choice);
     if (this.choice === 'commercial') {
-      void this.nav.navigateRoot('/profile', { animationDirection: 'forward' });
+      void this.nav.navigateRoot('/profile?next=registration', { animationDirection: 'forward' });
     } else {
       void this.nav.navigateForward('/carpool-signup/details');
     }

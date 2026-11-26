@@ -89,11 +89,18 @@
           <div class="req">
             <div class="row" style="align-items: flex-start">
               <span class="av m">{{ r.rider.initials }}</span>
-              <div class="grow" style="padding-top: 5px"><p class="d-title" style="font-size: 14px">{{ r.rider.name }} wants to join</p><p class="t12 muted">{{ leavesLine(r.listing.departs_at) }}</p></div>
+              <div class="grow" style="padding-top: 5px"><p class="d-title" style="font-size: 14px">{{ r.rider.name }} wants to join</p><p class="t12 muted ell">{{ requestFacts(r)?.route }}</p></div>
               <span class="status">New</span>
             </div>
-            <div class="hm-route"><span class="hm-rail"><i></i><b></b><i class="end"></i></span><span><span class="hm-l">Pickup</span>{{ r.pickup.name }}</span><span><span class="hm-l">Drop</span>{{ r.drop.name }}</span></div>
-            <div class="hm-facts"><span class="chip"><ion-icon name="people-outline" aria-hidden="true"></ion-icon>{{ r.seats }} {{ r.seats === 1 ? 'seat' : 'seats' }}</span><span class="chip"><ion-icon name="cash-outline" aria-hidden="true"></ion-icon>{{ r.is_free ? 'Free ride' : '₹' + r.total }}</span><span class="chip route"><ion-icon name="car-outline" aria-hidden="true"></ion-icon><span class="ell">{{ r.listing.start.name }} to {{ r.listing.end.name }}</span></span></div>
+            <div class="pdx">
+              <div class="pd-row"><span class="pd-k"><span class="ring" aria-hidden="true"></span>Pickup</span><span class="pd-v">{{ r.pickup.name }}</span></div>
+              <div class="pd-row"><span class="pd-k"><ion-icon name="location" aria-hidden="true"></ion-icon>Drop</span><span class="pd-v">{{ r.drop.name }}</span></div>
+              <div class="pd-facts" *ngIf="requestFacts(r) as f">
+                <span><ion-icon name="time-outline" aria-hidden="true"></ion-icon><b>{{ f.when }}</b></span>
+                <span><ion-icon name="people-outline" aria-hidden="true"></ion-icon><b>{{ f.seats }}</b></span>
+                <span><ion-icon name="cash-outline" aria-hidden="true"></ion-icon><b>{{ f.price }}</b></span>
+              </div>
+            </div>
             <p class="hm-warn" *ngIf="r.pickup_passed_min !== null"><ion-icon name="time-outline" aria-hidden="true"></ion-icon><span>By the plan the car {{ r.pickup_passed_min > 0 ? 'passed this pickup about ' + r.pickup_passed_min + ' min ago' : 'is reaching this pickup' }}. You can still accept.</span></p>
             <div class="acts" *ngIf="!answered">
               <button class="d-btn line" [disabled]="!!answering" (click)="answer('decline')">Decline</button>

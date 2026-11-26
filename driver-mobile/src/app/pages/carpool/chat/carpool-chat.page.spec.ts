@@ -62,6 +62,12 @@ describe('CarpoolChatPage', () => {
 
   afterEach(() => fixture?.destroy());
 
+  it('draws the travel doodle wallpaper behind the messages (mockup option A)', () => {
+    open({ conversation: conv() });
+    const thread = fixture.nativeElement.querySelector('.thread') as HTMLElement;
+    expect(thread.style.backgroundImage).toContain('assets/carpool/chat-doodles.svg');
+  });
+
   it('puts the unread divider above the first message from someone else after the read marker', () => {
     open({ conversation: conv(), messages: [msg(1), msg(2, { mine: true }), msg(3), msg(4), msg(5, { type: 'system', sender: null })], last_read_message_id: 2 });
     expect(page.dividerId).toBe(3);

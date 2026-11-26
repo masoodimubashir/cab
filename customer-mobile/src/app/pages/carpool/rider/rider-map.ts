@@ -76,6 +76,33 @@ export function youMarker(map: any, at: LatLng): any {
   return new google.maps.marker.AdvancedMarkerElement({ map, position: at, content: el, zIndex: 3 });
 }
 
+/**
+ * L1.3 (mockup 8m, 8n): the driver's car, a dark round badge with a car, grey when no position came for a minute.
+ * Moves the marker it is given, or makes one.
+ */
+export function carMarker(map: any, marker: any, at: LatLng, stale: boolean): any {
+  const colour = stale ? '#8794a6' : '#101a2c';
+  const html = `<div style="display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:${colour};border:3px solid #fff;`
+    + `box-shadow:0 0 0 ${stale ? 0 : 8}px #12b35b26"><svg width="16" height="16" viewBox="0 0 512 512" aria-hidden="true">`
+    + '<path d="M80 224l37.78-88.15C123.93 121.5 139.6 112 157.11 112h197.78c17.51 0 33.18 9.5 39.33 23.85L432 224M80 224h352v144H80zM112 368v32H80v-32M432 368v32h-32v-32" '
+    + 'fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="40"/></svg></div>';
+  if (marker) {
+    marker.position = at;
+    if (marker.__stale !== stale) {
+      marker.content.innerHTML = html;
+      marker.__stale = stale;
+    }
+    if (!marker.map) marker.map = map;
+    return marker;
+  }
+  const el = document.createElement('div');
+  el.innerHTML = html;
+  el.setAttribute('aria-label', stale ? 'Last known place of the car' : 'The car');
+  const m = new google.maps.marker.AdvancedMarkerElement({ map, position: at, content: el, zIndex: 5 });
+  m.__stale = stale;
+  return m;
+}
+
 /** The green pickup pin (customer 5b). Draggable when `onDrop` is given. */
 export function pickupPin(map: any, at: LatLng, onDrop?: (p: LatLng) => void): any {
   const el = document.createElement('div');

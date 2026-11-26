@@ -12,13 +12,18 @@ const NAMES = ['Aijaz Test', 'Sana Test', 'Bilal Test', 'Nida Test'];
 
 /** What a field is for, from its label, placeholder and name. */
 function hintOf(el: HTMLElement): string {
+  // type="text" says nothing about the field (it made every plain box look like a message box).
+  const type = el.getAttribute('type');
   const own = [
     el.getAttribute('placeholder'), el.getAttribute('label'), el.getAttribute('name'), el.getAttribute('formcontrolname'),
-    el.getAttribute('aria-label'), el.getAttribute('autocomplete'), el.getAttribute('inputmode'), el.getAttribute('type'), el.id,
+    el.getAttribute('aria-label'), el.getAttribute('autocomplete'), el.getAttribute('inputmode'), type === 'text' ? '' : type, el.id,
   ];
-  const item = el.closest('ion-item, .field, .form-group, label');
-  const label = item?.querySelector('ion-label, label, .label')?.textContent ?? '';
-  return [...own, label].filter(Boolean).join(' ').toLowerCase();
+  // The visible label: an ion-label or .label inside the field, or the text of the <label> around it
+  // (the carpool sign-up uses <label class="cps-field"><span class="cps-field__label">Number plate</span>…).
+  const item = el.closest('ion-item, .field, .form-group, .cps-field, label');
+  const named = item?.querySelector('ion-label, label, .label, [class*="__label"], [class*="-label"]')?.textContent ?? '';
+  const label = named || (item?.tagName === 'LABEL' ? item.textContent ?? '' : '');
+  return [label, ...own].filter(Boolean).join(' ').toLowerCase();
 }
 
 function valueFor(hint: string, el: HTMLElement, ctx: FillContext, n: number): string {
@@ -26,7 +31,8 @@ function valueFor(hint: string, el: HTMLElement, ctx: FillContext, n: number): s
   if (/otp|verification|code|pin/.test(hint) && !/pincode|postal|promo|coupon/.test(hint)) return max === 4 ? '1234' : '123456';
   if (/phone|mobile|tel/.test(hint)) return ctx.phone;
   if (/e-?mail/.test(hint)) return `test${n}@dreamcabs.test`;
-  if (/plate|registration|reg\.? ?no|vehicle ?number|number ?plate/.test(hint)) return `JK01DV${1000 + n}`;
+  // A random plate the apps accept (JK01 DV 4821); plates must be unique, so never the same twice in a row.
+  if (/plate|registration|reg\.? ?no|vehicle ?number|number ?plate/.test(hint)) return `JK01DV${1000 + Math.floor(Math.random() * 9000)}`;
   if (/make|brand|manufacturer/.test(hint)) return 'Tata';
   if (/model/.test(hint)) return 'Nexon';
   if (/colou?r/.test(hint)) return 'Blue';
@@ -105,5 +111,62 @@ export function clearScreen(): number {
     }
   });
 
+  return n;
+}
+
+/** The text a photo slot shows, used as the caption on the test picture. */
+function slotLabel(input: HTMLInputElement): string {
+  const box = input.closest('label, .cps-photo, .cps-slot, ion-item, .field') as HTMLElement | null;
+  const doc = input.closest('.cps-doc, .d-card, section')?.querySelector('h2, .d-title, .cps-doc__name')?.textContent ?? '';
+  return [doc, box?.innerText ?? ''].map((t) => t.trim()).filter(Boolean).join(' · ').slice(0, 60) || 'Test photo';
+}
+
+/** A slot already holding a picture or a sent document is left alone. */
+function slotFilled(input: HTMLInputElement): boolean {
+  const box = input.closest('label, .cps-photo, .cps-slot') as HTMLElement | null;
+  return !!box && /has-photo|is-done|done/.test(box.className);
+}
+
+/** Draws a small picture with a caption, so test uploads are easy to tell apart. */
+function testPicture(caption: string, n: number): Promise<File> {
+  const c = document.createElement('canvas');
+  c.width = 640;
+  c.height = 400;
+  const g = c.getContext('2d')!;
+  const hues = [150, 205, 32, 270, 350];
+  g.fillStyle = `hsl(${hues[n % hues.length]} 45% 42%)`;
+  g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = 'rgba(255,255,255,.18)';
+  g.fillRect(24, 24, c.width - 48, c.height - 48);
+  g.fillStyle = '#fff';
+  g.font = 'bold 34px Roboto, sans-serif';
+  g.fillText('Dev hub test photo', 48, 96);
+  g.font = '26px Roboto, sans-serif';
+  g.fillText(caption.slice(0, 38), 48, 150);
+  g.fillText(new Date().toLocaleString('en-IN'), 48, 340);
+  return new Promise((resolve) => c.toBlob((b) => resolve(new File([b!], `dev-hub-${n}.jpg`, { type: 'image/jpeg' })), 'image/jpeg', 0.85));
+}
+
+/**
+ * Puts a generated test picture into every empty photo or document slot on screen
+ * (file inputs are hidden inside their tap area, so the tap area must be on screen).
+ * Returns how many were filled.
+ */
+export async function fillPhotos(overwrite = false): Promise<number> {
+  const inputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[type=file]')).filter((input) => {
+    if (input.disabled || input.closest('[data-dev-hub]')) return false;
+    const box = (input.closest('label, .cps-photo, .cps-slot, ion-item, .field') as HTMLElement | null) ?? input.parentElement;
+    return !!box && visible(box) && (overwrite || !slotFilled(input));
+  });
+  let n = 0;
+  for (const input of inputs) {
+    const file = await testPicture(slotLabel(input), n);
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    n++;
+    await new Promise((r) => setTimeout(r, 150)); // let each upload start before the next
+  }
   return n;
 }

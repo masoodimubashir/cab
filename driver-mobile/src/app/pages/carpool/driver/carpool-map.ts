@@ -174,7 +174,7 @@ export function pickupPin(map: any, at: { lat: number; lng: number }, onDrop: (p
 export function askedMarker(map: any, at: { lat: number; lng: number }, label: string): any {
   const el = document.createElement('div');
   el.style.cssText = 'position:relative;width:16px;height:16px';
-  el.innerHTML = `<span style="position:absolute;right:26px;top:-4px;padding:4px 12px;border-radius:12px;background:#fff;font:700 12px Roboto,sans-serif;color:#55657b;white-space:nowrap;box-shadow:0 1px 4px #0003">${label.replace(/[<>&]/g, '')}</span><span style="display:block;width:16px;height:16px;box-sizing:border-box;border-radius:50%;background:#fff;border:3px solid #8a97a6"></span>`;
+  el.innerHTML = `<span style="position:absolute;right:26px;top:-4px;padding:4px 12px;border-radius:12px;background:#fff;font:700 12px Roboto,sans-serif;color:#55657b;white-space:nowrap;border:1px solid #e2e8f0">${label.replace(/[<>&]/g, '')}</span><span style="display:block;width:16px;height:16px;box-sizing:border-box;border-radius:50%;background:#fff;border:3px solid #8a97a6"></span>`;
   return new google.maps.marker.AdvancedMarkerElement({ map, position: at, content: el, zIndex: 3 });
 }
 

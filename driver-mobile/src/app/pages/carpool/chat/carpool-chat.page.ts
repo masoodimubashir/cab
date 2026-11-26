@@ -64,7 +64,7 @@ type StatusKind = 'live' | 'ok' | 'sent' | 'cancel' | 'done';
       </header>
 
       <div class="tw">
-        <div class="thread" #threadEl [style.padding-top.px]="conv ? threadPad : null" (click)="menuFor = null" (wheel)="closePeek()" (touchmove)="closePeek()">
+        <div class="thread" #threadEl [style.background-image]="wallpaper" [style.padding-top.px]="conv ? threadPad : null" (click)="menuFor = null" (wheel)="closePeek()" (touchmove)="closePeek()">
           <div class="msgs" #msgsEl>
             <div class="center" *ngIf="!conv && !error"><ion-spinner name="crescent"></ion-spinner></div>
             <div class="errline" *ngIf="error && !conv" role="alert">Couldn't load this chat. <button (click)="load()">Try again</button></div>
@@ -192,7 +192,7 @@ type StatusKind = 'live' | 'ok' | 'sent' | 'cancel' | 'done';
     .chat { position: absolute; inset: 0; display: flex; flex-direction: column; background: #fff; padding-top: var(--ion-safe-area-top, 0px); }
 
     /* Header: one white surface and one soft shadow */
-    .hd { position: relative; z-index: 6; flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px 8px 4px; background: #fff; box-shadow: var(--lift); }
+    .hd { position: relative; z-index: 6; flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px 8px 4px; background: #fff; border-bottom: 1px solid #e2e8f0; }
     .icon-btn { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: #0d1b2a; font-size: 24px; }
     .icon-btn.report { background: #f2f4f7; color: var(--muted); font-size: 19px; }
     .who { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: transparent; text-align: left; color: inherit; font: inherit; }
@@ -204,11 +204,11 @@ type StatusKind = 'live' | 'ok' | 'sent' | 'cancel' | 'done';
 
     /* The thread, with the trip card and the pill floating above it */
     .tw { position: relative; flex: 1; min-height: 0; display: flex; overflow: hidden; }
-    .thread { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px 12px 10px; overflow-y: auto; background-color: #efeae2; transition: padding-top .3s ease; }
+    .thread { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px 12px 10px; overflow-y: auto; background-color: #efeae2; background-size: 420px 420px; transition: padding-top .3s ease; }
     .msgs { flex: none; margin-top: auto; display: flex; flex-direction: column; }
     .center { display: grid; place-items: center; padding: 40px 0; }
-    .day { align-self: center; margin: 4px 0 10px; padding: 4px 12px; border-radius: 12px; background: #fff; box-shadow: 0 1px 1px #0b141a14; font-size: 12px; font-weight: 500; color: #55657b; }
-    .sys { align-self: center; margin: 2px 0 10px; padding: 4px 10px; border-radius: 8px; background: #fffffff0; box-shadow: 0 1px 1px #0b141a14; font-size: 12px; color: #5a6a80; text-align: center; }
+    .day { align-self: center; margin: 4px 0 10px; padding: 4px 12px; border-radius: 12px; background: #fff; font-size: 12px; font-weight: 500; color: #55657b; }
+    .sys { align-self: center; margin: 2px 0 10px; padding: 4px 10px; border-radius: 8px; background: #fffffff0; font-size: 12px; color: #5a6a80; text-align: center; }
     .them { display: flex; align-items: flex-end; gap: 8px; max-width: 86%; margin-bottom: 10px; }
     .them > div { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
     .av-s { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 50%; background: #e6f4ed; color: var(--green); font-size: 11px; font-weight: 700; }
@@ -232,7 +232,7 @@ type StatusKind = 'live' | 'ok' | 'sent' | 'cancel' | 'done';
     .unread::before, .unread::after { content: ""; flex: 1; height: 1px; background: #b9dfcb; }
     .mask-note { margin: 2px 12px 0; font-size: 12px; color: var(--muted); }
     .b ion-icon { vertical-align: -3px; margin-right: 6px; font-size: 16px; }
-    .menu-pop { align-self: flex-start; margin: -4px 0 12px 36px; width: 190px; padding: 6px; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 10px 30px #142b3a22; }
+    .menu-pop { align-self: flex-start; margin: -4px 0 12px 36px; width: 190px; padding: 6px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
     .menu-pop button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 10px; border: 0; border-radius: 9px; background: transparent; font-size: 14px; color: #0d1b2a; }
     .menu-pop ion-icon { font-size: 19px; }
     .limit { flex: none; display: flex; align-items: center; gap: 6px; margin: 0; padding: 8px 16px 0; background: #fff; font-size: 12px; font-weight: 700; color: #c62f3c; }
@@ -249,8 +249,8 @@ type StatusKind = 'live' | 'ok' | 'sent' | 'cancel' | 'done';
     /* The trip card (full) */
     .scrim { position: absolute; inset: 0; z-index: 3; background: transparent; pointer-events: none; }
     .scrim.on { pointer-events: auto; }
-    .trip { position: absolute; left: 12px; right: 12px; top: 10px; z-index: 4; box-sizing: border-box; padding: 16px; border-radius: 14px; background: #fff; box-shadow: var(--lift);
-      opacity: 0; transform: translateY(-14px) scale(.96); transform-origin: top center; pointer-events: none; transition: transform .45s cubic-bezier(.34, 1.56, .64, 1), opacity .2s ease; }
+    .trip { position: absolute; left: 12px; right: 12px; top: 10px; z-index: 4; box-sizing: border-box; padding: 16px; border-radius: 14px; background: #fff;
+      opacity: 0; transform: translateY(-14px) scale(.96); transform-origin: top center; pointer-events: none; transition: transform .45s cubic-bezier(.34, 1.56, .64, 1), opacity .2s ease; border: 1px solid #e2e8f0; }
     .trip.on { opacity: 1; transform: none; pointer-events: auto; }
     .trip-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
     .when small { display: block; font-size: 12px; font-weight: 500; letter-spacing: .3px; text-transform: uppercase; color: var(--muted); }
@@ -274,7 +274,7 @@ type StatusKind = 'live' | 'ok' | 'sent' | 'cancel' | 'done';
     .trip-foot .view ion-icon { font-size: 16px; }
 
     /* The pill: fixed width, two fixed slots (stops, time), squarer corners, no labels */
-    .pill { position: absolute; left: 12px; right: 12px; top: 10px; z-index: 4; box-sizing: border-box; max-width: 340px; margin: 0 auto; height: 44px; display: grid; grid-template-columns: minmax(0, 1fr) 104px; align-items: center; padding: 0 14px; border: 0; border-radius: 10px; background: #fff; box-shadow: var(--lift); font: inherit; color: #0d1b2a; text-align: left;
+    .pill { position: absolute; left: 12px; right: 12px; top: 10px; z-index: 4; box-sizing: border-box; max-width: 340px; margin: 0 auto; height: 44px; display: grid; grid-template-columns: minmax(0, 1fr) 104px; align-items: center; padding: 0 14px; border: 0; border-radius: 10px; background: #fff; font: inherit; color: #0d1b2a; text-align: left;
       opacity: 0; transform: translateY(-16px) scale(.96); pointer-events: none; transition: transform .4s cubic-bezier(.34, 1.56, .64, 1), opacity .2s ease; }
     .pill.on { opacity: 1; transform: none; pointer-events: auto; }
     .pill .l { min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }
@@ -347,6 +347,8 @@ export class CarpoolChatPage implements OnInit, AfterViewInit, OnDestroy, AfterV
   tripMode: TripMode = 'docked';
   /** Room the thread keeps free at its top for the card or the pill. */
   threadPad = 12;
+  /** Travel doodles behind the messages (Ionicons, MIT; made by Saqib/tools/make-chat-doodles.py). */
+  readonly wallpaper = 'url(assets/carpool/chat-doodles.svg)';
 
   sheet: { message: CarpoolChatMessage | null } | null = null;
   reasons = PERSON_REASONS;

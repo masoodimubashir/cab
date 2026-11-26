@@ -16,6 +16,8 @@ import { CarpoolCodePage } from './driver/carpool-code.page';
 import { CarpoolRiderPage } from './driver/carpool-rider.page';
 import { CarpoolChatPage } from './chat/carpool-chat.page';
 import { CarpoolPickupPage } from './driver/carpool-pickup.page';
+import { CarpoolMapPickComponent } from './ui/carpool-map-pick.component';
+import { CarpoolRideBannerComponent } from './ui/carpool-ride-banner.component';
 
 /**
  * Roboto, as the mockup loads it. Android has Roboto built in; browsers and
@@ -34,7 +36,7 @@ function loadCarpoolFont(): void {
 
 /** The carpool feature (Carpool-Integration-Guide section 5). Driver screens live in ./driver. */
 @NgModule({
-  imports: [CommonModule, FormsModule, IonicModule, RouterModule, CarpoolRoutingModule],
+  imports: [CommonModule, FormsModule, IonicModule, RouterModule, CarpoolRoutingModule, CarpoolMapPickComponent, CarpoolRideBannerComponent],
   declarations: [
     CarpoolTabsPage,
     CarpoolHomePage,

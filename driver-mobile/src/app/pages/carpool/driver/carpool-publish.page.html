@@ -36,6 +36,11 @@
           </label>
           <button class="swap" aria-label="Swap start and destination" (click)="swap()"><ion-icon name="swap-vertical-outline"></ion-icon></button>
         </div>
+        <button class="pl-row map-row" (click)="openMap()">
+          <span class="d-tile"><ion-icon name="map-outline"></ion-icon></span>
+          <span class="grow"><span class="d-title">Choose on map</span><br><span class="t12 muted">For the {{ active === 'from' ? 'From' : 'To' }} field</span></span>
+          <ion-icon class="muted" name="chevron-forward-outline" aria-hidden="true"></ion-icon>
+        </button>
         <p class="t12" style="margin-top: 8px; color: var(--cp-red)" *ngIf="samePlace">Start and destination are the same place.</p>
         <p class="t12" style="margin-top: 8px; color: var(--cp-red)" *ngIf="placeError">{{ placeError }}</p>
 
@@ -168,3 +173,6 @@
     </button>
   </div>
 </ion-footer>
+
+<cp-map-pick *ngIf="mapFor" [label]="mapFor === 'from' ? 'From' : 'To'" [start]="mapStart" [load]="loadMaps" [name]="nameAt" [locate]="locate"
+  (picked)="mapPicked($event)" (closed)="closeMap()"></cp-map-pick>

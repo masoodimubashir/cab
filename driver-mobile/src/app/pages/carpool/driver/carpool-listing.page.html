@@ -27,40 +27,9 @@
 
     <!-- 8: the carpool -->
     <div class="cp-wrap" *ngIf="mode === 'view'" style="padding-top: 14px">
-      <div class="split" style="align-items: center">
-        <h1 class="lst-when">{{ when }}</h1>
-        <p class="t13 muted" style="font-weight: 700" *ngIf="l.status !== 'in_progress'">{{ statusLabel }}</p>
-        <p class="t13 live-t" *ngIf="l.status === 'in_progress'"><span class="live"></span>{{ statusLabel }}</p>
-      </div>
-      <p class="t13 muted" style="margin-top: 4px" *ngIf="cancelLine">{{ cancelLine }}</p>
-      <div class="rt" style="margin-top: 8px"><span class="rail"><i></i><b></b><i class="end"></i></span><span>{{ l.start.name }}</span><span>{{ l.end.name }}</span></div>
-      <!-- 9: in progress -->
-      <div class="facts" *ngIf="l.status === 'in_progress'">
-        <div><b>{{ l.seats_taken }} of {{ l.seats_total }}</b>seats taken</div>
-        <div><b>{{ pickedCount }} of {{ activeCount }}</b>picked up</div>
-        <div><b>{{ arrival }}</b>arrival</div>
-      </div>
-      <!-- 13b: completed -->
-      <div class="facts" *ngIf="l.status === 'completed'">
-        <div><b>{{ ranRange }}</b>on the road</div>
-        <div><b>{{ km }}</b>route</div>
-        <div><b>{{ l.riders_rode }} of {{ l.riders?.length ?? 0 }}</b>riders rode</div>
-      </div>
-      <div class="facts" *ngIf="l.status === 'published' || l.status === 'cancelled'">
-        <div><b>{{ l.seats_taken }} of {{ l.seats_total }}</b>seats taken</div>
-        <div><b>{{ price }}</b>{{ l.is_free ? 'ride' : 'per seat' }}</div>
-        <div><b>{{ drive }}</b>drive</div>
-      </div>
-      <p class="t12 muted" style="margin-top: 8px" *ngIf="l.route_summary">{{ l.route_summary }}</p>
+      <cp-ride-banner *ngIf="banner as b" [b]="b" [busy]="bannerBusy" (act)="bannerAct()"></cp-ride-banner>
 
-      <ng-container *ngIf="l.can_edit">
-        <div class="late-row">
-          <button class="d-btn line mini" [disabled]="delaying" (click)="delay()"><ion-icon name="time-outline"></ion-icon>+{{ delayMinutes }} min delay</button>
-          <p [class.ok]="delayMsg">{{ delayMsg ?? (riders ? 'Running late? Moves the time and tells riders in chat.' : 'Running late? Moves the time on ' + delayMinutes + ' minutes.') }}</p>
-        </div>
-      </ng-container>
-
-      <h2 class="d-h">Riders, in pickup order</h2>
+      <h2 class="d-h" *ngIf="l.status !== 'cancelled'">{{ ridersHeading }}</h2>
       <ng-container *ngIf="l.riders?.length && l.status !== 'cancelled'; else noRiders">
         <ng-container *ngIf="l.status === 'published'">
           <button class="stop" *ngFor="let r of l.riders" (click)="openRider(r)">
@@ -77,24 +46,18 @@
               <span class="grow">
                 <span class="d-title">{{ r.rider.name }}</span><span class="seatpill"><ion-icon name="people-outline" aria-hidden="true"></ion-icon>{{ seatWord(r.seats) }}</span>
                 <span class="pd" *ngIf="l.status === 'in_progress'">{{ r.pickup.name }} → {{ r.drop.name }}</span>
-                <span class="st ok" *ngIf="r.ride_state === 'picked_up'"><ion-icon name="checkmark-circle"></ion-icon>Picked up {{ clock(r.picked_up_at!) }}</span>
-                <span class="st ok" *ngIf="r.ride_state === 'dropped'"><ion-icon name="checkmark-circle"></ion-icon>Dropped {{ clock(r.dropped_at!) }}</span>
-                <span class="st bad" *ngIf="r.ride_state === 'no_show'"><ion-icon name="close-circle-outline"></ion-icon>No-show</span>
-                <span class="st go" *ngIf="r.ride_state === 'waiting' && r === nextRider"><ion-icon name="location-outline"></ion-icon>Next pickup, about {{ clock(r.pickup.at) }}</span>
-                <span class="st" *ngIf="r.ride_state === 'waiting' && r !== nextRider"><ion-icon name="time-outline"></ion-icon>Pickup about {{ clock(r.pickup.at) }}</span>
               </span>
+              <span class="tm" *ngIf="rowTime(r) as t" [ngClass]="t.cls"><b>{{ t.time }}</b><small>{{ t.word }}</small></span>
             </button>
           </ng-container>
         </ng-container>
       </ng-container>
-      <p class="ride-note" *ngIf="l.status === 'in_progress'">Complete ride unlocks once every rider is dropped or marked no-show.</p>
-      <p class="ride-note" *ngIf="l.status === 'published' && !l.can_start">Start ride opens at {{ clock(l.start_opens_at) }}.</p>
-      <p class="keep-note" style="margin-top: 12px" *ngIf="l.chats_deleted && l.status !== 'published' && l.status !== 'in_progress'"><ion-icon name="chatbubble-outline"></ion-icon>This chat was deleted.</p>
-      <p class="keep-note" style="margin-top: 12px" *ngIf="l.status === 'completed' && l.group_chat_id"><ion-icon name="time-outline"></ion-icon>Chats are deleted {{ retentionDays }} {{ retentionDays === 1 ? 'day' : 'days' }} after the trip ends.</p>
+      <p class="ride-note" *ngIf="l.status === 'in_progress' && allIn && !l.can_complete">Complete ride unlocks once every rider is dropped or marked no-show.</p>
+      <p class="keep-note" style="margin-top: 12px" *ngIf="l.chats_deleted && l.status === 'cancelled'"><ion-icon name="chatbubble-outline"></ion-icon>This chat was deleted.</p>
       <ng-template #noRiders>
-        <div class="d-card row" style="gap: 12px">
+        <div class="d-card row" style="gap: 12px" *ngIf="l.status !== 'cancelled'">
           <ion-icon name="people-outline" class="muted" style="font-size: 22px"></ion-icon>
-          <p class="t13 muted grow">{{ l.status === 'cancelled' ? 'This carpool was cancelled.' : 'No riders yet. Riders along your route can ask to join.' }}</p>
+          <p class="t13 muted grow">No riders yet. Riders along your route can ask to join.</p>
         </div>
       </ng-template>
     </div>
@@ -212,8 +175,9 @@
       <span class="av">{{ r.rider.initials }}</span>
       <div class="grow">
         <h2 id="rider-h">{{ r.rider.name }}</h2>
-        <p class="st go" *ngIf="listing?.status === 'in_progress' && r.ride_state === 'waiting' && r === nextRider"><ion-icon name="location-outline"></ion-icon>Next pickup, about {{ clock(r.pickup.at) }}</p>
-        <p class="st" *ngIf="listing?.status === 'in_progress' && r.ride_state === 'waiting' && r !== nextRider"><ion-icon name="time-outline"></ion-icon>Pickup about {{ clock(r.pickup.at) }}</p>
+        <p class="st go" *ngIf="listing?.status === 'in_progress' && arrivedFor(r) as a"><ion-icon name="time-outline"></ion-icon>{{ a }}</p>
+        <p class="st go" *ngIf="listing?.status === 'in_progress' && !arrivedFor(r) && r.ride_state === 'waiting' && r === nextRider"><ion-icon name="location-outline"></ion-icon>Next pickup, about {{ clock(r.pickup.at) }}</p>
+        <p class="st" *ngIf="listing?.status === 'in_progress' && !arrivedFor(r) && r.ride_state === 'waiting' && r !== nextRider"><ion-icon name="time-outline"></ion-icon>Pickup about {{ clock(r.pickup.at) }}</p>
         <p class="st ok" *ngIf="r.ride_state === 'picked_up'"><ion-icon name="checkmark-circle"></ion-icon>Picked up {{ clock(r.picked_up_at!) }}, {{ seatWord(r.seats) }}</p>
         <p class="st" *ngIf="listing?.status === 'published'"><ion-icon name="time-outline"></ion-icon>Joined · pickup about {{ clock(r.pickup.at) }}</p>
       </div>
@@ -238,7 +202,7 @@
     <ng-container *ngIf="listing?.status === 'in_progress' && r.ride_state === 'waiting'">
       <button class="d-go" style="margin-top: 14px" (click)="goPickup(r)"><ion-icon name="checkmark-circle"></ion-icon>Check code and pick up</button>
       <div class="row" style="gap: 10px; margin-top: 10px">
-        <button class="d-btn redline" (click)="sheet = 'noshow'">No-show</button>
+        <button class="d-btn redline" *ngIf="noShowFor(r) as ns" [disabled]="!ns.open" (click)="sheet = 'noshow'">{{ ns.label }}</button>
         <button class="d-btn redline" (click)="sheet = 'remove'">Remove from carpool</button>
       </div>
     </ng-container>
@@ -282,7 +246,7 @@
     <div class="grab"></div>
     <div class="who-h">
       <span class="av">{{ r.rider.initials }}</span>
-      <div class="grow"><h2 id="noshow-h">Mark {{ r.rider.first_name }} as no-show?</h2><p class="t13 muted">{{ r.pickup.name }}</p></div>
+      <div class="grow"><h2 id="noshow-h">Mark {{ r.rider.first_name }} as no-show?</h2><p class="t13 muted">{{ r.pickup.name }}<ng-container *ngIf="waitedFor(r) as w"> · {{ w }}</ng-container></p></div>
     </div>
     <p class="t14" style="margin-top: 16px; line-height: 1.5">{{ r.rider.first_name }} is told about the no-show and taken off this ride. You can carry on with the other riders.</p>
     <div class="info"><ion-icon name="information-circle-outline"></ion-icon><p>Do this only after you've reached the pickup and waited. If {{ r.rider.first_name }} is running late, send a message first.</p></div>

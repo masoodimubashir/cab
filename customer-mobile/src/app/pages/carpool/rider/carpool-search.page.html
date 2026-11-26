@@ -68,6 +68,11 @@
         <input #pickInput type="search" autocomplete="off" [placeholder]="picking === 'from' ? 'Where from?' : 'Where are you going?'"
                [value]="query" (input)="onQuery($any($event.target).value)">
       </label>
+      <button class="opt" (click)="openMap()">
+        <ion-icon name="map-outline" class="map-ic"></ion-icon>
+        <span class="grow"><b>Choose on map</b></span>
+        <ion-icon name="chevron-forward-outline" class="muted" aria-hidden="true"></ion-icon>
+      </button>
       <button class="opt" *ngIf="picking === 'from' && query.length < 2" [disabled]="locating" (click)="useMyLocation()">
         <ion-icon name="locate-outline"></ion-icon>
         <span class="grow"><b>{{ locating ? 'Finding you…' : 'Use my current location' }}</b></span>
@@ -81,6 +86,9 @@
     </div>
   </div>
 </ion-content>
+
+<cp-map-pick *ngIf="mapFor" [label]="mapFor === 'from' ? 'Pickup' : 'Drop'" [start]="mapStart" [load]="loadMaps" [name]="nameAt" [locate]="locate"
+  (picked)="mapPicked($event)" (closed)="closeMap()"></cp-map-pick>
 
 <ion-footer class="ion-no-border" *ngIf="!picking">
   <div class="c-dock"><button class="c-go tall" [disabled]="!from || !to" (click)="go()">Search</button></div>

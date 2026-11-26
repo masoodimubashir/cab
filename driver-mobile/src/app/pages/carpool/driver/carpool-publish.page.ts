@@ -3,9 +3,11 @@ import { NavController } from '@ionic/angular';
 import { forkJoin } from 'rxjs';
 import { ApiService } from '../../../core/api.service';
 import { PlaceSuggestion, PlacesService } from '../../../core/places.service';
+import { GeolocationService } from '../../../core/geolocation.service';
+import { MapPicked, MapPoint } from '../ui/carpool-map-pick.component';
 import { CarpoolApiService } from '../carpool-api.service';
 import { CarpoolDriverHome, CarpoolPlace } from '../carpool.models';
-import { RouteOption, createMap, drawRoutes, fetchRouteOptions, loadCarpoolMaps } from './carpool-map';
+import { RouteOption, createMap, drawRoutes, fetchRouteOptions, loadCarpoolMaps, placeName } from './carpool-map';
 import { addDays, clockFromHm, dayLabel, daysFromToday, durationLabel, indiaDate, indiaIso, indiaTime, kmLabel, shortDate, whenLabel } from './carpool-format';
 
 type Field = 'from' | 'to';
@@ -74,6 +76,7 @@ export class CarpoolPublishPage implements OnDestroy {
     private carpool: CarpoolApiService,
     private places: PlacesService,
     private nav: NavController,
+    private geo: GeolocationService,
   ) {}
 
   ionViewWillEnter(): void {
@@ -209,6 +212,40 @@ export class CarpoolPublishPage implements OnDestroy {
     } else {
       (document.activeElement as HTMLElement | null)?.blur();
     }
+  }
+
+  /** Choose on map (3b): opens for the selected field, at its place if it has one. */
+  mapFor: Field | null = null;
+  readonly loadMaps = () => loadCarpoolMaps(this.places);
+  readonly nameAt = (at: MapPoint) => placeName(at);
+  readonly locate = () => this.locateMe();
+
+  get mapStart(): MapPoint | null {
+    const p = this.mapFor === 'to' ? this.to : this.mapFor === 'from' ? this.from : null;
+    return p ? { lat: p.lat, lng: p.lng } : null;
+  }
+
+  openMap(): void {
+    (document.activeElement as HTMLElement | null)?.blur();
+    this.mapFor = this.active;
+  }
+
+  closeMap(): void {
+    this.mapFor = null;
+  }
+
+  mapPicked(p: MapPicked): void {
+    const f = this.mapFor ?? this.active;
+    this.mapFor = null;
+    this.placeError = null;
+    this.setPlace(f, { lat: p.lat, lng: p.lng, name: p.name, address: p.address });
+    this.suggestions = [];
+    this.active = f === 'from' && !this.to ? 'to' : f;
+  }
+
+  async locateMe(): Promise<MapPoint | null> {
+    const fix = await this.geo.getCurrentPosition().catch(() => null);
+    return fix ? { lat: fix.lat, lng: fix.lng } : null;
   }
 
   useRecent(r: CarpoolDriverHome['recent'][number]): void {

@@ -6,6 +6,7 @@ import { PlaceSuggestion, PlacesService } from '../../../core/places.service';
 import { CarpoolApiService } from '../carpool-api.service';
 import { addDays, dayLabel, daysFromToday, indiaDate, seatWord, shortDate, shortName } from './rider-format';
 import { loadRiderMaps, placeName } from './rider-map';
+import { MapPicked, MapPoint } from '../ui/carpool-map-pick.component';
 import { clampDate, clampSeats, fromParams, getHorizonDays, getSeatsMax, setHorizonDays, setSeatsMax, recentSearches, rememberSearch, RiderPlace, RiderSearch, toParams } from './rider-search';
 
 /**
@@ -115,6 +116,36 @@ export class CarpoolSearchPage implements OnInit {
     this.suggestions = [];
     this.pickError = '';
     setTimeout(() => this.pickInput?.nativeElement.focus(), 60);
+  }
+
+  /** Choose on map (2c): opens over the place search, for the same field. */
+  mapFor: 'from' | 'to' | null = null;
+  readonly loadMaps = () => loadRiderMaps(this.places);
+  readonly nameAt = (at: MapPoint) => placeName(at);
+  readonly locate = () => this.phoneSpot();
+
+  get mapStart(): MapPoint | null {
+    const p = this.mapFor === 'to' ? this.to : this.mapFor === 'from' ? this.from : null;
+    return p ? { lat: p.lat, lng: p.lng } : null;
+  }
+
+  openMap(): void {
+    (document.activeElement as HTMLElement | null)?.blur();
+    this.mapFor = this.picking ?? this.active;
+  }
+
+  closeMap(): void {
+    this.mapFor = null;
+  }
+
+  mapPicked(p: MapPicked): void {
+    const which = this.mapFor ?? this.picking ?? 'from';
+    this.mapFor = null;
+    this.set(which, { lat: p.lat, lng: p.lng, name: p.name, address: p.address, mine: false });
+  }
+
+  async phoneSpot(): Promise<MapPoint | null> {
+    return this.geo.getCurrentPosition().catch(() => null);
   }
 
   closePicker(): void {

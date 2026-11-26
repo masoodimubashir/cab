@@ -1,0 +1,54 @@
+<ion-header class="ion-no-border nv-head">
+  <div class="nv-drop">
+    <div class="nv-top">
+      <button type="button" class="nv-back" aria-label="Back to your sign-up status" (click)="back()"><ion-icon name="chevron-back-outline"></ion-icon></button>
+      <span class="nv-step" *ngIf="docs.loaded">{{ toFix === 0 ? 'All sent' : toFix === 1 ? '1 to fix' : toFix + ' to fix' }}</span>
+    </div>
+    <h1>Fix documents</h1>
+    <p>Send the ones marked below again. We check them by hand.</p>
+  </div>
+</ion-header>
+
+<ion-content [fullscreen]="false" class="dc-content cps">
+  <div class="cps__wrap">
+    <div class="cps__loading" *ngIf="!docs.loaded && !error"><ion-spinner name="crescent"></ion-spinner></div>
+
+    <div class="cps-doc" *ngFor="let doc of ordered">
+      <h2 class="cps-doc__name">{{ doc.name }}</h2>
+      <p class="cps-doc__hint" *ngIf="doc.instructions">{{ doc.instructions }}</p>
+
+      <label class="cps-field" *ngFor="let l of doc.labels">
+        <span class="cps-field__label">{{ l.label }}{{ l.mandatory ? '' : ' (optional)' }}</span>
+        <input class="cps-field__input" [type]="l.label_type === 'date' ? 'date' : l.label_type === 'number' ? 'number' : 'text'"
+               [(ngModel)]="doc.labelValues[l.label]" />
+      </label>
+
+      <div class="cps-doc__slots">
+        <label class="cps-slot" *ngFor="let s of doc.slots" [class.is-done]="docs.slotDone(s)" [class.is-rejected]="s.status === 'rejected'">
+          <ion-spinner *ngIf="s.uploading" name="crescent"></ion-spinner>
+          <ion-icon *ngIf="!s.uploading" [name]="docs.slotDone(s) ? 'checkmark-circle' : 'cloud-upload-outline'" aria-hidden="true"></ion-icon>
+          <span>
+            {{ doc.slots.length > 1 ? 'Image ' + s.index : 'Upload' }}
+            <ng-container *ngIf="s.status === 'approved'"> · approved</ng-container>
+            <ng-container *ngIf="s.status === 'uploaded' || s.status === 'pending'"> · sent</ng-container>
+            <ng-container *ngIf="s.status === 'rejected'"> · rejected, upload again</ng-container>
+          </span>
+          <input type="file" accept="image/*,application/pdf" hidden [disabled]="s.uploading || s.status === 'approved'"
+                 (change)="docs.upload(doc, s, $event)" />
+        </label>
+      </div>
+      <ng-container *ngFor="let s of doc.slots">
+        <p class="cps-field__hint is-error" *ngIf="s.error">{{ s.error }}</p>
+        <p class="cps-field__hint is-error" *ngIf="s.rejection_reason">{{ s.rejection_reason }}</p>
+      </ng-container>
+    </div>
+
+    <p class="cps__error" role="alert" *ngIf="error">{{ error }}</p>
+  </div>
+</ion-content>
+
+<ion-footer class="ion-no-border nv-foot" *ngIf="docs.loaded">
+  <div class="nv-dock">
+    <button type="button" class="nv-go" [disabled]="!docs.allUploaded" (click)="send()">Send for review</button>
+  </div>
+</ion-footer>

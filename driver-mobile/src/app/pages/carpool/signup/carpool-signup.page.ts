@@ -4,26 +4,10 @@ import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ApiService } from '../../../core/api.service';
 import { AuthService } from '../../../core/auth.service';
-import { CatalogDocument, DocumentRequirement, DriverMe } from './carpool-signup.models';
+import { DriverMe } from './carpool-signup.models';
+import { DocSlotUi, DocUi, SignupDocs, messageFrom } from './signup-docs';
 
 interface CityOpt { id: number; name: string }
-
-interface DocSlotUi {
-  index: number;
-  status: string;
-  rejection_reason: string | null;
-  uploading: boolean;
-  error: string | null;
-}
-
-interface DocUi {
-  id: number;
-  name: string;
-  instructions: string | null;
-  labels: CatalogDocument['labels'];
-  labelValues: Record<string, string>;
-  slots: DocSlotUi[];
-}
 
 /** Standard Indian plates (JK01AB4521) and the BH series (22BH1234AA). Same check as the server. */
 const PLATE_PATTERN = /^([A-Z]{2}\d{1,2}[A-Z]{0,3}\d{1,4}|\d{2}BH\d{4}[A-Z]{1,2})$/;
@@ -36,7 +20,7 @@ const PLATE_PATTERN = /^([A-Z]{2}\d{1,2}[A-Z]{0,3}\d{1,4}|\d{2}BH\d{4}[A-Z]{1,2}
 @Component({
   selector: 'app-carpool-signup',
   templateUrl: './carpool-signup.page.html',
-  styleUrls: ['./carpool-signup.page.scss'],
+  styleUrls: ['./carpool-signup.page.scss', './carpool-signup-look.scss'],
   standalone: false,
 })
 export class CarpoolSignupPage implements OnInit, OnDestroy {
@@ -71,7 +55,19 @@ export class CarpoolSignupPage implements OnInit, OnDestroy {
   interiorFile: File | null = null;
   interiorPreview: string | null = null;
 
-  docs: DocUi[] = [];
+  /** Documents step: the list and uploads live in SignupDocs, shared with the Fix documents screen. */
+  readonly docCtl: SignupDocs;
+  get docs(): DocUi[] { return this.docCtl.docs; }
+
+  /** Title and one line of text for the navy header, per step (mockup 1b to 1e). */
+  get head(): { title: string; sub: string } {
+    return {
+      2: { title: 'Your profile', sub: 'Riders see your photo and first name. Use a clear photo of your face.' },
+      3: { title: 'Your city', sub: "Where you'll offer carpools." },
+      4: { title: 'Your car', sub: "The car you'll drive. It must be registered as private, not commercial." },
+      5: { title: 'Your documents', sub: 'We check every document by hand before you can publish.' },
+    }[this.step];
+  }
 
   private objectUrls: string[] = [];
 
@@ -79,7 +75,9 @@ export class CarpoolSignupPage implements OnInit, OnDestroy {
     private api: ApiService,
     private auth: AuthService,
     private nav: NavController,
-  ) {}
+  ) {
+    this.docCtl = new SignupDocs(api);
+  }
 
   ngOnInit(): void {
     forkJoin({
@@ -197,73 +195,19 @@ export class CarpoolSignupPage implements OnInit, OnDestroy {
   // ── Step 5: documents ───────────────────────────────────
 
   loadDocuments(): void {
-    forkJoin({
-      me: this.api.get<DriverMe>('/drivers/me'),
-      catalog: this.api.get<{ data: CatalogDocument[] }>('/catalog/documents'),
-    }).subscribe({
-      next: ({ me, catalog }) => this.buildDocs(me.document_requirements ?? [], catalog.data ?? []),
-      error: (err) => (this.error = this.messageFrom(err)),
-    });
-  }
-
-  private buildDocs(reqs: DocumentRequirement[], catalog: CatalogDocument[]): void {
-    const previous = new Map(this.docs.map((d) => [d.id, d.labelValues]));
-    this.docs = reqs.filter((r) => r.document_id !== null).map((r) => {
-      const cat = catalog.find((c) => c.id === r.document_id);
-      const labels = cat?.labels ?? [];
-      const values: Record<string, string> = {};
-      labels.forEach((l) => (values[l.label] = previous.get(r.document_id!)?.[l.label] ?? ''));
-      return {
-        id: r.document_id!,
-        name: r.name,
-        instructions: cat?.instructions ?? null,
-        labels,
-        labelValues: values,
-        slots: r.slots.map((s) => ({ ...s, uploading: false, error: null })),
-      };
-    });
-  }
-
-  labelsMissing(doc: DocUi): boolean {
-    return doc.labels.some((l) => l.mandatory && !doc.labelValues[l.label]?.trim());
+    this.docCtl.load((msg) => (this.error = msg));
   }
 
   onDocFile(doc: DocUi, slot: DocSlotUi, event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (!file) return;
-    if (this.labelsMissing(doc)) {
-      slot.error = `Fill in ${doc.labels.filter((l) => l.mandatory).map((l) => l.label.toLowerCase()).join(', ')} first.`;
-      return;
-    }
-    const fd = new FormData();
-    fd.append('document_id', String(doc.id));
-    fd.append('image_index', String(slot.index));
-    fd.append('file', file);
-    if (doc.labels.length) fd.append('label_values', JSON.stringify(doc.labelValues));
-
-    slot.uploading = true;
-    slot.error = null;
-    this.api.postForm('/drivers/documents', fd).subscribe({
-      next: () => {
-        slot.uploading = false;
-        slot.status = 'uploaded';
-        slot.rejection_reason = null;
-      },
-      error: (err) => {
-        slot.uploading = false;
-        slot.error = this.messageFrom(err);
-      },
-    });
+    this.docCtl.upload(doc, slot, event);
   }
 
   slotDone(slot: DocSlotUi): boolean {
-    return ['uploaded', 'pending', 'approved'].includes(slot.status);
+    return this.docCtl.slotDone(slot);
   }
 
   get allDocsUploaded(): boolean {
-    return this.docs.length > 0 && this.docs.every((d) => d.slots.every((s) => this.slotDone(s)));
+    return this.docCtl.allUploaded;
   }
 
   finish(): void {
@@ -299,8 +243,7 @@ export class CarpoolSignupPage implements OnInit, OnDestroy {
   }
 
   private messageFrom(err: any): string {
-    const errors = err?.error?.errors as Record<string, string[]> | undefined;
-    const first = errors ? Object.values(errors)[0]?.[0] : null;
-    return first || err?.error?.message || 'Something went wrong. Check your connection and try again.';
+    return messageFrom(err);
   }
+
 }

@@ -3,9 +3,12 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { NavController } from '@ionic/angular';
 import { PlacesService } from '../../../core/places.service';
 import { CarpoolApiService } from '../carpool-api.service';
-import { CarpoolMyRequest, CarpoolRide, CarpoolRoutePoint } from '../carpool.models';
+import { CarpoolMyRequest, CarpoolRide, CarpoolRoutePoint, CarpoolRidePosition } from '../carpool.models';
 import { clock, distanceLabel, indiaDate, priceLabel, seatWord, titleWhen } from './rider-format';
-import { LatLng, createMap, drawRide, flat, loadRiderMaps, pathLength, pickupPin, placeName, snapToPath, toPath, youMarker } from './rider-map';
+import { LatLng, carMarker, createMap, drawRide, flat, loadRiderMaps, pathLength, pickupPin, placeName, snapToPath, toPath, youMarker } from './rider-map';
+import { liveHead } from './rider-live';
+import { riderBanner } from './rider-banner';
+import { RideBanner } from '../ui/carpool-ride-banner.component';
 import { RiderSearch, fromParams, getSeatsMax, setSeatsMax, toParams, toQuery } from './rider-search';
 
 type View = 'open' | 'sent' | 'accepted' | 'started' | 'ended';
@@ -76,6 +79,13 @@ export class CarpoolRidePage implements OnDestroy {
   private clear: (() => void)[] = [];
   private timers: ReturnType<typeof setTimeout>[] = [];
   private poll: ReturnType<typeof setInterval> | null = null;
+  /** L1.3: the car's newest position while the ride is on the road (until you are dropped). */
+  live: CarpoolRidePosition | null = null;
+  private livePoll: ReturnType<typeof setInterval> | null = null;
+  private car: any = null;
+
+  /** W21: ⋯ on the map (Cancel request, Leave carpool). */
+  menuOpen = false;
 
   // ── Rate the driver (8g) ──
   rateScore = 0;
@@ -103,6 +113,31 @@ export class CarpoolRidePage implements OnDestroy {
     this.poll = setInterval(() => {
       if (this.view === 'started' || (this.view === 'accepted' && this.nearDeparture)) this.refresh();
     }, 15000);
+    // L1.3: the car itself every 5 seconds while the ride is on the road.
+    this.livePoll = setInterval(() => this.liveTick(), 5000);
+  }
+
+  /** Asks for the car while you're in a started ride; otherwise clears it. */
+  liveTick(): void {
+    if (this.view !== 'started' || !this.id) {
+      if (this.live) this.setLive(null);
+      return;
+    }
+    this.carpool.ridePosition(this.id).subscribe({
+      next: (p) => this.setLive(p),
+      error: () => this.setLive(null),
+    });
+  }
+
+  private setLive(p: CarpoolRidePosition | null): void {
+    this.zone.run(() => (this.live = p));
+    const at = p?.position;
+    if (!this.map || !at) {
+      if (this.car) this.car.map = null;
+      this.car = null;
+      return;
+    }
+    this.car = carMarker(this.map, this.car, { lat: at.lat, lng: at.lng }, p!.stale);
   }
 
   /** From the moment the driver can press Start ride (or past it): the only time an accepted ride can change under you. */
@@ -120,6 +155,8 @@ export class CarpoolRidePage implements OnDestroy {
   private stopPoll(): void {
     if (this.poll) clearInterval(this.poll);
     this.poll = null;
+    if (this.livePoll) clearInterval(this.livePoll);
+    this.livePoll = null;
   }
 
   /** A quiet reload: no spinner, keeps what is on screen if it fails. */
@@ -148,6 +185,7 @@ export class CarpoolRidePage implements OnDestroy {
         this.gone = false;
         setTimeout(() => void this.drawMain());
         this.maybeAskRating();
+        this.liveTick();
       },
       error: (e) => {
         this.loading = false;
@@ -177,6 +215,24 @@ export class CarpoolRidePage implements OnDestroy {
 
   get title(): string {
     return this.ride ? titleWhen(this.ride.departs_at) : '';
+  }
+
+  /** W21 (mockup "Ride banner, Rider"): the banner at the top of the page. */
+  get banner(): RideBanner | null {
+    if (!this.ride) return null;
+    return riderBanner({ ride: this.ride, view: this.view, now: Date.now(), live: this.live, searchSeats: this.search?.seats ?? 1, from: this.search?.from.name ?? null, to: this.search?.to.name ?? null });
+  }
+
+  /** W21: what ⋯ on the map offers; nothing while there is nothing to undo. */
+  get menuItems(): { label: string; sheet: 'cancel' | 'leave' }[] {
+    if (this.view === 'sent') return [{ label: 'Cancel request', sheet: 'cancel' }];
+    if (this.view === 'accepted' && this.ride?.status === 'published') return [{ label: 'Leave carpool', sheet: 'leave' }];
+    return [];
+  }
+
+  pick(item: { sheet: 'cancel' | 'leave' }): void {
+    this.menuOpen = false;
+    this.openSheet(item.sheet);
   }
 
   /** "Rajbagh to Nigeen" (the driver has their own card below). */
@@ -217,7 +273,7 @@ export class CarpoolRidePage implements OnDestroy {
       case 'accepted':
         return { icon: 'checkmark-circle', cls: 'ok', text: `${this.first} accepted your request` };
       case 'started':
-        return this.startedHead();
+        return liveHead(this.live, this.first, this.mine?.drop.name ?? '') ?? this.startedHead();
     }
     const grey = (text: string, small?: string): Head => ({ icon: 'close-circle-outline', cls: 'grey', text, small });
     switch (m?.state) {
@@ -377,6 +433,7 @@ export class CarpoolRidePage implements OnDestroy {
     if (!this.map) this.map = createMap(el);
     this.clear.forEach((c) => c());
     this.clear = [drawRide(this.map, toPath(this.ride.route_polyline), this.points, this.view === 'ended')];
+    if (this.live) this.setLive(this.live); // the map may be new: put the car back
   }
 
   // ── Carpool ban: rider ──

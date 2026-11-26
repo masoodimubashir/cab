@@ -7,6 +7,7 @@ import { DriverTypePage } from './driver-type.page';
 import { CarpoolSignupPage } from './carpool-signup.page';
 import { CarpoolStatusPage } from './carpool-status.page';
 import { CarpoolPlansPage } from './carpool-plans.page';
+import { CarpoolFixDocumentsPage } from './carpool-fix-documents.page';
 import { CarpoolSignupGuard } from './carpool-signup.guard';
 
 /**
@@ -20,10 +21,12 @@ const routes: Routes = [
   { path: 'details', component: CarpoolSignupPage, canActivate: [CarpoolSignupGuard] },
   { path: 'status', component: CarpoolStatusPage },
   { path: 'plans', component: CarpoolPlansPage },
+  // Fix documents from the status page: its own screen so Back returns to the status page.
+  { path: 'documents', component: CarpoolFixDocumentsPage },
 ];
 
 @NgModule({
   imports: [CommonModule, FormsModule, IonicModule, RouterModule.forChild(routes)],
-  declarations: [DriverTypePage, CarpoolSignupPage, CarpoolStatusPage, CarpoolPlansPage],
+  declarations: [DriverTypePage, CarpoolSignupPage, CarpoolStatusPage, CarpoolPlansPage, CarpoolFixDocumentsPage],
 })
 export class CarpoolSignupModule {}

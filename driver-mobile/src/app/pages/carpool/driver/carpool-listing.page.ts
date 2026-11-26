@@ -4,6 +4,9 @@ import { NavController } from '@ionic/angular';
 import { ApiService } from '../../../core/api.service';
 import { PlacesService } from '../../../core/places.service';
 import { CarpoolApiService } from '../carpool-api.service';
+import { CarpoolTrackerService } from './carpool-tracker.service';
+import { arrivedLine, noShowButton, waitedLine } from './carpool-wait';
+import { DriverBanner, driverBanner } from './driver-banner';
 import { CarpoolEditInput, CarpoolJoinRequest, CarpoolListing } from '../carpool.models';
 import { RouteOption, createMap, drawRoutes, fetchRouteOptions, loadCarpoolMaps, toPath } from './carpool-map';
 import { addDays, cancelReasonLabel, clock, daysFromToday, durationLabel, indiaDate, indiaIso, indiaTime, kmLabel, priceLabel, whenLabel } from './carpool-format';
@@ -84,6 +87,9 @@ export class CarpoolListingPage implements OnDestroy {
   private map: any = null;
   private clearDrawn: (() => void) | null = null;
   private timers: ReturnType<typeof setTimeout>[] = [];
+  /** L1.4: the clock for the wait at a pickup, and the reload that brings in arrivals. */
+  now = Date.now();
+  private rideClock: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private route: ActivatedRoute,
@@ -91,11 +97,13 @@ export class CarpoolListingPage implements OnDestroy {
     private carpool: CarpoolApiService,
     private places: PlacesService,
     private nav: NavController,
+    public tracker: CarpoolTrackerService,
   ) {}
 
   ionViewWillEnter(): void {
     this.id = Number(this.route.snapshot.paramMap.get('id'));
     this.load();
+    this.startRideClock();
     this.api.get<Me>('/drivers/me').subscribe({ next: (me) => (this.carSeats = me.driver?.carpool_vehicle?.seats ?? 6) });
     this.carpool.config().subscribe((c) => {
       this.horizonDays = c.publish_horizon_days ?? 30;
@@ -104,7 +112,101 @@ export class CarpoolListingPage implements OnDestroy {
     });
   }
 
+  ionViewWillLeave(): void {
+    this.stopRideClock();
+  }
+
+  /**
+   * L1.4 (9b, 10b): while the ride is on the road, ticks every second for the wait timers and reloads
+   * the riders every 15 s, so "Arrived · waiting" shows up when the car reaches a pickup.
+   */
+  startRideClock(): void {
+    this.stopRideClock();
+    let ticks = 0;
+    this.rideClock = setInterval(() => {
+      const st = this.listing?.status;
+      if (st !== 'in_progress' && st !== 'published') return;
+      this.now = Date.now(); // W21: the banner's countdown moves before the ride too
+      if (st === 'in_progress' && ++ticks % 15 === 0 && this.mode === 'view' && !this.busy) this.load();
+    }, 1000);
+  }
+
+  /** W21 (mockup "Ride banner, Driver"): the banner at the top of the page. */
+  get banner(): DriverBanner | null {
+    if (!this.listing) return null;
+    return driverBanner({ listing: this.listing, now: this.now, location: this.locationState, delayMsg: this.delayMsg, delayMinutes: this.delayMinutes, retentionDays: this.retentionDays });
+  }
+
+  private get locationState(): 'sharing' | 'starting' | 'off' | 'none' {
+    if (this.listing?.status !== 'in_progress') return 'none';
+    if (this.locationOff) return 'off';
+    const s = this.tracker.state;
+    return s === 'sharing' ? 'sharing' : s === 'starting' ? 'starting' : 'none';
+  }
+
+  /** The banner strip's button: +10 min, See the requests, Turn on location, or Complete. */
+  bannerAct(): void {
+    switch (this.banner?.act) {
+      case 'late': this.delay(); break;
+      case 'requests': void this.nav.navigateRoot('/carpool/inbox'); break;
+      case 'location': void this.turnOnLocation(); break;
+      case 'complete': this.completeRide(); break;
+    }
+  }
+
+  get bannerBusy(): boolean {
+    return this.delaying || this.completing;
+  }
+
+  /** The riders heading: before the ride it carries the seats, price and drive time (W21: no fact boxes). */
+  get ridersHeading(): string {
+    const l = this.listing;
+    if (!l || l.status !== 'published') return 'Riders, in pickup order';
+    return `${l.seats_taken} of ${l.seats_total} seats · ${l.is_free ? 'free' : '₹' + l.price_per_seat + ' a seat'} · ${this.drive} drive`;
+  }
+
+  /** On the road, the time on the right of a rider row and the word under it (W21). */
+  rowTime(r: CarpoolJoinRequest): { time: string; word: string; cls: string } {
+    switch (r.ride_state) {
+      case 'picked_up': return { time: clock(r.picked_up_at!), word: 'picked up', cls: 'ok' };
+      case 'dropped': return { time: clock(r.dropped_at!), word: 'dropped', cls: 'ok' };
+      case 'no_show': return { time: '—', word: 'no-show', cls: 'bad' };
+    }
+    const a = arrivedLine(r, this.now);
+    if (a) return { time: a.replace('Arrived · waiting ', ''), word: 'waiting', cls: 'go' };
+    return { time: clock(r.pickup.at), word: r === this.nextRider ? 'next' : 'pickup', cls: r === this.nextRider ? 'go' : '' };
+  }
+
+  /** "Complete ride unlocks…" only matters once everyone is in the car. */
+  get allIn(): boolean {
+    const rs = (this.listing?.riders ?? []).filter((r) => r.ride_state !== 'no_show');
+    return rs.length > 0 && rs.every((r) => r.ride_state !== 'waiting');
+  }
+
+  stopRideClock(): void {
+    if (this.rideClock) clearInterval(this.rideClock);
+    this.rideClock = null;
+  }
+
+  arrivedFor(r: CarpoolJoinRequest): string | null {
+    return arrivedLine(r, this.now);
+  }
+
+  noShowFor(r: CarpoolJoinRequest): { label: string; open: boolean } {
+    return noShowButton(r, this.now);
+  }
+
+  waitedFor(r: CarpoolJoinRequest): string | null {
+    return waitedLine(r, this.now);
+  }
+
+  /** True while an action on a rider is being saved, so a reload doesn't land in the middle of it. */
+  private get busy(): boolean {
+    return this.noShowing || this.removing || this.dropping;
+  }
+
   ngOnDestroy(): void {
+    this.stopRideClock();
     this.timers.forEach(clearTimeout);
     this.clearDrawn?.();
   }
@@ -116,6 +218,9 @@ export class CarpoolListingPage implements OnDestroy {
       next: (l) => {
         this.listing = l;
         this.loading = false;
+        this.now = Date.now();
+        if (this.rider) this.rider = l.riders?.find((x) => x.id === this.rider!.id) ?? this.rider; // keep an open sheet current
+        void this.tracker.follow(l); // L1.2: share the position while this carpool is on the road
         setTimeout(() => this.drawSaved());
       },
       error: () => {
@@ -138,6 +243,20 @@ export class CarpoolListingPage implements OnDestroy {
       case 'cancelled': return 'Cancelled';
       default: return 'Not started';
     }
+  }
+
+  /** L1.2 (9b): the header while on the road. */
+  get liveLabel(): string {
+    return this.tracker.state === 'sharing' ? 'Sharing location' : 'In progress';
+  }
+
+  /** L1.2 (9c): location refused or turned off during the ride. Not shown in the browser preview. */
+  get locationOff(): boolean {
+    return this.listing?.status === 'in_progress' && this.tracker.state === 'off' && this.tracker.offReason !== 'unsupported';
+  }
+
+  async turnOnLocation(): Promise<void> {
+    await this.tracker.turnOn();
   }
 
   get cancelLine(): string | null {
@@ -673,6 +792,7 @@ export class CarpoolListingPage implements OnDestroy {
     this.carpool.cancelListing(this.listing.id, note).subscribe({
       next: (l) => {
         this.listing = l;
+        void this.tracker.follow(l);
         this.cancelling = false;
         this.cancelled = true;
         this.later(() => {

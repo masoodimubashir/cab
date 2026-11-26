@@ -1,23 +1,22 @@
-<ion-header class="ion-no-border">
-  <ion-toolbar class="dc-toolbar">
-    <ion-buttons slot="start">
-      <ion-button (click)="back()" aria-label="Back"><ion-icon slot="icon-only" name="chevron-back"></ion-icon></ion-button>
-    </ion-buttons>
-    <ion-title>Carpool sign-up</ion-title>
-  </ion-toolbar>
+<ion-header class="ion-no-border nv-head">
+  <div class="nv-drop">
+    <div class="nv-top">
+      <button type="button" class="nv-back" aria-label="Back" (click)="back()"><ion-icon name="chevron-back-outline"></ion-icon></button>
+      <span class="nv-step">Step {{ step }} of 5</span>
+    </div>
+    <h1>{{ head.title }}</h1>
+    <p>{{ head.sub }}</p>
+    <div class="nv-bars" aria-hidden="true"><i *ngFor="let n of [1, 2, 3, 4, 5]" [class.on]="n <= step"></i></div>
+  </div>
 </ion-header>
 
-<ion-content [fullscreen]="true" class="dc-content cps">
+<ion-content [fullscreen]="false" class="dc-content cps">
   <div class="cps__wrap">
     <div class="cps__loading" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
 
     <ng-container *ngIf="!loading">
-      <p class="cps__step">Step {{ step }} of 5</p>
-
       <!-- Step 2: profile -->
       <section *ngIf="step === 2">
-        <h1 class="cps__title">Your profile</h1>
-        <p class="cps__sub">Riders see your photo and first name. Use a clear photo of your face.</p>
 
         <label class="cps-photo cps-photo--round" [class.has-photo]="photoPreview">
           <img *ngIf="photoPreview" [src]="photoPreview" alt="Your profile photo" />
@@ -33,8 +32,6 @@
 
       <!-- Step 3: city -->
       <section *ngIf="step === 3">
-        <h1 class="cps__title">Your city</h1>
-        <p class="cps__sub">Where you'll offer carpools.</p>
         <label class="cps-field">
           <span class="cps-field__label">Search</span>
           <input class="cps-field__input" type="search" [(ngModel)]="citySearch" placeholder="Type your city" autocomplete="off" />
@@ -52,8 +49,6 @@
 
       <!-- Step 4: car -->
       <section *ngIf="step === 4">
-        <h1 class="cps__title">Your car</h1>
-        <p class="cps__sub">The car you'll drive. It must be registered as private, not commercial.</p>
 
         <div class="cps-grid">
           <label class="cps-field">
@@ -102,8 +97,6 @@
 
       <!-- Step 5: documents -->
       <section *ngIf="step === 5">
-        <h1 class="cps__title">Your documents</h1>
-        <p class="cps__sub">We check every document by hand before you can publish.</p>
 
         <div class="cps-doc" *ngFor="let doc of docs">
           <h2 class="cps-doc__name">{{ doc.name }}</h2>
@@ -139,13 +132,16 @@
 
       <p class="cps__error" role="alert" *ngIf="error">{{ error }}</p>
 
-      <ion-button *ngIf="step < 5" expand="block" class="cps__cta" [disabled]="busy" (click)="next()">
-        <ion-spinner *ngIf="busy" name="crescent"></ion-spinner>
-        <span *ngIf="!busy">{{ step === 4 ? 'Save car and continue' : 'Continue' }}</span>
-      </ion-button>
-      <ion-button *ngIf="step === 5" expand="block" class="cps__cta" [disabled]="!allDocsUploaded" (click)="finish()">
-        Send for review
-      </ion-button>
     </ng-container>
   </div>
 </ion-content>
+
+<ion-footer class="ion-no-border nv-foot" *ngIf="!loading">
+  <div class="nv-dock">
+    <button *ngIf="step < 5" type="button" class="nv-go" [disabled]="busy" (click)="next()">
+      <ion-spinner *ngIf="busy" name="crescent"></ion-spinner>
+      <span *ngIf="!busy">{{ step === 4 ? 'Save car and continue' : 'Continue' }}</span>
+    </button>
+    <button *ngIf="step === 5" type="button" class="nv-go" [disabled]="!allDocsUploaded" (click)="finish()">Send for review</button>
+  </div>
+</ion-footer>

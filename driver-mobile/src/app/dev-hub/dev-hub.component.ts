@@ -2,7 +2,7 @@ import { ApplicationRef, Component, EnvironmentInjector, OnDestroy, OnInit, crea
 import { CommonModule } from '@angular/common';
 import { environment } from '../../environments/environment';
 import { DEV_HUB_CONFIG } from './dev-hub.config';
-import { clearScreen, fillScreen } from './dev-hub.autofill';
+import { clearScreen, fillPhotos, fillScreen } from './dev-hub.autofill';
 
 interface Person { key: string; label: string; role: string; phone: string }
 interface Scenario { key: string; role: string; label: string; hint: string }
@@ -47,24 +47,30 @@ const POS_KEY = 'dev_hub_dock';
         <div class="dh-body">
           <!-- This screen -->
           <ng-container *ngIf="tab === 'screen'">
-            <p class="dh-meta">Screen: <b>{{ route }}</b></p>
+            <div class="dh-screen">
+              <b>{{ screenName }}</b>
+              <span>{{ route }}</span>
+            </div>
+            <div class="dh-group dh-scn" *ngIf="suggestions.length">
+              <h3>Set this screen up</h3>
+              <p class="dh-hint" *ngIf="!signedIn">Sign in as a person first (People tab).</p>
+              <button *ngFor="let s of suggestions" type="button" class="dh-item" [disabled]="!signedIn" (click)="runScenario(s)">
+                <span class="t">{{ s.label }}</span><span>{{ s.hint }}</span>
+              </button>
+            </div>
             <div class="dh-group">
               <h3>Fill this screen</h3>
               <div class="dh-row">
-                <button type="button" class="dh-btn dark" (click)="fill(false)">Fill empty fields</button>
-                <button type="button" class="dh-btn" (click)="fill(true)">Fill all fields</button>
+                <button type="button" class="dh-btn dark" (click)="fillAll()">Fill everything</button>
+                <button type="button" class="dh-btn" (click)="fill(false)">Fill empty fields</button>
+                <button type="button" class="dh-btn" (click)="photos()">Fill photos</button>
+                <button type="button" class="dh-btn" (click)="fill(true)">Refill all fields</button>
                 <button type="button" class="dh-btn" (click)="clear()">Clear fields</button>
               </div>
               <div class="dh-row">
                 <button type="button" class="dh-btn" (click)="freshNumber()">New unused phone number</button>
               </div>
               <p class="dh-hint" *ngIf="phone">Test number <b>{{ phone }}</b>, code <b>123456</b>. It is filled into phone fields.</p>
-            </div>
-            <div class="dh-group" *ngIf="suggestions.length">
-              <h3>Useful here</h3>
-              <button *ngFor="let s of suggestions" type="button" class="dh-item" (click)="runScenario(s)">
-                <span class="t">{{ s.label }}</span><span>{{ s.hint }}</span>
-              </button>
             </div>
             <div class="dh-group">
               <button type="button" class="dh-btn" (click)="reload()">Reload this screen</button>
@@ -107,6 +113,14 @@ const POS_KEY = 'dev_hub_dock';
                 <button type="button" class="dh-btn" (click)="job('lifecycle')">Lifecycle</button>
                 <button type="button" class="dh-btn" (click)="job('expire-requests')">Expire requests</button>
                 <button type="button" class="dh-btn" (click)="job('prune-chats')">Delete old chats</button>
+              </div>
+            </div>
+            <div class="dh-group">
+              <h3>Simulate drive <span class="dh-tag">{{ autoDriving ? 'driving' : 'live car' }}</span></h3>
+              <div class="dh-row">
+                <button type="button" class="dh-btn" (click)="drive('step')">Move 300 m</button>
+                <button type="button" class="dh-btn" (click)="drive('pickup')">To next pickup</button>
+                <button type="button" class="dh-btn" (click)="toggleAuto()">{{ autoDriving ? 'Stop' : 'Auto, every 5 s' }}</button>
               </div>
             </div>
             <div class="dh-group">
@@ -157,6 +171,9 @@ const POS_KEY = 'dev_hub_dock';
     .dh-note { margin: 8px 16px 0; padding: 10px 12px; border-radius: 12px; background: #e7f7ee; color: #0b6b36; font-size: 13px; }
     .dh-note.is-err { background: #fde8e8; color: #a31d1d; }
     .dh-body { overflow-y: auto; padding: 8px 16px 18px; -webkit-overflow-scrolling: touch; }
+    .dh-screen { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 4px; padding: 12px 14px; border-radius: 14px; background: #0b131e; color: #fff; }
+    .dh-screen b { font-size: 16px; font-weight: 800; }
+    .dh-screen span { font-size: 12px; color: #b9c5d4; overflow-wrap: anywhere; }
     .dh-meta, .dh-hint { margin: 8px 4px; font-size: 13px; color: #5c6670; overflow-wrap: anywhere; }
     .dh-group { margin: 14px 0; }
     .dh-group h3 { margin: 0 4px 8px; font-size: 14px; font-weight: 800; }
@@ -205,10 +222,16 @@ export class DevHubComponent implements OnInit, OnDestroy {
   get base(): string { return environment.apiUrl.replace(/\/api\/?$/, ''); }
   get signedIn(): boolean { return !!localStorage.getItem(this.cfg.tokenKey); }
   get mine(): Person[] { return this.people.filter((p) => p.role === this.cfg.role); }
-  get suggestions(): Scenario[] {
-    const keys = this.cfg.suggest.find(([re]) => re.test(this.route))?.[1] ?? [];
+  /** The screen in plain words, from the address (dev-hub.config.ts). */
+  get screenName(): string {
+    return this.cfg.screens.find((s) => s.match.test(this.route))?.name ?? 'Screen not named in the hub yet';
+  }
 
-    return this.scenarios.filter((s) => keys.includes(s.key));
+  /** Scenarios that set this screen up, in the order the config lists them. */
+  get suggestions(): Scenario[] {
+    const keys = this.cfg.screens.find((s) => s.match.test(this.route))?.keys ?? [];
+
+    return keys.map((k) => this.scenarios.find((s) => s.key === k)).filter((s): s is Scenario => !!s);
   }
 
   ngOnInit(): void {
@@ -225,6 +248,7 @@ export class DevHubComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     removeEventListener('resize', this.onResize);
     if (this.routeTimer) clearInterval(this.routeTimer);
+    this.stopAuto();
   }
 
   // ---- dock ----
@@ -277,6 +301,8 @@ export class DevHubComponent implements OnInit, OnDestroy {
       this.armRetuck();
     } else {
       this.open = true;
+      this.tab = 'screen'; // always opens on what you are looking at
+      this.route = location.pathname;
       this.refresh();
     }
   }
@@ -346,6 +372,23 @@ export class DevHubComponent implements OnInit, OnDestroy {
     });
   }
 
+  async photos(): Promise<void> {
+    await this.guard(async () => {
+      const n = await fillPhotos();
+      this.say(n ? `Added ${n} test photo${n === 1 ? '' : 's'}.` : 'No empty photo slots on this screen.');
+    });
+  }
+
+  /** Fields, then photos, in one tap. */
+  async fillAll(): Promise<void> {
+    await this.guard(async () => {
+      if (!this.phone) this.phone = (await this.call('/fresh-number', 'POST')).phone;
+      const f = fillScreen({ phone: this.phone.replace(/^\+91/, '') }, false);
+      const p = await fillPhotos();
+      this.say(f || p ? `Filled ${f} field${f === 1 ? '' : 's'} and ${p} photo${p === 1 ? '' : 's'}.` : 'Nothing empty to fill on this screen.');
+    });
+  }
+
   clear(): void { const n = clearScreen(); this.say(n ? `Cleared ${n} field${n === 1 ? '' : 's'}.` : 'Nothing to clear.'); }
 
   async freshNumber(): Promise<void> {
@@ -365,7 +408,7 @@ export class DevHubComponent implements OnInit, OnDestroy {
       localStorage.setItem(this.cfg.tokenKey, r.token);
       localStorage.setItem(this.cfg.userKey, JSON.stringify(r.user));
       this.say(`Signed in as ${p.label}. Opening the app…`);
-      setTimeout(() => { location.href = '/splash'; }, 500);
+      setTimeout(() => { location.href = '/'; }, 500);
     });
   }
 
@@ -373,7 +416,7 @@ export class DevHubComponent implements OnInit, OnDestroy {
     localStorage.removeItem(this.cfg.tokenKey);
     localStorage.removeItem(this.cfg.userKey);
     this.say('Signed out. Opening the app…');
-    setTimeout(() => { location.href = '/splash'; }, 400);
+    setTimeout(() => { location.href = '/'; }, 400);
   }
 
   // ---- scenarios ----
@@ -381,6 +424,8 @@ export class DevHubComponent implements OnInit, OnDestroy {
   async runScenario(s: Scenario): Promise<void> {
     await this.guard(async () => {
       const r = await this.call('/scenario', 'POST', { key: s.key });
+      // "Approve me" should show the approved page again, which is otherwise shown once per phone.
+      if (s.key === 'd-approve-me') Object.keys(localStorage).filter((k) => k.startsWith('dc_cp_approved_seen_')).forEach((k) => localStorage.removeItem(k));
       this.say(`${r.message} Reloading…`);
       setTimeout(() => location.reload(), 900);
     });
@@ -394,6 +439,35 @@ export class DevHubComponent implements OnInit, OnDestroy {
       this.offset = r.time_offset_minutes;
       this.say(r.message);
     });
+  }
+
+  // ---- L1.6 Simulate drive: moves the car of the carpool on the road you drive or ride in ----
+
+  private autoTimer: ReturnType<typeof setInterval> | null = null;
+  get autoDriving(): boolean { return !!this.autoTimer; }
+
+  async drive(to: 'step' | 'pickup', metres = 300): Promise<void> {
+    await this.guard(async () => {
+      const msg: string = (await this.call('/drive', 'POST', { to, metres })).message;
+      this.say(msg);
+      if (/reached the end|No carpool/.test(msg)) this.stopAuto();
+    });
+  }
+
+  /** 150 m every 5 seconds (fast, about 108 km/h), so a 10 km route plays in under 6 minutes. */
+  toggleAuto(): void {
+    if (this.autoTimer) {
+      this.stopAuto();
+      this.say('Stopped driving.');
+      return;
+    }
+    this.autoTimer = setInterval(() => void this.drive('step', 150), 5000);
+    void this.drive('step', 150);
+  }
+
+  private stopAuto(): void {
+    if (this.autoTimer) clearInterval(this.autoTimer);
+    this.autoTimer = null;
   }
 
   async job(name: string): Promise<void> { await this.guard(async () => this.say((await this.call('/job', 'POST', { name })).message)); }
@@ -421,7 +495,7 @@ export class DevHubComponent implements OnInit, OnDestroy {
     sessionStorage.clear();
     if (keep) localStorage.setItem(POS_KEY, keep);
     this.say('Saved state cleared. Opening the app…');
-    setTimeout(() => { location.href = '/splash'; }, 500);
+    setTimeout(() => { location.href = '/'; }, 500);
   }
 }
 

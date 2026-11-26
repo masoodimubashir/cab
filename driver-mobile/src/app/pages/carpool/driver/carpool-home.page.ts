@@ -4,9 +4,10 @@ import { NavController } from '@ionic/angular';
 import { Subscription, forkJoin } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { ApiService } from '../../../core/api.service';
+import { CarpoolTrackerService } from './carpool-tracker.service';
 import { CarpoolApiService } from '../carpool-api.service';
 import { CarpoolDriverHome, CarpoolListing, CarpoolPlanState } from '../carpool.models';
-import { addDays, clock, dayLabel, documentBanner, greeting, indiaDate, priceLabel, shortDate } from './carpool-format';
+import { addDays, clock, dayLabel, documentBanner, greeting, indiaDate, priceLabel, shortDate, whenLabel } from './carpool-format';
 
 interface Me {
   user?: { name?: string };
@@ -42,6 +43,7 @@ export class CarpoolHomePage implements OnDestroy {
     private carpool: CarpoolApiService,
     private nav: NavController,
     private router: Router,
+    private tracker: CarpoolTrackerService,
   ) {
     // Reload on every arrival: Ionic skips ionViewWillEnter on tab pages when
     // coming back from Publish or the carpool page.
@@ -68,6 +70,7 @@ export class CarpoolHomePage implements OnDestroy {
         const v = me.driver?.carpool_vehicle;
         this.car = v ? `${v.colour} ${v.make} ${v.model}, ${v.plate}` : '';
         this.home = home;
+        if (home.next) void this.tracker.follow(home.next); // L1.2: picks sharing up again after the app restarts
         this.plan = plan;
         this.loading = false;
         done?.();
@@ -141,20 +144,15 @@ export class CarpoolHomePage implements OnDestroy {
   answered: 'accepted' | 'declined' | null = null;
   answerError: string | null = null;
 
-  /** "Leaves in 40 min", "Leaves today at 6:00 PM", "Leaves tomorrow at 6:00 PM", "Leaves Mon, 16 Nov at 7:00 AM". */
-  leavesLine(iso: string): string {
-    const mins = Math.round((Date.parse(iso) - Date.now()) / 60_000);
-    if (mins > 0 && mins <= 60) return `Leaves in ${mins} min`;
-    if (mins <= 0) return `Left at ${clock(iso)}`;
-    const day = dayLabel(indiaDate(new Date(iso)));
-    return `Leaves ${day === 'Today' || day === 'Tomorrow' ? day.toLowerCase() : day} at ${clock(iso)}`;
-  }
-
-  /** "2 seats · Free ride · Kashmir University to Bemina Bypass". */
-  requestMeta(r: CarpoolDriverHome['first_request']): string {
-    if (!r) return '';
-    const seats = `${r.seats} ${r.seats === 1 ? 'seat' : 'seats'}`;
-    return `${seats} · ${r.is_free ? 'Free ride' : `₹${r.total}`} · ${r.listing.start.name} to ${r.listing.end.name}`;
+  /** The join request card: the carpool route under the rider's name, then time, seats and price on one line. */
+  requestFacts(r: CarpoolDriverHome['first_request']): { route: string; when: string; seats: string; price: string } | null {
+    if (!r) return null;
+    return {
+      route: `${r.listing.start.name} to ${r.listing.end.name}`,
+      when: whenLabel(r.listing.departs_at),
+      seats: `${r.seats} ${r.seats === 1 ? 'seat' : 'seats'}`,
+      price: r.is_free ? 'Free ride' : `₹${r.total}`,
+    };
   }
 
   get moreLine(): string {
