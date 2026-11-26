@@ -387,14 +387,14 @@ class CarpoolRequestService
 
         $title = match ($listing->cancel_reason) {
             CarpoolListing::CANCEL_PLAN_ENDED => "Carpool cancelled: the driver's plan has ended",
-            CarpoolListing::CANCEL_ADMIN => 'Carpool cancelled by Dream Cabs',
+            CarpoolListing::CANCEL_ADMIN, CarpoolListing::CANCEL_DOCUMENTS => 'Carpool cancelled by Dream Cabs',
             CarpoolListing::CANCEL_MISSED => "Carpool cancelled: it wasn't started",
             default => $this->driverFirstName($listing) . ' cancelled the carpool',
         };
         try {
             app(CarpoolChatService::class)->listingCancelled($listing, 'Cancelled: ' . lcfirst(match ($listing->cancel_reason) {
                 CarpoolListing::CANCEL_PLAN_ENDED => "the driver's plan has ended",
-                CarpoolListing::CANCEL_ADMIN => 'by Dream Cabs',
+                CarpoolListing::CANCEL_ADMIN, CarpoolListing::CANCEL_DOCUMENTS => 'by Dream Cabs',
                 CarpoolListing::CANCEL_MISSED => "it wasn't started",
                 default => 'by the driver',
             }));

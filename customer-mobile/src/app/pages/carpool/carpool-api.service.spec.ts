@@ -13,6 +13,29 @@ describe('CarpoolApiService', () => {
     service = TestBed.inject(CarpoolApiService);
   });
 
+  it('sends a renewed document as a form with the photo and the date (S11)', (done) => {
+    const withForm = jasmine.createSpyObj<ApiService>('ApiService', ['get', 'post', 'patch', 'postForm']);
+    withForm.postForm.and.returnValue(of({ data: { id: 4, status: 'pending', expiry_date: '2027-06-30' } }) as any);
+    const svc = new CarpoolApiService(withForm);
+    svc.renewDocument(10, new Blob(['x'], { type: 'image/jpeg' }), '2027-06-30').subscribe((r) => {
+      const [path, form] = withForm.postForm.calls.mostRecent().args as [string, FormData];
+      expect(path).toBe('/carpool/driver/documents/10/renew');
+      expect(form.get('expiry_date')).toBe('2027-06-30');
+      expect(form.get('file')).toBeTruthy();
+      expect(r.status).toBe('pending');
+      done();
+    });
+  });
+
+  it('reads the driver documents summary (S11)', (done) => {
+    api.get.and.returnValue(of({ data: { valid_until: '2027-06-30', expired: false, warn: false, document_id: 10, name: 'Insurance', items: [] } }) as any);
+    service.driverDocuments().subscribe((d) => {
+      expect(api.get).toHaveBeenCalledWith('/carpool/driver/documents');
+      expect(d.valid_until).toBe('2027-06-30');
+      done();
+    });
+  });
+
   it('passes an enabled config through', (done) => {
     api.get.and.returnValue(of({ enabled: true, search_distance_m: 2000 }) as any);
     service.config().subscribe((c) => {

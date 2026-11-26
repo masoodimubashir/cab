@@ -49,6 +49,8 @@ class CarpoolListing extends Model
     public const CANCEL_MISSED = 'missed_departure';
     public const CANCEL_PLAN_ENDED = 'plan_ended';
     public const CANCEL_ADMIN = 'admin';
+    /** S11: a dated document ran out (riders are told "Cancelled by Dream Cabs"). */
+    public const CANCEL_DOCUMENTS = 'documents';
 
     /** Not started and not ended: what Home, the requests switch and the plan rule act on. */
     public const LIVE = [self::STATUS_PUBLISHED, self::STATUS_IN_PROGRESS];

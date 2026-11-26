@@ -107,7 +107,7 @@ class RiderController extends Controller
             'seats_total' => $listing->seats_total,
             'seats_free' => $free,
             'accepting_requests' => $listing->accepting_requests,
-            'cancel_reason' => $listing->cancel_reason,
+            'cancel_reason' => \App\Services\Carpool\CarpoolPresenter::riderCancelReason($listing->cancel_reason),
             'cancel_note' => $listing->cancel_note,
             'started_at' => $listing->started_at?->toIso8601String(),
             'completed_at' => $listing->completed_at?->toIso8601String(),
@@ -182,7 +182,7 @@ class RiderController extends Controller
                     'day' => CarpoolClock::daysFromToday($l->departs_at),
                     'start' => ['name' => $l->start_name],
                     'end' => ['name' => $l->end_name],
-                    'cancel_reason' => $l->cancel_reason,
+                    'cancel_reason' => \App\Services\Carpool\CarpoolPresenter::riderCancelReason($l->cancel_reason),
                 ],
                 'driver' => ['name' => $driver['name'], 'first_name' => $driver['first_name']],
             ];

@@ -354,6 +354,12 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::get('/people', [$people, 'index']);
         Route::get('/people/{user}', [$people, 'show']);
         Route::patch('/drivers/{driver}/car', [$c, 'editCar']);
+        $docs = \App\Http\Controllers\Admin\AdminCarpoolDocumentsController::class;
+        Route::post('/drivers/{driver}/documents/{document}/expiry', [$docs, 'setExpiry']);
+        Route::post('/drivers/{driver}/documents/{document}/allow-until', [$docs, 'allowUntil']);
+        Route::get('/document-renewals/{renewal}/file', [$docs, 'file']);
+        Route::post('/document-renewals/{renewal}/approve', [$docs, 'approve']);
+        Route::post('/document-renewals/{renewal}/reject', [$docs, 'reject']);
         Route::get('/plans', [$plans, 'index']);
         Route::post('/plans', [$plans, 'store']);
         Route::patch('/plans/{plan}', [$plans, 'update']);

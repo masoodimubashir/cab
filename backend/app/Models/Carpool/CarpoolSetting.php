@@ -27,7 +27,7 @@ class CarpoolSetting extends Model
     protected $fillable = [
         'enabled', 'search_distance_m', 'auto_complete_hours', 'chat_retention_days',
         'publish_horizon_days', 'start_early_minutes', 'pending_expire_minutes', 'plan_grace_days', 'missed_departure_days',
-        'plan_warning_days', 'plan_push_hours', 'report_retention_days',
+        'plan_warning_days', 'plan_push_hours', 'report_retention_days', 'document_warning_days',
     ];
 
     /**
@@ -50,6 +50,8 @@ class CarpoolSetting extends Model
         'plan_warning_days' => ['min' => 1, 'max' => 14, 'default' => 3, 'unit' => 'days', 'nullable' => false],
         // How many hours before a plan ends the reminder push goes out (once per plan; none when a plan is waiting).
         'plan_push_hours' => ['min' => 1, 'max' => 72, 'default' => 24, 'unit' => 'hours', 'nullable' => false],
+        // How many days before a dated document (insurance) runs out the driver is warned (S11).
+        'document_warning_days' => ['min' => 1, 'max' => 30, 'default' => 7, 'unit' => 'days', 'nullable' => false],
         // Closed reports keep the reported message text this long, then the text is blanked (the report stays).
         'report_retention_days' => ['min' => 30, 'max' => 730, 'default' => 180, 'unit' => 'days', 'nullable' => false],
     ];
@@ -65,7 +67,7 @@ class CarpoolSetting extends Model
             (bool) $this->enabled, (int) $this->search_distance_m, (int) $this->auto_complete_hours, (int) $this->chat_retention_days,
             (int) $this->publish_horizon_days, (int) $this->start_early_minutes, (int) $this->pending_expire_minutes,
             (int) $this->plan_grace_days, (int) $this->missed_departure_days,
-            (int) $this->plan_warning_days, (int) $this->plan_push_hours, (int) $this->report_retention_days,
+            (int) $this->plan_warning_days, (int) $this->plan_push_hours, (int) $this->report_retention_days, (int) $this->document_warning_days,
         ]));
     }
 
@@ -77,6 +79,7 @@ class CarpoolSetting extends Model
         'plan_grace_days' => 'carpool.plan_grace_days',
         'plan_warning_days' => 'carpool.plan_warning_days',
         'plan_push_hours' => 'carpool.plan_push_hours',
+        'document_warning_days' => 'carpool.document_warning_days',
         'report_retention_days' => 'carpool.report_retention_days',
     ];
 
@@ -92,6 +95,7 @@ class CarpoolSetting extends Model
         'missed_departure_days' => 'integer',
         'plan_warning_days' => 'integer',
         'plan_push_hours' => 'integer',
+        'document_warning_days' => 'integer',
         'report_retention_days' => 'integer',
     ];
 

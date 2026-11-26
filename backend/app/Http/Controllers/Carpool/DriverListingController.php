@@ -46,6 +46,7 @@ class DriverListingController extends Controller
             'banned' => \App\Services\Carpool\CarpoolAccess::blocked($request->user()),
             'next' => $next ? $this->shape($next) : null,
             'requests_on' => $this->listings->requestsOn($driver),
+            'documents' => app(\App\Services\Carpool\CarpoolDocuments::class)->summary($driver),
             'has_live' => CarpoolListing::query()->where('driver_id', $driver->id)
                 ->where('status', CarpoolListing::STATUS_PUBLISHED)->exists(),
             'recent' => $this->listings->recentFor($driver)->map(fn ($l) => [

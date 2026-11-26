@@ -6,7 +6,7 @@ import { filter } from 'rxjs/operators';
 import { ApiService } from '../../../core/api.service';
 import { CarpoolApiService } from '../carpool-api.service';
 import { CarpoolDriverHome, CarpoolListing, CarpoolPlanState } from '../carpool.models';
-import { addDays, clock, dayLabel, greeting, indiaDate, priceLabel, shortDate } from './carpool-format';
+import { addDays, clock, dayLabel, documentBanner, greeting, indiaDate, priceLabel, shortDate } from './carpool-format';
 
 interface Me {
   user?: { name?: string };
@@ -111,6 +111,15 @@ export class CarpoolHomePage implements OnDestroy {
 
   publish(): void {
     void this.nav.navigateForward('/carpool/publish');
+  }
+
+  /** S11: the dated-documents card (null when nothing to say). */
+  get docBanner(): { title: string; text: string } | null {
+    return documentBanner(this.home?.documents);
+  }
+
+  documents(): void {
+    void this.nav.navigateForward('/carpool/documents');
   }
 
   plans(): void {

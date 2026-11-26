@@ -15,6 +15,7 @@ const LIMITS = {
   missed_departure_days: { min: 0, max: 1, default: 0, unit: 'days', nullable: false },
   plan_warning_days: { min: 1, max: 14, default: 3, unit: 'days', nullable: false },
   plan_push_hours: { min: 1, max: 72, default: 24, unit: 'hours', nullable: false },
+  document_warning_days: { min: 1, max: 30, default: 7, unit: 'days', nullable: false },
   report_retention_days: { min: 30, max: 730, default: 180, unit: 'days', nullable: false },
 };
 
@@ -32,6 +33,7 @@ function settings(over: Record<string, unknown> = {}) {
     missed_departure_days: 0,
     plan_warning_days: 3,
     plan_push_hours: 24,
+    document_warning_days: 7,
     report_retention_days: 180,
     limits: LIMITS,
     upcoming_carpools: 0,
@@ -150,6 +152,13 @@ describe('CarpoolSettingsComponent', () => {
     c.f.plan_push_hours = 6;
     c.save();
     expect(api.patch).toHaveBeenCalledOnceWith('/admin/carpool/settings', { plan_push_hours: 6, version: 'v1' });
+  });
+
+  it('offers the document expiry warning days (S11)', () => {
+    open();
+    const keys = c.groups.find((g) => g.id === 'drivers-chats')!.rows.map((r) => r.key);
+    expect(keys).toContain('document_warning_days');
+    expect(c.tip('document_warning_days')).toContain('This setting');
   });
 
   it('sends the missed-departure choice as 0 or 1', () => {

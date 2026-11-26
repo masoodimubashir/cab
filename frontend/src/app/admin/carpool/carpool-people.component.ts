@@ -7,6 +7,7 @@ import { ToastService } from '../../core/toast.service';
 import { ColumnComponent, DataTableComponent, DrawerComponent, InputComponent, StatusPillComponent, ButtonComponent } from '../../ui';
 import { CarpoolAccessComponent } from './carpool-access.component';
 import { CarpoolCarEditComponent, CarpoolCar } from './carpool-car-edit.component';
+import { CarpoolDocItem, CarpoolDocumentsComponent } from './carpool-documents.component';
 import { CarpoolHistoryComponent, HistoryEntry } from './carpool-history.component';
 import {
   CARPOOL_ADMIN_STYLES, inDate, inTime, listingStatusLabel, listingStatusTone, reasonLabel, requestStatusLabel,
@@ -28,6 +29,7 @@ interface Person {
     car: (CarpoolCar & { front_photo_url: string | null }) | null;
     plan: { active_until: string | null; waiting: boolean; waiting_starts: string | null } | null;
     rating_avg: number | null; rating_count: number; comments: { score: number; comment: string; created_at: string }[];
+    documents?: CarpoolDocItem[];
   };
   counts: Record<string, number>;
   as_rider: { request_id: number; listing_id: number; route: string | null; departs_at: string | null; driver: string | null; seats: number; price_per_seat: number | null; paid_marked: boolean; status: string; closed_reason: string | null }[];
@@ -46,7 +48,7 @@ type Section = 'rider' | 'driver' | 'reports' | 'history';
 @Component({
   selector: 'app-carpool-people',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, ButtonComponent, ColumnComponent, DataTableComponent, DrawerComponent, InputComponent, StatusPillComponent, CarpoolAccessComponent, CarpoolCarEditComponent, CarpoolHistoryComponent],
+  imports: [CommonModule, FormsModule, RouterLink, ButtonComponent, ColumnComponent, DataTableComponent, DrawerComponent, InputComponent, StatusPillComponent, CarpoolAccessComponent, CarpoolCarEditComponent, CarpoolDocumentsComponent, CarpoolHistoryComponent],
   template: `
     <div class="page">
       <header>
@@ -119,6 +121,8 @@ type Section = 'rider' | 'driver' | 'reports' | 'history';
           </dl>
           <img *ngIf="d.car?.front_photo_url" [src]="d.car!.front_photo_url" alt="Front of the car" class="carphoto" />
         </ng-container>
+
+        <app-carpool-documents *ngIf="p.driver" [driverId]="p.driver.id" [items]="p.driver.documents ?? []" (changed)="reopen()"></app-carpool-documents>
 
         <app-carpool-access [userId]="p.id" [banned]="p.banned" [reason]="p.ban_reason" [showSummaryLink]="false" (changed)="reopen()"></app-carpool-access>
 

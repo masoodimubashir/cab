@@ -173,6 +173,7 @@ class AdminCarpoolController
             CarpoolListing::CANCEL_PLAN_ENDED => 'plan ended',
             CarpoolListing::CANCEL_MISSED => 'missed departure',
             CarpoolListing::CANCEL_ADMIN => 'by Dream Cabs',
+            CarpoolListing::CANCEL_DOCUMENTS => 'document expired',
             default => 'by the driver',
         };
     }
@@ -505,6 +506,7 @@ class AdminCarpoolController
             'missed_departure_days' => CarpoolSetting::missedDepartureDays(),
             'plan_warning_days' => CarpoolSetting::number('plan_warning_days'),
             'plan_push_hours' => CarpoolSetting::number('plan_push_hours'),
+            'document_warning_days' => CarpoolSetting::number('document_warning_days'),
             'report_retention_days' => CarpoolSetting::number('report_retention_days'),
             'limits' => CarpoolSetting::LIMITS,
             'upcoming_carpools' => CarpoolListing::query()->where('status', CarpoolListing::STATUS_PUBLISHED)->count(),

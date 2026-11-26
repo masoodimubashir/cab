@@ -116,7 +116,7 @@ export function requestStatusLabel(r: { status: string; closed_reason: string | 
   return s[r.status] ?? r.status;
 }
 
-const CANCEL: Record<string, string> = { driver: 'Driver', plan_ended: 'Plan ended', missed_departure: 'Missed departure', admin: 'Dream Cabs' };
+const CANCEL: Record<string, string> = { driver: 'Driver', plan_ended: 'Plan ended', missed_departure: 'Missed departure', admin: 'Dream Cabs', documents: 'Document expired' };
 
 export function listingStatusLabel(status: string, cancelReason: string | null): string {
   switch (status) {

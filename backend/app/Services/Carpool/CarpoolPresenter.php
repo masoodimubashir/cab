@@ -17,6 +17,12 @@ use Illuminate\Support\Facades\Storage;
  */
 class CarpoolPresenter
 {
+    /** Riders never learn about the driver's paperwork: a document cancel shows as a Dream Cabs cancel (S11, R6). */
+    public static function riderCancelReason(?string $reason): ?string
+    {
+        return $reason === \App\Models\Carpool\CarpoolListing::CANCEL_DOCUMENTS ? \App\Models\Carpool\CarpoolListing::CANCEL_ADMIN : $reason;
+    }
+
     /** @return array<string, mixed> */
     public function place(CarpoolListing $l, string $p): array
     {

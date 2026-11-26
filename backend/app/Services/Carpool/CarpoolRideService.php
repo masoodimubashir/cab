@@ -298,6 +298,29 @@ class CarpoolRideService
      * ("plan ended"). They don't come back when the driver renews. A running
      * or waiting plan means nothing to do.
      */
+    /**
+     * S11 (D-12, choice B1): once a driver's last valid document day is over, their published carpools departing
+     * after that day are cancelled. Carpools up to that day and carpools on the road are left alone.
+     */
+    public function applyDocuments(): int
+    {
+        $due = collect();
+        foreach (app(CarpoolDocuments::class)->overdueDrivers() as $driverId => $limit) {
+            $cutoff = CarpoolClock::endOfDay($limit['valid_until']);
+            $ids = CarpoolListing::query()->where('driver_id', $driverId)->where('status', CarpoolListing::STATUS_PUBLISHED)
+                ->where('departs_at', '>', $cutoff)->pluck('id');
+            foreach ($ids as $id) {
+                $due->push($id);
+                $this->documentNames[$id] = $limit['name'];
+            }
+        }
+
+        return $this->cancelListings($due, CarpoolListing::CANCEL_DOCUMENTS);
+    }
+
+    /** @var array<int, string> listing id => document name, for the driver's cancel message */
+    private array $documentNames = [];
+
     public function applyGrace(): int
     {
         $due = collect();
@@ -398,7 +421,11 @@ class CarpoolRideService
             });
             if ($l) {
                 $this->requests->listingCancelled($l);
-                $why = $reason === CarpoolListing::CANCEL_MISSED ? " It wasn't started in time." : ' Your plan has ended.';
+                $why = match ($reason) {
+                    CarpoolListing::CANCEL_MISSED => " It wasn't started in time.",
+                    CarpoolListing::CANCEL_DOCUMENTS => ' Your ' . ($this->documentNames[$l->id] ?? 'document') . ' has expired. Renew it in the app.',
+                    default => ' Your plan has ended.',
+                };
                 $this->notify($l->driver?->user_id, 'carpool_cancelled', 'Your carpool was cancelled',
                     $this->route($l) . ', ' . $this->present->when($l->departs_at) . '.' . $why, $l, null);
                 $n++;

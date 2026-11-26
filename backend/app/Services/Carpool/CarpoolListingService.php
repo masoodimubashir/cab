@@ -60,6 +60,7 @@ class CarpoolListingService
 
         $departs = $this->departure($data['departs_at']);
         $this->assertPlanCovers($user, $departs);
+        app(CarpoolDocuments::class)->assertCovers($driver, $departs);
 
         $seatsMax = (int) $driver->carpoolVehicle->seats;
         if ((int) $data['seats'] > $seatsMax) {
@@ -113,6 +114,7 @@ class CarpoolListingService
                 $departs = $this->departure($data['departs_at']);
                 if (! $departs->equalTo($listing->departs_at)) {
                     $this->assertPlanCovers($user, $departs);
+                    app(CarpoolDocuments::class)->assertCovers($driver, $departs);
                 }
                 $listing->departs_at = $departs;
                 if (! $departs->equalTo($wasAt)) {

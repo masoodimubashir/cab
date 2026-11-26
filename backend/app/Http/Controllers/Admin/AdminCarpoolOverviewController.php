@@ -95,6 +95,7 @@ class AdminCarpoolOverviewController
                     'missed_departure' => $cancelled->where('cancel_reason', CarpoolListing::CANCEL_MISSED)->count(),
                     'plan_ended' => $cancelled->where('cancel_reason', CarpoolListing::CANCEL_PLAN_ENDED)->count(),
                     'admin' => $cancelled->where('cancel_reason', CarpoolListing::CANCEL_ADMIN)->count(),
+                    'documents' => $cancelled->where('cancel_reason', CarpoolListing::CANCEL_DOCUMENTS)->count(),
                 ],
                 'still_open' => $departing->whereIn('status', CarpoolListing::LIVE)->count(),
                 'published_in_period' => $listings()->where('created_at', '>=', $start)->where('created_at', '<', $end)->count(),

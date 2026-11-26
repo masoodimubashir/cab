@@ -9,6 +9,7 @@ import {
   CarpoolChatThread,
   CarpoolCodeCheck,
   CarpoolConfig,
+  CarpoolDocumentsSummary,
   CarpoolDriverHome,
   CarpoolEditInput,
   CarpoolInbox,
@@ -242,6 +243,21 @@ export class CarpoolApiService {
     const form = new FormData();
     form.append('photo', photo, fileName);
     return this.api.postForm('/carpool/rider/photo', form);
+  }
+
+  /* ── S11: dated documents (driver app) ── */
+
+  driverDocuments(): Observable<CarpoolDocumentsSummary> {
+    return this.api.get<{ data: CarpoolDocumentsSummary }>('/carpool/driver/documents').pipe(map((r) => r.data));
+  }
+
+  /** A renewed copy (photo and the new expiry date) for Dream Cabs to check. */
+  renewDocument(documentId: number, photo: Blob, expiryDate: string, fileName = 'document.jpg'): Observable<{ id: number; status: string; expiry_date: string }> {
+    const form = new FormData();
+    form.append('file', photo, fileName);
+    form.append('expiry_date', expiryDate);
+    return this.api.postForm<{ data: { id: number; status: string; expiry_date: string } }>(`/carpool/driver/documents/${documentId}/renew`, form)
+      .pipe(map((r) => r.data));
   }
 
   /* ── M5: chat (both apps) ── */

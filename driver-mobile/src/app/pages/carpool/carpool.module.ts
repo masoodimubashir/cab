@@ -10,6 +10,7 @@ import { CarpoolListPage } from './driver/carpool-list.page';
 import { CarpoolInboxPage } from './driver/carpool-inbox.page';
 import { CarpoolProfilePage } from './driver/carpool-profile.page';
 import { CarpoolPublishPage } from './driver/carpool-publish.page';
+import { CarpoolDocumentsPage } from './driver/carpool-documents.page';
 import { CarpoolListingPage } from './driver/carpool-listing.page';
 import { CarpoolCodePage } from './driver/carpool-code.page';
 import { CarpoolRiderPage } from './driver/carpool-rider.page';
@@ -41,6 +42,7 @@ function loadCarpoolFont(): void {
     CarpoolInboxPage,
     CarpoolProfilePage,
     CarpoolPublishPage,
+    CarpoolDocumentsPage,
     CarpoolListingPage,
     CarpoolRiderPage,
     CarpoolCodePage,

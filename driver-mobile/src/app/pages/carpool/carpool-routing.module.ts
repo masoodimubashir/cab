@@ -11,6 +11,7 @@ import { CarpoolCodePage } from './driver/carpool-code.page';
 import { CarpoolRiderPage } from './driver/carpool-rider.page';
 import { CarpoolChatPage } from './chat/carpool-chat.page';
 import { CarpoolPickupPage } from './driver/carpool-pickup.page';
+import { CarpoolDocumentsPage } from './driver/carpool-documents.page';
 import { CarpoolDriverGuard } from './driver/carpool-driver.guard';
 
 /**
@@ -33,6 +34,7 @@ const routes: Routes = [
     ],
   },
   { path: 'publish', component: CarpoolPublishPage, canActivate: [CarpoolDriverGuard] },
+  { path: 'documents', component: CarpoolDocumentsPage, canActivate: [CarpoolDriverGuard] },
   { path: 'listing/:id', component: CarpoolListingPage, canActivate: [CarpoolDriverGuard] },
   { path: 'chat/:id', component: CarpoolChatPage, canActivate: [CarpoolDriverGuard] },
   { path: 'chat/:id/pickup', component: CarpoolPickupPage, canActivate: [CarpoolDriverGuard] },

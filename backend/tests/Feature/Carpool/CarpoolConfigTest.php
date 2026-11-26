@@ -22,6 +22,7 @@ class CarpoolConfigTest extends TestCase
             'publish_horizon_days' => 30,
             'plan_warning_days' => 3,
             'plan_push_hours' => 24,
+            'document_warning_days' => 7,
             'pickup_max_distance_m' => 300,
             'message_max_chars' => 1000,
             'messages_per_minute' => 20,
@@ -57,6 +58,7 @@ class CarpoolConfigTest extends TestCase
                 'plan_grace_days' => 1, 'missed_departure_days' => 0,
                 'plan_warning_days' => 3, // admin setting since 2026-11-25, same value as before
                 'plan_push_hours' => 24, // W4: the shared push used 24 hours before
+                'document_warning_days' => 7, // S11
                 'report_retention_days' => 180,
             ],
             config('carpool.defaults')

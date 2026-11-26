@@ -36,6 +36,8 @@ class CarpoolLifecycle extends Command
             'Rides auto-completed' => fn () => $rides->autoComplete(),
             'Cancelled by the grace rule' => fn () => $rides->applyGrace(),
             'Plan ending reminders sent' => fn () => $plans->notifyEnding(),
+            'Cancelled after a document expired' => fn () => $rides->applyDocuments(),
+            'Document expiry warnings sent' => fn () => app(\App\Services\Carpool\CarpoolDocuments::class)->warnExpiring(),
         ];
         foreach ($steps as $label => $step) {
             try {

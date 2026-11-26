@@ -67,6 +67,13 @@
         <ion-icon class="muted" name="chevron-forward-outline" style="font-size: 18px"></ion-icon>
       </button>
 
+      <!-- S11, mockup "Home, insurance ending": dated documents running out, expired, or a renewal being checked. -->
+      <button class="warn-card" *ngIf="docBanner as b" (click)="documents()">
+        <ion-icon class="warn-i" name="document-text-outline"></ion-icon>
+        <span class="grow"><span class="d-title">{{ b.title }}</span><br><span class="t13 muted">{{ b.text }}</span></span>
+        <ion-icon class="muted" name="chevron-forward-outline" style="font-size: 18px"></ion-icon>
+      </button>
+
       <!-- Mockup 2: "Waiting for you" + count while requests wait. Mockup "Home, plan ending": "Requests" with none waiting. -->
       <ng-container *ngIf="plan.can_publish || home.next || home.waiting">
         <div class="hm-sec">

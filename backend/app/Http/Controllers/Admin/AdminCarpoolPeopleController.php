@@ -181,6 +181,7 @@ class AdminCarpoolPeopleController
                     'front_photo_url' => $car->front_photo_path ? Storage::disk('public')->url($car->front_photo_path) : null,
                 ] : null,
                 'plan' => $plan,
+                'documents' => app(\App\Services\Carpool\CarpoolDocuments::class)->items($driver),
                 'rating_avg' => $rating['avg'] ?? null,
                 'rating_count' => $rating['count'] ?? 0,
                 'comments' => CarpoolRating::query()->where('rated_id', $user->id)->whereNotNull('comment')->orderByDesc('id')->limit(10)

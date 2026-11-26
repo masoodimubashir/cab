@@ -74,6 +74,7 @@ class CarpoolAnonymiser
             }
             if ($driver) {
                 $this->scrubCarpoolDriver($driver);
+                app(CarpoolDocuments::class)->forget($driver);
             }
             $this->sweepAccountRows($user, $driver !== null);
             $this->scrubUser($user, $reason);

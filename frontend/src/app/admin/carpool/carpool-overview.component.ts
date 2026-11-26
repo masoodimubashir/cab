@@ -14,7 +14,7 @@ interface Overview {
   from: string; to: string;
   carpools: {
     departing: number; completed: number; with_riders: number; auto_completed: number; ended_by_admin: number; cancelled: number;
-    cancelled_by: { driver: number; missed_departure: number; plan_ended: number; admin: number }; still_open: number; published_in_period: number;
+    cancelled_by: { driver: number; missed_departure: number; plan_ended: number; admin: number; documents?: number }; still_open: number; published_in_period: number;
   };
   seats: { offered: number; filled: number };
   riders: { requests: number; accepted: number; carried: number; unique_riders: number; no_shows: number; not_confirmed: number };
@@ -188,6 +188,7 @@ type Preset = '7' | '30' | '90' | 'custom';
     .split__p--missed { background: var(--tm-warning, #d97706); }
     .split__p--plan { background: var(--tm-info, #2563eb); }
     .split__p--admin { background: var(--tm-danger); }
+    .split__p--docs { background: #7c3aed; }
     .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
     .foot { margin: 0; font-size: 12px; color: var(--tm-text-muted); line-height: 1.45; }
     @media (max-width: 1280px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -272,6 +273,7 @@ export class CarpoolOverviewComponent implements OnInit {
       { key: 'missed', label: 'Missed departure', n: c.missed_departure },
       { key: 'plan', label: 'Plan ended', n: c.plan_ended },
       { key: 'admin', label: 'By Dream Cabs', n: c.admin },
+      { key: 'docs', label: 'Document expired', n: c.documents ?? 0 },
     ];
   }
 

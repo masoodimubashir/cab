@@ -1,3 +1,4 @@
+import type { CarpoolDocumentsSummary } from '../carpool.models';
 import { CarpoolListing } from '../carpool.models';
 
 /**
@@ -97,8 +98,23 @@ export function cancelReasonLabel(l: CarpoolListing): string | null {
     case 'missed_departure': return 'Not started';
     case 'plan_ended': return "Cancelled: your plan had ended";
     case 'admin': return 'Cancelled by Dream Cabs';
+    case 'documents': return 'Cancelled: a document had expired';
     default: return l.status === 'published' ? 'Not started' : null;
   }
+}
+
+/** S11: the Home card for dated documents (mockup "Home, insurance ending"), or null when there is nothing to say. */
+export function documentBanner(d: CarpoolDocumentsSummary | undefined | null): { title: string; text: string } | null {
+  if (!d) return null;
+  const rejected = d.items.find((i) => i.renewal?.status === 'rejected');
+  if (rejected) return { title: `New ${rejected.name} not accepted`, text: `${rejected.renewal!.reason}. Please send it again.` };
+  const pending = d.items.find((i) => i.renewal?.status === 'pending');
+  if (pending) return { title: `New ${pending.name} sent`, text: 'Dream Cabs is checking it. You can publish up to your current date.' };
+  if (!d.valid_until || !d.name) return null;
+  const day = new Date(d.valid_until + 'T12:00:00+05:30').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
+  if (d.expired) return { title: `Your ${d.name} has expired`, text: 'Renew it to publish carpools again.' };
+  if (d.warn) return { title: `Your ${d.name} ends on ${day}`, text: `Carpools after ${day} will be cancelled. Renew it now.` };
+  return null;
 }
 
 /** "Good morning" by India time. */

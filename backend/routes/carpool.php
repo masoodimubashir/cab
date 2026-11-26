@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Carpool\ChatController;
 use App\Http\Controllers\Carpool\ConfigController;
+use App\Http\Controllers\Carpool\DriverDocumentController;
 use App\Http\Controllers\Carpool\DriverListingController;
 use App\Http\Controllers\Carpool\DriverRegistrationController;
 use App\Http\Controllers\Carpool\DriverRequestController;
@@ -32,6 +33,9 @@ Route::middleware('carpool.enabled')->group(function () {
     // and cancels of existing carpools keep working when either is off (A36).
     Route::prefix('/driver')->group(function () {
         Route::get('/home', [DriverListingController::class, 'home']);
+// S11: dated documents and renewals (choice A1).
+Route::get('/documents', [DriverDocumentController::class, 'index']);
+Route::post('/documents/{document}/renew', [DriverDocumentController::class, 'renew']);
         Route::post('/requests', [DriverListingController::class, 'requests']);
         Route::get('/listings', [DriverListingController::class, 'index']);
         Route::post('/listings', [DriverListingController::class, 'store'])->middleware('throttle:carpool-write');

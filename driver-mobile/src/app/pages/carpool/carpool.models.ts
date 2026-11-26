@@ -109,7 +109,8 @@ export interface CarpoolListing {
   price_per_seat: number;
   is_free: boolean;
   accepting_requests: boolean;
-  cancel_reason: 'driver' | 'missed_departure' | 'plan_ended' | 'admin' | null;
+  /** 'documents' (S11) reaches the driver only; riders get 'admin' for it. */
+  cancel_reason: 'driver' | 'missed_departure' | 'plan_ended' | 'admin' | 'documents' | null;
   cancel_note: string | null;
   can_edit: boolean;
   /** M6: the ride. */
@@ -164,6 +165,30 @@ export interface CarpoolDriverHome {
   waiting: number;
   first_request: (CarpoolJoinRequest & { listing: CarpoolListingSummary }) | null;
   more: { count: number; routes: string[] };
+  /** S11: dated documents (insurance). Missing on older servers. */
+  documents?: CarpoolDocumentsSummary;
+}
+
+/** S11: a dated carpool document and any renewed copy the driver sent. Dates are India days (YYYY-MM-DD). */
+export interface CarpoolDocumentItem {
+  document_id: number;
+  name: string;
+  expires_on: string | null;
+  /** The last day the driver can publish for; null = no limit. */
+  valid_until: string | null;
+  expired: boolean;
+  renewal: null | { id: number; status: 'pending' | 'rejected'; expiry_date: string; reason: string | null; sent_at: string | null };
+}
+
+/** GET /api/carpool/driver/documents, and `documents` on the driver home. */
+export interface CarpoolDocumentsSummary {
+  valid_until: string | null;
+  expired: boolean;
+  /** Within the admin's warning days of the last valid day, and no renewal waiting. */
+  warn: boolean;
+  document_id: number | null;
+  name: string | null;
+  items: CarpoolDocumentItem[];
 }
 
 export type CarpoolListFilter = 'upcoming' | 'today' | 'past';
