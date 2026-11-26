@@ -18,4 +18,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/time', [DevHubController::class, 'time']);
     Route::post('/job', [DevHubController::class, 'job']);
     Route::post('/switch', [DevHubController::class, 'switch']);
+    Route::post('/drive', [DevHubController::class, 'drive']);
 });

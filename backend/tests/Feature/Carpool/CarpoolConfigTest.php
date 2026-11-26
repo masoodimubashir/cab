@@ -23,6 +23,9 @@ class CarpoolConfigTest extends TestCase
             'plan_warning_days' => 3,
             'plan_push_hours' => 24,
             'document_warning_days' => 7,
+            'no_show_wait_minutes' => 5, // L1
+            'arrival_radius_m' => 100,
+            'position_retention_days' => 1,
             'pickup_max_distance_m' => 300,
             'message_max_chars' => 1000,
             'messages_per_minute' => 20,
@@ -60,6 +63,7 @@ class CarpoolConfigTest extends TestCase
                 'plan_push_hours' => 24, // W4: the shared push used 24 hours before
                 'document_warning_days' => 7, // S11
                 'report_retention_days' => 180,
+                'no_show_wait_minutes' => 5, 'arrival_radius_m' => 100, 'position_retention_days' => 1, // L1
             ],
             config('carpool.defaults')
         );

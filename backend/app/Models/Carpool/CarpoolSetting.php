@@ -28,6 +28,7 @@ class CarpoolSetting extends Model
         'enabled', 'search_distance_m', 'auto_complete_hours', 'chat_retention_days',
         'publish_horizon_days', 'start_early_minutes', 'pending_expire_minutes', 'plan_grace_days', 'missed_departure_days',
         'plan_warning_days', 'plan_push_hours', 'report_retention_days', 'document_warning_days',
+        'no_show_wait_minutes', 'arrival_radius_m', 'position_retention_days',
     ];
 
     /**
@@ -54,6 +55,10 @@ class CarpoolSetting extends Model
         'document_warning_days' => ['min' => 1, 'max' => 30, 'default' => 7, 'unit' => 'days', 'nullable' => false],
         // Closed reports keep the reported message text this long, then the text is blanked (the report stays).
         'report_retention_days' => ['min' => 30, 'max' => 730, 'default' => 180, 'unit' => 'days', 'nullable' => false],
+        // L1 live location: wait at a pickup before No-show opens, how close counts as arrived, how long positions are kept.
+        'no_show_wait_minutes' => ['min' => 1, 'max' => 30, 'default' => 5, 'unit' => 'minutes', 'nullable' => false],
+        'arrival_radius_m' => ['min' => 30, 'max' => 500, 'default' => 100, 'unit' => 'metres', 'nullable' => false],
+        'position_retention_days' => ['min' => 1, 'max' => 30, 'default' => 1, 'unit' => 'days', 'nullable' => false],
     ];
 
     /**
@@ -68,6 +73,7 @@ class CarpoolSetting extends Model
             (int) $this->publish_horizon_days, (int) $this->start_early_minutes, (int) $this->pending_expire_minutes,
             (int) $this->plan_grace_days, (int) $this->missed_departure_days,
             (int) $this->plan_warning_days, (int) $this->plan_push_hours, (int) $this->report_retention_days, (int) $this->document_warning_days,
+            (int) $this->no_show_wait_minutes, (int) $this->arrival_radius_m, (int) $this->position_retention_days,
         ]));
     }
 
@@ -81,6 +87,9 @@ class CarpoolSetting extends Model
         'plan_push_hours' => 'carpool.plan_push_hours',
         'document_warning_days' => 'carpool.document_warning_days',
         'report_retention_days' => 'carpool.report_retention_days',
+        'no_show_wait_minutes' => 'carpool.no_show_wait_minutes',
+        'arrival_radius_m' => 'carpool.arrival_radius_m',
+        'position_retention_days' => 'carpool.position_retention_days',
     ];
 
     protected $casts = [
@@ -97,6 +106,9 @@ class CarpoolSetting extends Model
         'plan_push_hours' => 'integer',
         'document_warning_days' => 'integer',
         'report_retention_days' => 'integer',
+        'no_show_wait_minutes' => 'integer',
+        'arrival_radius_m' => 'integer',
+        'position_retention_days' => 'integer',
     ];
 
     protected static function booted(): void

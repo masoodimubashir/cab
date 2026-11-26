@@ -171,6 +171,8 @@ class CarpoolRideService
             $l = CarpoolListing::query()->lockForUpdate()->findOrFail($request->listing_id);
             $r = CarpoolRequest::query()->lockForUpdate()->findOrFail($request->id);
             $this->assertWaiting($r);
+            // L1.4: while the location is shared, No-show opens only after the wait at the pickup.
+            app(CarpoolTracking::class)->assertNoShowOpen($r);
             $r->status = CarpoolRequest::STATUS_NO_SHOW;
             $r->no_show_at = now();
             $r->ended_at = now();

@@ -13,6 +13,8 @@ use App\Models\DriverSubscription;
 use App\Models\SubscriptionPlan;
 use App\Models\User;
 use App\Services\Carpool\CarpoolChatService;
+use App\Services\Carpool\CarpoolTracking;
+use App\Services\Carpool\RouteGeometry;
 use Database\Seeders\CarpoolDemoSeeder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -149,6 +151,8 @@ class DevHub
             $car->driver_id = $driver->id;
             $car->fill(['make' => 'Tata', 'model' => 'Nexon', 'colour' => 'Blue', 'seats' => 4, 'plate' => $plate])->save();
             $this->avatar($user, 'driver-' . $key);
+            // Documents that match the state, so the status page counts them like a real sign-up.
+            $this->documents($driver, match ($state) { 'pending' => 'sent', 'rejected' => 'fix', default => 'approved' });
         }
         if (str_contains($state, 'plan')) {
             $this->plan($user, $state === 'plan-ending' ? 2 : 30);
@@ -196,6 +200,53 @@ class DevHub
         $user->forceFill(['avatar_path' => $path])->save();
     }
 
+    /**
+     * Puts a carpool driver's documents in one state: 'sent' (all waiting to be checked),
+     * 'fix' (one image rejected as blurry, one document not sent, the rest approved) or
+     * 'approved'. Makes the four carpool documents first on a database that has none.
+     */
+    public function documents(Driver $driver, string $state): void
+    {
+        $docs = \App\Models\Document::query()->forDrivers()->forDriverType(Driver::TYPE_CARPOOL)
+            ->whereIn('required', ['mandatory_register', 'mandatory_drive'])->orderBy('id')->get();
+        if ($docs->isEmpty()) {
+            foreach (['Driving licence (carpool)' => 2, 'Vehicle RC (carpool)' => 2, 'Insurance (carpool)' => 1, 'Government ID (carpool)' => 2] as $name => $images) {
+                $docs->push(\App\Models\Document::query()->create([
+                    'name' => $name, 'category' => 'driver_document', 'required' => 'mandatory_register',
+                    'applies_to' => Driver::TYPE_CARPOOL, 'no_of_images' => $images,
+                ]));
+            }
+        }
+        \App\Models\DriverDocument::query()->where('driver_id', $driver->id)->delete();
+        $path = 'dev-hub/document.png';
+        if (! Storage::disk('local')->exists($path) && function_exists('imagecreatetruecolor')) {
+            $img = imagecreatetruecolor(320, 200);
+            imagefill($img, 0, 0, imagecolorallocate($img, 226, 236, 230));
+            ob_start();
+            imagepng($img);
+            Storage::disk('local')->put($path, (string) ob_get_clean());
+        }
+        foreach ($docs->values() as $i => $doc) {
+            $last = $i === $docs->count() - 1;
+            if ($state === 'fix' && $last) {
+                continue; // not sent
+            }
+            $labels = $doc->labels()->exists() ? $doc->labels()->pluck('label')->mapWithKeys(fn ($l) => [$l => now()->addYear()->toDateString()])->all() : null;
+            for ($n = 1; $n <= max(1, (int) $doc->no_of_images); $n++) {
+                $status = match ($state) {
+                    'sent' => 'uploaded',
+                    'fix' => ($i === 1 && $n === 1) ? 'rejected' : 'approved',
+                    default => 'approved',
+                };
+                \App\Models\DriverDocument::query()->create([
+                    'driver_id' => $driver->id, 'document_id' => $doc->id, 'image_index' => $n,
+                    'file_path' => $path, 'label_values' => $labels, 'status' => $status,
+                    'rejection_reason' => $status === 'rejected' ? 'Photo is blurry' : null,
+                ]);
+            }
+        }
+    }
+
     /** A phone number nobody has used, for sign-up from scratch. */
     public function freshNumber(): string
     {
@@ -241,6 +292,46 @@ class DevHub
                 $user->delete();
             }
         });
+    }
+
+    /**
+     * L1.6 Simulate drive: sends the driver's position for the carpool on the road that `$me` drives or rides in.
+     * 'step' moves the car `$metres` along the saved route; 'pickup' puts it at the next waiting rider's pickup,
+     * which starts their wait (No-show countdown). Goes through the same code as the driver's phone.
+     */
+    public function drive(User $me, string $to, int $metres = 300): string
+    {
+        $listing = CarpoolListing::query()->where('status', CarpoolListing::STATUS_IN_PROGRESS)
+            ->whereHas('driver', fn ($q) => $q->where('user_id', $me->id))->latest('id')->first()
+            ?? CarpoolListing::query()->where('status', CarpoolListing::STATUS_IN_PROGRESS)
+                ->whereHas('requests', fn ($q) => $q->where('rider_id', $me->id)->where('status', CarpoolRequest::STATUS_ACCEPTED))
+                ->latest('id')->first();
+        if (! $listing) {
+            return 'No carpool of yours is on the road. Start one first (scenario "On the road with riders").';
+        }
+        $driverUser = User::query()->findOrFail(Driver::query()->whereKey($listing->driver_id)->value('user_id'));
+        $geo = RouteGeometry::of($listing->route_polyline ?? []);
+        $tracking = app(CarpoolTracking::class);
+
+        if ($to === 'pickup') {
+            $r = CarpoolRequest::query()->where('listing_id', $listing->id)->where('status', CarpoolRequest::STATUS_ACCEPTED)
+                ->whereNull('picked_up_at')->whereNull('arrived_at')->orderBy('pickup_m')->first();
+            if (! $r) {
+                return 'No rider is waiting for a pickup the car has not reached yet.';
+            }
+            $point = ['lat' => (float) $r->pickup_lat, 'lng' => (float) $r->pickup_lng];
+            $done = 'The car is at the pickup of ' . ($r->rider?->name ?? 'the rider') . ' (' . $r->pickup_name . '). Their wait has started.';
+        } else {
+            $last = (int) \App\Models\Carpool\CarpoolPosition::query()->where('listing_id', $listing->id)->latest('recorded_at')->latest('id')->value('along_m');
+            $along = min($geo->length(), $last + max(50, $metres));
+            $point = $geo->pointAt($along);
+            $done = sprintf('The car is %.1f km along the route (of %.1f km).', $along / 1000, $geo->length() / 1000)
+                . ($along >= $geo->length() ? ' It has reached the end.' : '');
+        }
+
+        return $tracking->record($driverUser, $listing, $point)
+            ? $done
+            : 'Too soon after the last position (the server keeps at most one every 3 seconds). Try again in a moment.';
     }
 
     public function wipeAllCarpool(): void

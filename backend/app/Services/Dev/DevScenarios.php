@@ -63,6 +63,14 @@ class DevScenarios
             'd-full' => ['driver', 'A full carpool', 'All seats taken'],
             'd-plan-ended' => ['driver', 'My plan has ended', 'Plan expired 3 days ago'],
             'd-report' => ['driver', 'A rider reported me', 'Open report on me'],
+            // ---- driver sign-up status and Plans (screens 1f to 1i) ----
+            'd-docs-sent' => ['driver', 'Documents sent, being checked', 'Status page: "We are checking your sign-up"'],
+            'd-docs-fix' => ['driver', 'Documents to fix', 'One rejected (blurry photo), one not sent'],
+            'd-approve-me' => ['driver', 'Approve me', 'All documents approved; the approved page shows once'],
+            'd-no-plan' => ['driver', 'No plan', 'Plans page: "Pick a plan"'],
+            'd-plan-30' => ['driver', 'Plan with 30 days left', 'Plans page: ring, active'],
+            'd-plan-ending' => ['driver', 'Plan ends in 2 days', 'Plans page: amber, ending soon'],
+            'd-plan-waiting' => ['driver', 'Next plan waiting', 'Plans page: nothing to buy'],
         ];
     }
 
@@ -98,6 +106,13 @@ class DevScenarios
             'd-requests' => $this->dRequests($me, $bilal, $sana),
             'd-start' => $this->dStart($me, $bilal, $sana),
             'd-onroad' => $this->dOnRoad($me, $bilal, $sana),
+            'd-docs-sent' => $this->signupState($me, 'pending', 'sent'),
+            'd-docs-fix' => $this->signupState($me, 'pending', 'fix'),
+            'd-approve-me' => $this->signupState($me, 'approved', 'approved'),
+            'd-no-plan' => $this->planState($me, 'none'),
+            'd-plan-30' => $this->planState($me, '30'),
+            'd-plan-ending' => $this->planState($me, 'ending'),
+            'd-plan-waiting' => $this->planState($me, 'waiting'),
             'd-finished' => $this->dFinished($me, $bilal, $sana),
             'd-cancelled' => $this->dCancelled($me),
             'd-full' => $this->dFull($me, $bilal, $sana),
@@ -313,6 +328,38 @@ class DevScenarios
         DriverSubscription::query()->where('driver_user_id', $me->id)->update(['expires_at' => now()->subDays(3), 'status' => 'expired']);
 
         return 'Your plan ended 3 days ago. Run the jobs, then open Home.';
+    }
+
+    private function signupState(User $me, string $approval, string $docs): string
+    {
+        $driver = \App\Models\Driver::query()->where('user_id', $me->id)->firstOrFail();
+        $driver->forceFill(['approval_status' => $approval, 'approved_at' => $approval === 'approved' ? now() : null])->save();
+        $this->h->documents($driver, $docs);
+
+        return match ($docs) {
+            'sent' => 'Documents sent and waiting to be checked.',
+            'fix' => 'One document rejected (blurry photo) and one not sent.',
+            default => 'Approved, with every document approved. The approved page shows once.',
+        };
+    }
+
+    private function planState(User $me, string $state): string
+    {
+        DriverSubscription::query()->where('driver_user_id', $me->id)->delete();
+        if ($state === 'none') {
+            return 'No plan now.';
+        }
+        $this->h->plan($me, $state === 'ending' ? 2 : 30);
+        if ($state === 'waiting') {
+            $this->h->plan($me, 2);
+            $running = DriverSubscription::query()->where('driver_user_id', $me->id)->firstOrFail();
+            $next = $running->replicate();
+            $next->forceFill(['starts_at' => $running->expires_at, 'expires_at' => $running->expires_at->copy()->addDays(30), 'days_count' => 30, 'is_queued' => true])->save();
+
+            return 'Plan ends in 2 days and the next one is already paid.';
+        }
+
+        return $state === 'ending' ? 'Plan ends in 2 days.' : 'Plan with 30 days left.';
     }
 
     private function dReport(User $me, User $rider): string

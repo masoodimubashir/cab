@@ -28,6 +28,16 @@ return [
     'plan_push_hours' => (int) env('CARPOOL_PLAN_PUSH_HOURS', 24),
     // Days before a dated document (insurance) runs out the driver is warned (admin setting document_warning_days, S11).
     'document_warning_days' => (int) env('CARPOOL_DOCUMENT_WARNING_DAYS', 7),
+    // L1 live location (admin settings; these are the fallbacks): minutes at a pickup before No-show opens,
+    // metres from the pickup that count as arrived, days car positions are kept.
+    'no_show_wait_minutes' => (int) env('CARPOOL_NO_SHOW_WAIT_MINUTES', 5),
+    'arrival_radius_m' => (int) env('CARPOOL_ARRIVAL_RADIUS_M', 100),
+    'position_retention_days' => (int) env('CARPOOL_POSITION_RETENTION_DAYS', 1),
+    // A position older than this is "can't see the car" for the rider and "location off" for the no-show rule.
+    'position_stale_seconds' => 60,
+    // Positions are refused closer together than this, or rougher than this accuracy.
+    'position_min_gap_seconds' => 3,
+    'position_max_accuracy_m' => 100,
 
     // Pickup proposals must be this close to the route (P9, same check as Fixed pins).
     'pickup_max_distance_m' => (int) env('CARPOOL_PICKUP_MAX_DISTANCE_M', 300),
@@ -112,6 +122,9 @@ return [
         'plan_push_hours' => 24,        // admin setting since W4 (falls back to plan_push_hours above)
         'document_warning_days' => 7,   // S11: warn about a document running out this many days ahead
         'report_retention_days' => 180, // closed reports keep their message text this long
+        'no_show_wait_minutes' => 5,    // L1
+        'arrival_radius_m' => 100,      // L1
+        'position_retention_days' => 1, // L1
     ],
 
     // Closed reports keep the reported message text this long (admin setting report_retention_days).

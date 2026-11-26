@@ -38,6 +38,7 @@ class CarpoolLifecycle extends Command
             'Plan ending reminders sent' => fn () => $plans->notifyEnding(),
             'Cancelled after a document expired' => fn () => $rides->applyDocuments(),
             'Document expiry warnings sent' => fn () => app(\App\Services\Carpool\CarpoolDocuments::class)->warnExpiring(),
+            'Old car positions removed' => fn () => app(\App\Services\Carpool\CarpoolTracking::class)->prune(),
         ];
         foreach ($steps as $label => $step) {
             try {

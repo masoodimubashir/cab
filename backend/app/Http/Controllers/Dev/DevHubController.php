@@ -107,6 +107,14 @@ class DevHubController
         return response()->json(['message' => trim(Artisan::output()) ?: 'Done.']);
     }
 
+    /** L1.6 Simulate drive: moves the car of the carpool on the road (see DevHub::drive). */
+    public function drive(Request $request): JsonResponse
+    {
+        $v = $request->validate(['to' => ['required', 'in:step,pickup'], 'metres' => ['nullable', 'integer', 'min:50', 'max:3000']]);
+
+        return response()->json(['message' => $this->hub->drive($request->user(), $v['to'], (int) ($v['metres'] ?? 300))]);
+    }
+
     public function switch(Request $request): JsonResponse
     {
         $on = (bool) $request->validate(['carpool_enabled' => ['required', 'boolean']])['carpool_enabled'];

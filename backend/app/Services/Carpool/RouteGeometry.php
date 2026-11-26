@@ -58,6 +58,32 @@ final class RouteGeometry
         return $this->along[count($this->along) - 1];
     }
 
+    /**
+     * The point `$alongM` metres along the line, kept to its ends. Used by the dev hub's Simulate drive.
+     *
+     * @return array{lat: float, lng: float}
+     */
+    public function pointAt(float $alongM): array
+    {
+        $n = count($this->path);
+        if ($n === 0) {
+            return ['lat' => 0.0, 'lng' => 0.0];
+        }
+        $alongM = max(0.0, min($this->length(), $alongM));
+        for ($i = 1; $i < $n; $i++) {
+            if ($this->along[$i] >= $alongM) {
+                $seg = $this->along[$i] - $this->along[$i - 1];
+                $t = $seg > 0 ? ($alongM - $this->along[$i - 1]) / $seg : 0.0;
+                [$aLat, $aLng] = $this->path[$i - 1];
+                [$bLat, $bLng] = $this->path[$i];
+
+                return ['lat' => $aLat + ($bLat - $aLat) * $t, 'lng' => $aLng + ($bLng - $aLng) * $t];
+            }
+        }
+
+        return ['lat' => $this->path[$n - 1][0], 'lng' => $this->path[$n - 1][1]];
+    }
+
     /** Share of the line (0 to 1) before a point that sits `$alongM` metres along it. */
     public function fraction(float $alongM): float
     {
@@ -172,6 +198,12 @@ final class RouteGeometry
             'lat' => $aLat + $t * ($bLat - $aLat),
             'lng' => $aLng + $t * ($bLng - $aLng),
         ];
+    }
+
+    /** Straight-line metres between two nearby points (arrival at a pickup, L1). */
+    public static function metres(float $aLat, float $aLng, float $bLat, float $bLng): float
+    {
+        return self::flat($aLat, $aLng, $bLat, $bLng);
     }
 
     /** Straight-line metres between two nearby points. */

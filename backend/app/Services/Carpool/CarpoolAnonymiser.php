@@ -101,6 +101,9 @@ class CarpoolAnonymiser
             $car->save();
         }
         CarpoolListing::query()->where('driver_id', $driver->id)->update(['car_plate' => null]);
+        // L1: where the car went is personal data; it goes with the account.
+        \App\Models\Carpool\CarpoolPosition::query()
+            ->whereIn('listing_id', CarpoolListing::query()->where('driver_id', $driver->id)->select('id'))->delete();
         $driver->forceFill([
             'vehicle_reg_no' => null, 'vehicle_brand' => null, 'vehicle_model' => null, 'vehicle_color' => null,
             'deactivated_at' => $driver->deactivated_at ?? now(), 'is_online' => false,

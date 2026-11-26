@@ -246,6 +246,9 @@ class CarpoolPresenter
             'picked_up_at' => $r->picked_up_at?->toIso8601String(),
             'dropped_at' => $r->dropped_at?->toIso8601String(),
             'no_show_at' => $r->no_show_at?->toIso8601String(),
+            // L1: when the car reached the pickup, and when No-show opens (null: any time, location not shared).
+            'arrived_at' => $r->arrived_at?->toIso8601String(),
+            ...$this->noShowFields($r, $l),
             'code_verified' => (bool) $r->code_verified_at,
             'code_locked_until' => $r->code_locked_until?->isFuture() ? $r->code_locked_until->toIso8601String() : null,
             'chat_id' => $this->chatId($r),
@@ -255,6 +258,21 @@ class CarpoolPresenter
                 'at' => $this->etaAt($l, $geo, $r->drop_m)->toIso8601String()],
             'created_at' => $r->created_at?->toIso8601String(),
         ];
+    }
+
+    /** L1: the time No-show opens for a waiting rider, or null when it is open any time (location not shared). */
+    /**
+     * L1.4 (driver 10b): when No-show opens and why. State: any (location not shared), not_arrived,
+     * waiting or open; both null when the rider isn't waiting on a ride that is on the road.
+     */
+    private function noShowFields(CarpoolRequest $r, CarpoolListing $l): array
+    {
+        if ($l->status !== CarpoolListing::STATUS_IN_PROGRESS || $r->status !== CarpoolRequest::STATUS_ACCEPTED || $r->picked_up_at) {
+            return ['no_show_opens_at' => null, 'no_show_state' => null];
+        }
+        $w = app(CarpoolTracking::class)->noShowWindow($r, $l);
+
+        return ['no_show_opens_at' => $w['opens_at']?->toIso8601String(), 'no_show_state' => $w['state']];
     }
 
     /** waiting, picked_up, dropped or no_show: how a rider stands once the ride is on the road (driver 9). */

@@ -7,6 +7,7 @@ use App\Http\Controllers\Carpool\DriverListingController;
 use App\Http\Controllers\Carpool\DriverRegistrationController;
 use App\Http\Controllers\Carpool\DriverRequestController;
 use App\Http\Controllers\Carpool\PlanController;
+use App\Http\Controllers\Carpool\PositionController;
 use App\Http\Controllers\Carpool\RiderController;
 use Illuminate\Support\Facades\Route;
 
@@ -46,6 +47,8 @@ Route::post('/documents/{document}/renew', [DriverDocumentController::class, 're
         // M6: the ride.
         Route::post('/listings/{listing}/start', [DriverListingController::class, 'start']);
         Route::post('/listings/{listing}/complete', [DriverListingController::class, 'complete']);
+        // L1 live location: about one point every 5 s while the ride is on the road.
+        Route::post('/listings/{listing}/position', [PositionController::class, 'store'])->middleware('throttle:40,1');
 
         // M4: join requests on the driver's side.
         Route::get('/inbox', [DriverRequestController::class, 'inbox']);
@@ -65,6 +68,7 @@ Route::post('/documents/{document}/renew', [DriverDocumentController::class, 're
     // carpool page, My trips, cancel and leave keep working when it's off.
     Route::get('/search', [RiderController::class, 'search'])->middleware('throttle:carpool-search');
     Route::get('/rides/{listing}', [RiderController::class, 'show']);
+    Route::get('/rides/{listing}/position', [PositionController::class, 'show'])->middleware('throttle:40,1');
     Route::post('/rides/{listing}/join', [RiderController::class, 'join'])->middleware('throttle:carpool-write');
     Route::post('/join-requests/{carpoolRequest}/withdraw', [RiderController::class, 'withdraw']);
     Route::post('/join-requests/{carpoolRequest}/leave', [RiderController::class, 'leave']);

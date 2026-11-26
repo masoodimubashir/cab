@@ -128,6 +128,7 @@ class AdminCarpoolController
         return response()->json(['data' => $this->listingRow($listing) + [
             'cancel_note' => $listing->cancel_note,
             'distance_km' => round($listing->distance_m / 1000, 1),
+            'location_shared_at' => $listing->location_shared_at?->toIso8601String(), // L1.5
             'requests' => $requests,
             'reports' => $reports,
             'timeline' => $this->timeline($listing),
@@ -508,6 +509,9 @@ class AdminCarpoolController
             'plan_push_hours' => CarpoolSetting::number('plan_push_hours'),
             'document_warning_days' => CarpoolSetting::number('document_warning_days'),
             'report_retention_days' => CarpoolSetting::number('report_retention_days'),
+            'no_show_wait_minutes' => CarpoolSetting::number('no_show_wait_minutes'),
+            'arrival_radius_m' => CarpoolSetting::number('arrival_radius_m'),
+            'position_retention_days' => CarpoolSetting::number('position_retention_days'),
             'limits' => CarpoolSetting::LIMITS,
             'upcoming_carpools' => CarpoolListing::query()->where('status', CarpoolListing::STATUS_PUBLISHED)->count(),
             'carpools_on_the_road' => CarpoolListing::query()->where('status', CarpoolListing::STATUS_IN_PROGRESS)->count(),
