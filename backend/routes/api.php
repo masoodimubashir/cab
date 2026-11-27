@@ -301,6 +301,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/drivers/{driver}/wallet/payout-summary', [AdminDriversController::class, 'payoutSummary'])->middleware('permission:drivers');
     Route::post('/admin/drivers/{driver}/wallet/payout', [AdminDriversController::class, 'recordPayout'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/full', [AdminDriversController::class, 'fullProfile'])->middleware('permission:drivers');
+    Route::get('/admin/cities/{city}/vehicle-drivers', [AdminRouteGroupsController::class, 'cityDrivers'])->middleware(['manager.city', 'permission:drivers'])->name('admin.vehicle-drivers');
     Route::patch('/admin/drivers/{driver}', [AdminDriversController::class, 'updateDriver'])->middleware('permission:drivers');
     Route::post('/admin/drivers/{driver}/documents', [AdminDriversController::class, 'uploadDocument'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/documents/{document}/file', [AdminDriversController::class, 'documentFile'])

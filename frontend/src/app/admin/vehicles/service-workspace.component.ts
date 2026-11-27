@@ -40,6 +40,7 @@ interface CityVehicles {
       @case ('fares') {
         @if (mode !== 'fixed') {
         <app-vehicle-workspace [serviceMode]="mode" [serviceLabel]="label()"
+          [canManageDrivers]="auth.hasPermission('drivers')"
           [canManageVehicles]="auth.hasPermission('vehicles')" [canManagePricing]="auth.hasPermission('pricing')" />
         }
       }
@@ -91,6 +92,10 @@ interface CityVehicles {
     nav { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--tm-border, #dce1e6); margin-bottom: 20px; }
     nav a, .dispatch { padding: 10px 14px; font-size: 14px; color: var(--tm-text-muted); text-decoration: none; }
     nav a[aria-current] { color: var(--tm-text); font-weight: 700; box-shadow: inset 0 -3px #15955b; }
+    @media (max-width: 700px) {
+      nav { flex-wrap: nowrap; overflow-x: auto; margin-bottom: 16px; }
+      nav a { flex: 0 0 auto; padding: 12px; }
+    }
     .dispatch { display: inline-block; margin-bottom: 12px; text-decoration: underline; }
   `],
 })

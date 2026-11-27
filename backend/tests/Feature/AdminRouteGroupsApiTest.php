@@ -482,7 +482,7 @@ class AdminRouteGroupsApiTest extends TestCase
     public function test_city_drivers_endpoint_lists_only_this_city(): void
     {
         $a = $this->makeDriver($this->cityId);
-        $a->user()->update(['avatar_path' => 'avatars/driver.jpg']);
+        $a->user()->update(['avatar_path' => 'avatars/driver.jpg', 'address' => 'Test address']);
         $this->makeDriver($this->otherCityId);
 
         $res = $this->getJson("/api/admin/cities/{$this->cityId}/route-group-drivers");
@@ -491,5 +491,17 @@ class AdminRouteGroupsApiTest extends TestCase
         $userIds = collect($res->json('data'))->pluck('user_id')->all();
         $this->assertContains($a->user_id, $userIds);
         $this->assertCount(1, $userIds);
+        $a->forceFill(['service_modes' => ['private', 'shuttle']])->save();
+        $vehicleId = $this->makeCityVehicleType($this->cityId);
+        $this->patchJson("/api/admin/drivers/{$a->id}", ['city_vehicle_type_id' => $vehicleId])->assertOk();
+        $this->getJson("/api/admin/cities/{$this->cityId}/vehicle-drivers")
+            ->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $a->id)
+            ->assertJsonPath('data.0.city_vehicle_type_id', $vehicleId)
+            ->assertJsonPath('data.0.email', $a->user->email)
+            ->assertJsonPath('data.0.address', 'Test address')
+            ->assertJsonPath('data.0.service_modes', ['private', 'shuttle']);
+        $this->patchJson("/api/admin/drivers/{$a->id}", ['city_vehicle_type_id' => null])->assertOk();
+        $this->assertNull($a->fresh()->city_vehicle_type_id);
     }
 }

@@ -1,10 +1,63 @@
 import { of } from 'rxjs';
+import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideRouter } from '@angular/router';
+import { CityContextService } from '../../core/city-context.service';
 import { DynamicPricingPanelComponent } from '../pricing/dynamic-pricing-panel.component';
 import { CitySettingsComponent } from '../settings/city-settings.component';
 import { VehicleBasePricingComponent } from '../settings/vehicle-base-pricing.component';
 import { VehicleWorkspaceComponent } from './vehicle-workspace.component';
 
 describe('Master service workspaces', () => {
+  it('limits a 67-driver card to six avatars and opens all profiles in a modal', () => {
+    TestBed.configureTestingModule({ imports: [VehicleWorkspaceComponent], providers: [
+      provideHttpClient(), provideRouter([]),
+      { provide: CityContextService, useValue: { ensureCitiesLoaded: () => of([]), cities$: of([]), cityId$: of(null) } },
+    ] });
+    const fixture = TestBed.createComponent(VehicleWorkspaceComponent);
+    const page = fixture.componentInstance;
+    page.serviceMode = 'private';
+    page.canManageDrivers = true;
+    fixture.detectChanges();
+    Object.assign(page, { cityId: 1, visible: [{id: 7, display_name: 'SUMO', mode_row_ids: [7]}],
+      cityDrivers: Array.from({length: 67}, (_, i) => ({ name: 'Driver ' + i, service_modes: ['private'],
+        city_vehicle_type_id: 7, email: 'test@example.com', address: 'Test address', vehicle_reg_no: 'TEST-1', phone: '12345' })) });
+    fixture.detectChanges();
+    const stack = fixture.nativeElement.querySelector('.avatar-stack') as HTMLButtonElement;
+    expect(stack.querySelectorAll('.driver-avatar:not(.extra)').length).toBe(6);
+    expect(stack.querySelector('.extra')?.textContent?.trim()).toBe('+61');
+    for (const avatar of Array.from(stack.querySelectorAll('.driver-avatar'))) {
+      const style = getComputedStyle(avatar);
+      expect([style.width, style.height, style.borderRadius]).toEqual(['24px', '24px', '50%']);
+    }
+    stack.click();
+    fixture.detectChanges();
+    const dialog = fixture.nativeElement.querySelector('[role="dialog"]');
+    expect(dialog.querySelectorAll('.assigned-profile').length).toBe(67);
+    const modalAvatar = getComputedStyle(dialog.querySelector('.driver-avatar'));
+    expect([modalAvatar.width, modalAvatar.height, modalAvatar.borderRadius]).toEqual(['30px', '30px', '50%']);
+    for (const value of ['Driver 66', 'SUMO', '12345', 'TEST-1', 'test@example.com', 'Test address']) {
+      expect(dialog.textContent).toContain(value);
+    }
+  });
+  it('recognises a shared vehicle across services and offers only compatible drivers', () => {
+    const page = Object.create(VehicleWorkspaceComponent.prototype);
+    const v = { vehicle_type_id: 9, mode_row_ids: [10, 11] };
+    Object.assign(page, { serviceMode: 'shuttle', serviceDriverSearch: '', rideTypes: [{id: 2, mode: 'shuttle'}],
+      rows: [{id: 10, ride_type_id: 1, is_active: true}, {id: 11, ride_type_id: 2, is_active: true}],
+      cityDrivers: [
+        {name: 'Assigned', service_modes: ['private', 'shuttle'], city_vehicle_type_id: 10, vehicle_type_id: 9},
+        {name: 'Available', service_modes: ['shuttle'], vehicle_type_id: 9},
+        {name: 'Other type', service_modes: ['shuttle'], vehicle_type_id: 8},
+        {name: 'Private only', service_modes: ['private'], vehicle_type_id: 9},
+      ] });
+    expect(page.assignedServiceDrivers(v).map((d: any) => d.name)).toEqual(['Assigned']);
+    expect(page.availableServiceDrivers(v).map((d: any) => d.name)).toEqual(['Available']);
+    expect(page.assignmentTarget(v).id).toBe(11);
+    page.serviceMode = 'private';
+    expect(page.assignedServiceDrivers(v).length).toBe(1);
+    expect(page.availableServiceDrivers(v).map((d: any) => d.name)).toEqual(['Private only']);
+  });
   it('uses the stable mode even when an operator renames a ride type', () => {
     const page = Object.create(VehicleWorkspaceComponent.prototype);
     page.serviceMode = 'shuttle';

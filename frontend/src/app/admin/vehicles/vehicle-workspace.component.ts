@@ -81,6 +81,9 @@ interface GroupRow {
 }
 
 interface DriverOpt {
+  email?: string | null;
+  address?: string | null;
+  service_modes?: ModeKind[];
   avatar_url?: string | null;
   id: number;
   user_id: number;
@@ -179,16 +182,28 @@ interface TabDef { key: string; label: string; count?: number; }
               <img *ngIf="v.image_url; else vehicleIcon" [src]="v.image_url" alt="" loading="lazy" (error)="v.image_url = null" />
               <ng-template #vehicleIcon><tm-icon name="car" [size]="36" /></ng-template>
             </div>
-            <div><strong>{{ v.display_name }}</strong><small>{{ v.vehicle_type_name }} · {{ v.max_people }} {{ v.max_people === 1 ? 'seat' : 'seats' }} · {{ v.luggage_capacity }} bags</small></div>
+            <div><strong>{{ v.display_name }}</strong><small><ng-container *ngIf="v.vehicle_type_name && v.vehicle_type_name !== v.display_name">{{ v.vehicle_type_name }} · </ng-container>{{ v.max_people }} {{ v.max_people === 1 ? 'seat' : 'seats' }} · {{ v.luggage_capacity }} bags</small></div>
             <div class="service-actions" *ngIf="sharedVehicles">
               <button type="button" class="btn-kb-outline" (click)="openCommonDrawer(v)">Edit details</button>
               <button type="button" class="btn-kb-outline" (click)="openLayoutsList(v)">Seat layouts ({{ layoutCountFor(v) }})</button>
             </div>
-            <div class="service-actions" *ngIf="serviceMode">
+            <div class="service-actions fare-footer" *ngIf="serviceMode">
+              <div class="fare-buttons">
               <button type="button" class="btn-kb-outline" *ngFor="let rt of fareRideTypes" [disabled]="!canManageVehicles && !fareConfigured(v, rt)" (click)="openFareDrawer(v, rt, $event)">
                 {{ fareConfigured(v, rt) ? 'Edit fare' : 'Set up fare' }}{{ fareRideTypes.length > 1 ? ' · ' + rt.name : '' }}
               </button>
-
+              </div>
+              <ng-container *ngIf="canManageDrivers">
+                <button *ngIf="assignedServiceDrivers(v) as drivers" type="button" class="avatar-stack"
+                  [attr.aria-label]="'View or assign drivers for ' + v.display_name" [title]="'Drivers · ' + v.display_name"
+                  (click)="driverVehicle = v; serviceDriverSearch = ''">
+                  <span *ngFor="let d of drivers | slice:0:6" class="driver-avatar" aria-hidden="true">
+                    {{ d.name.charAt(0) }}<img *ngIf="d.avatar_url" [src]="d.avatar_url" alt="" loading="lazy" (error)="d.avatar_url = null" />
+                  </span>
+                  <span *ngIf="drivers.length > 6" class="driver-avatar extra">+{{ drivers.length - 6 }}</span>
+                  <span *ngIf="!drivers.length" class="driver-avatar"><tm-icon name="users" [size]="14" /></span>
+                </button>
+              </ng-container>
             </div>
           </article>
           </div>
@@ -386,6 +401,38 @@ interface TabDef { key: string; label: string; count?: number; }
       <div slot="footer"><tm-button variant="ghost" [disabled]="savingGroupDrivers" (clicked)="driverDrawerId = null">Cancel</tm-button><tm-button variant="green" [disabled]="savingGroupDrivers" (clicked)="commitDrawerDrivers()">{{ savingGroupDrivers ? 'Saving…' : 'Save assignments' }}</tm-button></div>
     </tm-drawer>
     <!-- ─────────────── drawers ─────────────── -->
+    <tm-modal *ngIf="driverVehicle as v" [open]="true" [title]="v.display_name + ' · Drivers'" (closed)="driverVehicle = null">
+      <div slot="body" class="vehicle-driver-list">
+        <p *ngIf="supportLoading.has('drivers')" role="status">Loading drivers…</p>
+        <p *ngIf="supportErrors.has('drivers')" role="alert">Couldn’t load drivers. <button class="btn-kb-outline" (click)="loadDrivers()">Retry</button></p>
+        <ng-container *ngIf="!supportLoading.has('drivers') && !supportErrors.has('drivers')">
+          <h3>Assigned drivers</h3>
+          <p *ngIf="!assignedServiceDrivers(v).length">No drivers assigned.</p>
+          <article class="assigned-profile" *ngFor="let d of assignedServiceDrivers(v)">
+            <header><span class="driver-avatar">{{ d.name.charAt(0) }}<img *ngIf="d.avatar_url" [src]="d.avatar_url" alt="" loading="lazy" (error)="d.avatar_url = null" /></span><strong>{{ d.name }}</strong></header>
+            <dl>
+              <div><dt>Car</dt><dd>{{ d.vehicle_model || v.display_name }}</dd></div>
+              <div><dt>Registration</dt><dd>{{ d.vehicle_reg_no || '—' }}</dd></div>
+              <div><dt>Mobile</dt><dd>{{ d.phone || '—' }}</dd></div>
+              <div><dt>Email</dt><dd>{{ d.email || '—' }}</dd></div>
+              <div class="address"><dt>Address</dt><dd>{{ d.address || '—' }}</dd></div>
+            </dl>
+            <button class="btn-kb-outline" [disabled]="savingDriverId !== null" (click)="setCar(d, null)">Unassign vehicle</button>
+          </article>
+          <p class="vehicle-assignment-note">Each driver has one vehicle across services. Changes apply wherever that driver uses it.</p>
+          <h3>Assign a driver</h3>
+          <label class="search"><tm-icon name="search" [size]="16" /><input type="search" placeholder="Search name or registration" aria-label="Search eligible drivers" [(ngModel)]="serviceDriverSearch" /></label>
+          <ng-container *ngIf="assignmentTarget(v) as target; else inactiveVehicle">
+            <div class="vehicle-driver-row" *ngFor="let d of availableServiceDrivers(v)">
+              <div><strong>{{ d.name }}</strong><small>{{ d.vehicle_reg_no }}{{ d.vehicle_reg_no ? ' · ' : '' }}{{ assignedVehicleName(d) }}</small></div>
+              <button class="btn-kb-outline" [disabled]="savingDriverId !== null" (click)="setCar(d, target.id)">{{ d.city_vehicle_type_id ? 'Move here' : 'Assign' }}</button>
+            </div>
+            <p *ngIf="!availableServiceDrivers(v).length">No matching drivers available.</p>
+          </ng-container>
+          <ng-template #inactiveVehicle><p>Enable this vehicle for {{ serviceLabel }} to assign a driver.</p></ng-template>
+        </ng-container>
+      </div>
+    </tm-modal>
     <tm-drawer [open]="createOpen" title="Add vehicle" [width]="560" (closed)="createOpen = false">
       <div slot="body" class="form">
         <p class="note">Choose an existing vehicle type or create a new one below. The type and city vehicle save together.</p>
@@ -1152,6 +1199,28 @@ interface TabDef { key: string; label: string; count?: number; }
     .service-photo { display: grid; place-items: center; height: 116px; padding: 8px; box-sizing: border-box; border-radius: 10px; background: var(--tm-canvas); color: var(--tm-text-muted); }
     .service-photo img { width: 100%; height: 100px; object-fit: contain; }
     .service-actions { margin-top: auto; }
+    .fare-footer { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: 6px; }
+    .fare-buttons { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+    .fare-buttons button { max-width: 100%; white-space: normal; }
+    .avatar-stack { display: inline-flex; align-items: center; align-self: center; margin-inline-start: auto; padding: 0; border: 0; background: transparent; cursor: pointer; border-radius: 999px; }
+    .driver-avatar { --avatar-size: 24px; position: relative; display: inline-grid; place-items: center; flex: none; overflow: hidden; box-sizing: border-box; width: var(--avatar-size); height: var(--avatar-size); padding: 0; border: 1px solid var(--tm-surface); border-radius: 50%; color: var(--tm-text); background: var(--tm-canvas); font-size: 11px; font-weight: 700; line-height: 1; }
+    .avatar-stack .driver-avatar + .driver-avatar { margin-inline-start: -6px; }
+    .driver-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .driver-avatar.extra { font-size: 10px; }
+    .assigned-profile { border: 1px solid var(--tm-line); border-radius: 12px; padding: 14px; }
+    .assigned-profile header { display: flex; align-items: center; gap: 10px; }
+    .assigned-profile header .driver-avatar { --avatar-size: 30px; }
+    .assigned-profile dl { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(145px,100%),1fr)); gap: 10px 16px; margin: 12px 0; }
+    .assigned-profile .address { grid-column: 1 / -1; }
+    .assigned-profile dt { color: var(--tm-text-muted); font-size: 12px; }
+    .assigned-profile dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+    .vehicle-driver-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .vehicle-driver-list { display: grid; gap: 12px; }
+    .vehicle-driver-list h3, .vehicle-driver-list p { margin: 0; }
+    .vehicle-driver-list .search { width: 100%; box-sizing: border-box; }
+    .vehicle-driver-row { flex-wrap: wrap; border-bottom: 1px solid var(--tm-line); padding: 8px 0 12px; overflow-wrap: anywhere; }
+    .vehicle-driver-row small { display: block; color: var(--tm-text-muted); }
+    .vehicle-assignment-note { padding: 12px; border-radius: 8px; background: var(--tm-canvas); font-size: 13px; }
     .vehicle-pages { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
     .vehicle-pages span { margin-right: auto; font-size: 13px; color: var(--tm-text-muted); }
     .service-vehicle small { display: block; margin-top: 4px; color: var(--tm-text-muted); }
@@ -2403,6 +2472,32 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   @Input() serviceMode: 'private' | 'shuttle' | null = null;
   @Input() serviceLabel = '';
   @Input() canManageVehicles = true;
+  @Input() canManageDrivers = false;
+  driverVehicle: CityVehicleRow | null = null;
+  serviceDriverSearch = '';
+
+  assignedServiceDrivers(v: CityVehicleRow): DriverOpt[] {
+    return this.cityDrivers.filter(d => this.serviceMode && d.service_modes?.includes(this.serviceMode)
+      && d.city_vehicle_type_id != null && v.mode_row_ids?.includes(d.city_vehicle_type_id));
+  }
+
+  assignmentTarget(v: CityVehicleRow): CityVehicleRow | undefined {
+    return this.rows.find(row => row.is_active && v.mode_row_ids?.includes(row.id)
+      && this.fareRideTypes.some(type => type.id === row.ride_type_id));
+  }
+
+  availableServiceDrivers(v: CityVehicleRow): DriverOpt[] {
+    const term = this.serviceDriverSearch.trim().toLowerCase();
+    return this.cityDrivers.filter(d => this.serviceMode && d.service_modes?.includes(this.serviceMode)
+      && (d.vehicle_type_id == null || d.vehicle_type_id === v.vehicle_type_id)
+      && !(d.city_vehicle_type_id != null && v.mode_row_ids?.includes(d.city_vehicle_type_id))
+      && `${d.name} ${d.vehicle_reg_no ?? ''}`.toLowerCase().includes(term));
+  }
+
+  assignedVehicleName(d: DriverOpt): string {
+    if (!d.city_vehicle_type_id) return 'No assigned vehicle';
+    return this.rows.find(row => row.id === d.city_vehicle_type_id)?.display_name || 'Another vehicle';
+  }
   @Input() canManagePricing = true;
   private sharedTarget: string | null = null;
   sharedCreateOpen = false;
@@ -3328,7 +3423,10 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
         error: () => { if (this.cityId !== cityId) return; this.layouts = []; },
       });
     }
-    if (this.serviceMode) return;
+    if (this.serviceMode) {
+      if (this.canManageDrivers) this.loadDrivers();
+      return;
+    }
     this.loadRoutes();
     this.loadGroups();
     this.loadDrivers();
@@ -3349,6 +3447,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   get operationsLoadError(): string { return this.supportErrors.size ? 'Some workspace information could not be loaded. Refresh to try again before making changes.' : ''; }
 
   private resetData(): void {
+    this.driverVehicle = null;
     this.supportLoading.clear(); this.supportErrors.clear();
     this.vehicleSetsOpen = false;
     this.vehicleSets = [];
@@ -3387,7 +3486,8 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     const cityId = this.cityId;
     if (cityId == null) { this.cityDrivers = []; return; }
     this.supportLoading.add('drivers'); this.supportErrors.delete('drivers');
-    this.api.get<{ data: DriverOpt[] }>(`/admin/cities/${cityId}/route-group-drivers`).subscribe({
+    const endpoint = this.serviceMode ? 'vehicle-drivers' : 'route-group-drivers';
+    this.api.get<{ data: DriverOpt[] }>(`/admin/cities/${cityId}/${endpoint}`).subscribe({
       next: (res) => { if (this.cityId !== cityId) return; this.supportLoading.delete('drivers'); this.cityDrivers = res?.data ?? []; this.recompute(); },
       error: () => { if (this.cityId !== cityId) return; this.supportLoading.delete('drivers'); this.supportErrors.add('drivers'); this.cityDrivers = []; },
     });
@@ -3944,7 +4044,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
    * signup and locked for the driver after approval, so emptying it would
    * strand them in a state neither they nor the app can repair.
    */
-  setCar(d: DriverOpt, cityVehicleTypeId: number): void {
+  setCar(d: DriverOpt, cityVehicleTypeId: number | null): void {
     if (this.savingDriverId != null) return;
     const target = this.vehicles.find((v) => v.id === cityVehicleTypeId);
     this.savingDriverId = d.id;
@@ -3952,7 +4052,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
       next: () => {
         this.savingDriverId = null;
         this.movePickFor = null;
-        this.toast.success(`${d.name} moved to ${target?.display_name ?? 'the selected vehicle'}`);
+        this.toast.success(cityVehicleTypeId === null ? `Vehicle unassigned from ${d.name}` : `${d.name} moved to ${target?.display_name ?? 'the selected vehicle'}`);
         this.loadDrivers();
       },
       error: (err) => { this.savingDriverId = null; this.toast.error(err?.error?.message || 'Could not update driver'); },
