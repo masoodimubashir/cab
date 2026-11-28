@@ -1,44 +1,60 @@
 <tm-drawer [open]="true" title="Add vehicles" [width]="850" (closed)="close()">
   <div slot="body" class="vehicle-form">
+    <p class="photo-hint" *ngIf="auth.hasPermission('app_assets')">A booking photo is optional. Uploading one updates the photo for this vehicle name across all cities.</p>
     <div class="table-wrap" role="region" aria-label="Vehicle entries" tabindex="0">
       <table aria-label="Vehicles to add">
-        <colgroup><col><col><col class="number-col"><col class="number-col"><col class="action-col"></colgroup>
-        <thead><tr><th scope="col">Vehicle type</th><th scope="col">Display name</th><th scope="col">Seats</th><th scope="col">Bags</th><th scope="col" aria-label="Actions"></th></tr></thead>
+        <colgroup><col *ngIf="auth.hasPermission('app_assets')" class="photo-col"><col><col><col class="number-col"><col class="number-col"><col class="action-col"></colgroup>
+        <thead><tr>
+          <th *ngIf="auth.hasPermission('app_assets')" scope="col">Photo<small>Up to 4 MB</small></th>
+          <th scope="col">Vehicle type<small>Category shared across cities</small></th>
+          <th scope="col">Vehicle name<small>Shown to customers</small></th>
+          <th scope="col">Seats</th><th scope="col">Bags</th><th scope="col" aria-label="Actions"></th>
+        </tr></thead>
         <tbody>
           <ng-container *ngFor="let row of rows; let i = index; trackBy: trackRow">
             <tr>
+              <td *ngIf="auth.hasPermission('app_assets')" class="photo-cell">
+                <input #photoInput hidden type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml" (change)="choosePhoto(row, photoInput)">
+                <button type="button" class="photo-picker" [disabled]="saving" (click)="photoInput.click()"
+                  [attr.aria-label]="(row.preview ? 'Change' : 'Add') + ' photo for vehicle ' + (i + 1)">
+                  <img *ngIf="row.preview; else addPhoto" [src]="row.preview" alt="Selected vehicle photo">
+                  <ng-template #addPhoto>+ Photo</ng-template>
+                </button>
+                <button *ngIf="row.preview" type="button" class="clear-photo" [disabled]="saving" (click)="clearPhoto(row)" [attr.aria-label]="'Remove photo for vehicle ' + (i + 1)">Remove</button>
+              </td>
               <td>
                 <div [hidden]="row.typeId === -1">
-                  <tm-select #typeSelect [options]="typeOptions" placeholder="Choose a type"
+                  <tm-select #typeSelect [options]="availableTypes(row)" placeholder="Choose a type"
                     [ariaLabel]="'Vehicle type ' + (i + 1)" [(value)]="row.typeId"
-                    (valueChange)="$event === -1 && focusTypeControl(typeName)" [disabled]="saving" />
+                    (valueChange)="$event === -1 && focusTypeControl(typeName)" [disabled]="saving || !!created" />
                 </div>
                 <div class="type-entry" [hidden]="row.typeId !== -1">
-                  <input #typeName [attr.aria-label]="'New vehicle type ' + (i + 1)" [(ngModel)]="row.typeName" placeholder="New type name" maxlength="120" [disabled]="saving">
-                  <button type="button" title="Choose an existing type" [attr.aria-label]="'Choose an existing type for vehicle ' + (i + 1)" [disabled]="saving" (click)="row.typeId = null; focusTypeControl(typeSelect.trigger.nativeElement)">
+                  <input #typeName [attr.aria-label]="'New vehicle type ' + (i + 1)" [(ngModel)]="row.typeName" placeholder="New type name" maxlength="120" [disabled]="saving || !!created">
+                  <button type="button" title="Choose an existing type" [attr.aria-label]="'Choose an existing type for vehicle ' + (i + 1)" [disabled]="saving || !!created" (click)="row.typeId = null; focusTypeControl(typeSelect.trigger.nativeElement)">
                     <tm-icon name="chevron-down" [size]="15" />
                   </button>
                 </div>
               </td>
-              <td><input [attr.aria-label]="'Vehicle display name ' + (i + 1)" [(ngModel)]="row.name" [placeholder]="displayName(row) || 'Optional'" maxlength="120" [disabled]="saving"></td>
-              <td><input type="number" [attr.aria-label]="'Seats for vehicle ' + (i + 1)" [(ngModel)]="row.seats" min="1" max="99" [disabled]="saving"></td>
-              <td><input type="number" [attr.aria-label]="'Bags for vehicle ' + (i + 1)" [(ngModel)]="row.bags" min="0" max="99" [disabled]="saving"></td>
-              <td><button *ngIf="rows.length > 1" class="remove" type="button" [attr.aria-label]="'Remove vehicle ' + (i + 1)" title="Remove vehicle" (click)="removeRow(i)" [disabled]="saving"><tm-icon name="x" [size]="15" /></button></td>
+              <td><input [attr.aria-label]="'Customer-facing vehicle name ' + (i + 1)" [(ngModel)]="row.name" [placeholder]="displayName(row) || 'Defaults to vehicle type'" maxlength="120" [disabled]="saving || !!created"></td>
+              <td><input type="number" [attr.aria-label]="'Seats for vehicle ' + (i + 1)" [(ngModel)]="row.seats" min="1" max="99" [disabled]="saving || !!created"></td>
+              <td><input type="number" [attr.aria-label]="'Bags for vehicle ' + (i + 1)" [(ngModel)]="row.bags" min="0" max="99" [disabled]="saving || !!created"></td>
+              <td><button *ngIf="rows.length > 1" class="remove" type="button" [attr.aria-label]="'Remove vehicle ' + (i + 1)" title="Remove vehicle" (click)="removeRow(i)" [disabled]="saving || !!created"><tm-icon name="x" [size]="15" /></button></td>
             </tr>
 
           </ng-container>
         </tbody>
       </table>
     </div>
-    <div class="row-tools">
+    <div class="row-tools" *ngIf="!created">
       <tm-button variant="outline" icon="plus" size="sm" [disabled]="saving || rows.length >= 30" (clicked)="addRow()">Add another vehicle</tm-button>
       <tm-button variant="ghost" icon="copy" size="sm" [disabled]="saving || rows.length >= 30" (clicked)="addRow(true)">Copy last settings</tm-button>
     </div>
-    <p *ngIf="duplicateNames" role="alert">Give each vehicle a different display name.</p>
+    <app-vehicle-cities [current]="cityName" [cities]="cities" [(selected)]="extraCityIds" [disabled]="saving || !!created" />
+    <p *ngIf="duplicateNames" role="alert">Give each vehicle a different vehicle name.</p>
     <p *ngIf="error" role="alert">{{ error }}</p>
   </div>
   <div slot="footer" class="form-footer"><span>{{ rows.length }} / 30 vehicles</span>
-    <tm-button variant="ghost" [disabled]="saving" (clicked)="close()">Cancel</tm-button>
-    <tm-button variant="green" [disabled]="saving || !valid" (clicked)="save()">{{ saving ? 'Saving…' : 'Add ' + rows.length + (rows.length === 1 ? ' vehicle' : ' vehicles') }}</tm-button>
+    <tm-button variant="ghost" [disabled]="saving" (clicked)="close()">{{ created ? 'Close' : 'Cancel' }}</tm-button>
+    <tm-button variant="green" [disabled]="saving || !valid" (clicked)="save()">{{ saving ? 'Saving…' : created ? 'Retry save' : 'Add ' + rows.length + (rows.length === 1 ? ' vehicle' : ' vehicles') }}</tm-button>
   </div>
 </tm-drawer>

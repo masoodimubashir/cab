@@ -387,9 +387,12 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::get('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'index'])->middleware('permission:vehicles|pricing|manual_dispatch|rides');
         Route::post('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'store'])->middleware('permission:vehicles');
         Route::post('/admin/cities/{city}/vehicle-types/batch', [AdminVehicleTypesController::class, 'storeBatch'])->middleware('permission:vehicles');
+        Route::post('/admin/cities/{city}/vehicle-types/batch-in-cities', [AdminVehicleTypesController::class, 'storeBatch'])->middleware('permission:vehicles');
         Route::post('/admin/cities/{city}/vehicle-types/copy-to-city', [AdminVehicleTypesController::class, 'copyToCity'])->middleware('permission:vehicles');
         Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'show'])->middleware('permission:vehicles|pricing');
+        Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/private-rate-card', [AdminPricingController::class, 'savePrivateRateCard'])->middleware('permission:vehicles|pricing');
         Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/shared-details', [AdminVehicleTypesController::class, 'updateSharedDetails'])->middleware('permission:vehicles');
+        Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}/matching-cities', [AdminVehicleTypesController::class, 'matchingCities'])->middleware('permission:vehicles');
         Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update'])->middleware('permission:vehicles');
         Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update'])->middleware('permission:vehicles');
         Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'destroy'])->middleware('permission:vehicles');

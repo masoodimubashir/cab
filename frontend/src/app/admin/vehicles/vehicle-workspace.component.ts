@@ -2,7 +2,7 @@ import { Component, ElementRef, HostListener, Input, OnDestroy, OnInit, ViewChil
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Subscription, forkJoin, firstValueFrom, Observable } from 'rxjs';
+import { Subscription, forkJoin, firstValueFrom, Observable, catchError, map, throwError } from 'rxjs';
 import { resolvedRideMode } from '../../core/service-names.service';
 import { ApiService } from '../../core/api.service';
 import { CityContextService, CityOption } from '../../core/city-context.service';
@@ -12,8 +12,10 @@ import { ModalComponent } from '../../ui/modal/modal.component';
 import { ReturnToSetupComponent } from '../setup/return-to-setup.component';
 import { FixedRoutesComponent, ImportedRouteDraft } from '../fixed/fixed-routes.component';
 import { VehicleBasePricingComponent } from '../settings/vehicle-base-pricing.component';
+import { FareFieldHelpComponent } from '../settings/fare-field-help.component';
 import { OutstationPackagesComponent } from '../settings/outstation-packages.component';
-import { AddVehiclesComponent } from './add-vehicles.component';
+import { AddedVehicle, AddVehiclesComponent } from './add-vehicles.component';
+import { VehicleCitiesComponent } from './vehicle-cities.component';
 import { SeatGridComponent } from '../vehicle-seat-layouts/seat-grid.component';
 import { SeatLayoutDesignerComponent } from '../vehicle-seat-layouts/seat-layout-designer.component';
 import { VehicleSeatLayout, VehicleSeatLayoutsService } from '../vehicle-seat-layouts/vehicle-seat-layouts.service';
@@ -131,13 +133,14 @@ interface TabDef { key: string; label: string; count?: number; }
     ReturnToSetupComponent,
     FixedRoutesComponent,
     VehicleBasePricingComponent,
+    FareFieldHelpComponent,
     OutstationPackagesComponent,
     SeatGridComponent,
     SeatLayoutDesignerComponent,
     MasterExplorerComponent,
     MasterGroupEditorComponent,
     VehicleSetsEditorComponent,
-    RouteOperationsComponent, AddVehiclesComponent,
+    RouteOperationsComponent, AddVehiclesComponent, VehicleCitiesComponent,
   ],
   template: `
     <div class="ws">
@@ -169,12 +172,21 @@ interface TabDef { key: string; label: string; count?: number; }
               <tm-icon name="search" [size]="16" />
               <input type="search" aria-label="Search vehicles" placeholder="Search vehicles" [(ngModel)]="search" (ngModelChange)="vehiclePage = 1; applyView()" />
             </label>
+            <tm-button *ngIf="sharedVehicles && canManageVehicles && vehicles.length && availableTargetCities.length" variant="outline" icon="copy" (clicked)="openCopyModal()">Share to cities</tm-button>
+            <tm-button *ngIf="sharedVehicles && canManageVehicles && vehicles.length && availableTargetCities.length" variant="outline" (clicked)="openImport()">Import vehicles</tm-button>
             <tm-button *ngIf="sharedVehicles" variant="green" icon="plus" (clicked)="sharedCreateOpen = true">Add vehicle</tm-button>
             <tm-button *ngIf="serviceMode && canManageVehicles" variant="outline" icon="car" (clicked)="goToSharedVehicles()">Manage vehicles</tm-button>
           </div>
           <p *ngIf="loading">Loading vehicles…</p>
           <p *ngIf="!loading && supportErrors.has('vehicles')">Couldn’t load vehicles. <button type="button" (click)="refresh()">Retry</button></p>
-          <p *ngIf="!loading && !visible.length && !supportErrors.has('vehicles')">No matching vehicles in this city.</p>
+          <section class="transfer-empty" *ngIf="sharedVehicles && canManageVehicles && !loading && !vehicles.length && !supportErrors.has('vehicles'); else vehicleListStatus">
+            <h2>Set up vehicles in {{ cityName }}</h2>
+            <ng-container *ngIf="availableTargetCities.length">
+              <p>Import vehicles with their fares and seat designs from another city.</p>
+              <tm-button variant="outline" icon="copy" (clicked)="openImport()">Import vehicles</tm-button>
+            </ng-container>
+          </section>
+          <ng-template #vehicleListStatus><p *ngIf="!loading && !visible.length && !supportErrors.has('vehicles')">No matching vehicles in this city.</p></ng-template>
           <p *ngIf="serviceMode && !loading && visible.length && !fareRideTypes.length">This service has no ride type configured.</p>
           <div class="service-grid">
           <article *ngFor="let v of displayedFareVehicles; trackBy: trackVehicle" class="service-vehicle">
@@ -182,10 +194,11 @@ interface TabDef { key: string; label: string; count?: number; }
               <img *ngIf="v.image_url; else vehicleIcon" [src]="v.image_url" alt="" loading="lazy" (error)="v.image_url = null" />
               <ng-template #vehicleIcon><tm-icon name="car" [size]="36" /></ng-template>
             </div>
-            <div><strong>{{ v.display_name }}</strong><small><ng-container *ngIf="v.vehicle_type_name && v.vehicle_type_name !== v.display_name">{{ v.vehicle_type_name }} · </ng-container>{{ v.max_people }} {{ v.max_people === 1 ? 'seat' : 'seats' }} · {{ v.luggage_capacity }} bags</small></div>
+            <div><strong>{{ v.display_name }}</strong><small *ngIf="sharedVehicles && v.vehicle_type_name">Type: {{ v.vehicle_type_name }}</small><small><ng-container *ngIf="!sharedVehicles && v.vehicle_type_name && v.vehicle_type_name !== v.display_name">{{ v.vehicle_type_name }} · </ng-container>{{ v.max_people }} {{ v.max_people === 1 ? 'seat' : 'seats' }} · {{ v.luggage_capacity }} bags</small></div>
             <div class="service-actions" *ngIf="sharedVehicles">
               <button type="button" class="btn-kb-outline" (click)="openCommonDrawer(v)">Edit details</button>
               <button type="button" class="btn-kb-outline" (click)="openLayoutsList(v)">Seat layouts ({{ layoutCountFor(v) }})</button>
+              <button type="button" *ngIf="canManageVehicles && availableTargetCities.length" class="btn-kb-outline" (click)="openCopyModal(v)">Share to cities</button>
             </div>
             <div class="service-actions fare-footer" *ngIf="serviceMode">
               <div class="fare-buttons">
@@ -390,7 +403,8 @@ interface TabDef { key: string; label: string; count?: number; }
       </div>
     </div>
 
-    <app-add-vehicles *ngIf="sharedVehicles && sharedCreateOpen && cityId" [cityId]="cityId" [types]="vehicleTypeOptions" (closed)="sharedCreateOpen = false" (saved)="refresh()" />
+    <app-add-vehicles *ngIf="sharedVehicles && sharedCreateOpen && cityId" [cityId]="cityId" [types]="vehicleTypeOptions"
+      [cityName]="cityName" [cities]="availableTargetCities" (closed)="sharedCreateOpen = false" (saved)="refresh()" />
     <app-master-group-editor *ngIf="masterEditGroup as group" [group]="group" [cityId]="cityId!" [vehicleName]="selected?.display_name || ''" [routes]="masterEditRoutes" [drivers]="cityDrivers" (closed)="masterEditGroupId = null" (saved)="loadGroups()" (editRoute)="editMasterGroupRoute($event)" />
     <tm-drawer *ngIf="masterSection" [open]="masterGroupCreateOpen" title="Create stand" [width]="520" (closed)="masterGroupCreateOpen = false">
       <div slot="body" class="form"><label class="f"><span>Stand name</span><input aria-label="Stand name" [(ngModel)]="groupName" placeholder="For example Airport Routes" /></label><p class="meta">Vehicle: {{ selected?.display_name }} · {{ cityName }}</p></div>
@@ -436,15 +450,15 @@ interface TabDef { key: string; label: string; count?: number; }
     <tm-drawer [open]="createOpen" title="Add vehicle" [width]="560" (closed)="createOpen = false">
       <div slot="body" class="form">
         <p class="note">Choose an existing vehicle type or create a new one below. The type and city vehicle save together.</p>
-        <label class="f"><span>Vehicle name <i>*</i></span>
+        <label class="f"><span>Vehicle type <i>*</i></span>
           <select [(ngModel)]="create.vehicle_type_id">
-            <option [ngValue]="null" disabled>Select vehicle name</option>
+            <option [ngValue]="null" disabled>Select vehicle type</option>
             <option *ngFor="let vt of vehicleTypeOptions" [ngValue]="vt.id">{{ vt.name }}</option>
             <option [ngValue]="-1">+ Create a new vehicle type</option>
           </select>
         </label>
         <label class="f" *ngIf="create.vehicle_type_id === -1"><span>New vehicle type <i>*</i></span><input [(ngModel)]="create.vehicle_type_name" maxlength="120" placeholder="e.g. Tavera, Bus, Bicycle" /></label>
-        <label class="f"><span>Display name (optional)</span><input type="text" [(ngModel)]="create.display_name" placeholder="Leave blank to use the vehicle type name" /></label>
+        <label class="f"><span>Vehicle name shown to customers (optional)</span><input type="text" [(ngModel)]="create.display_name" placeholder="Leave blank to use the vehicle type name" /></label>
         <label class="f" *ngIf="!serviceMode"><span>Vehicle set (optional)</span><select [(ngModel)]="create.vehicle_set_id"><option [ngValue]="null">No set</option><option *ngFor="let set of vehicleSets" [ngValue]="set.id">{{ set.name }}</option></select></label>
         <p class="note">Joining a set makes its shared stands available. Use Vehicle sets to create a set or change its stands.</p>
         <div class="fields">
@@ -461,25 +475,26 @@ interface TabDef { key: string; label: string; count?: number; }
     <tm-drawer
       [open]="commonDrawerOpen"
       [title]="(commonDrawerVehicle?.display_name || 'Vehicle') + ' — edit vehicle'"
-      subtitle="Shared by every fare mode of this vehicle"
+      [dismissible]="!savingCommon" [showClose]="!savingCommon"
       [width]="440"
       (closed)="closeCommonDrawer()"
     >
       <div slot="body" class="form">
         <div class="fields">
-          <label class="f f--wide"><span>Vehicle name <i>*</i></span><input type="text" [(ngModel)]="common.display_name" /></label>
-          <label class="f"><span>Max people</span><input type="number" min="1" [(ngModel)]="common.max_people" /></label>
-          <label class="f"><span>Luggage capacity</span><input type="number" min="0" [(ngModel)]="common.luggage_capacity" /></label>
+          <label class="f f--wide"><span>Vehicle name shown to customers <i>*</i></span><input type="text" [(ngModel)]="common.display_name" [disabled]="savingCommon || !!pendingCityEdits" /></label>
+          <label class="f"><span>Seats</span><input type="number" min="1" max="99" [(ngModel)]="common.max_people" [disabled]="savingCommon || !!pendingCityEdits" /></label>
+          <label class="f"><span>Bags</span><input type="number" min="0" max="99" [(ngModel)]="common.luggage_capacity" [disabled]="savingCommon || !!pendingCityEdits" /></label>
         </div>
-        <p class="meta" *ngIf="commonDrawerVehicle" style="margin-top: 12px;">
-          Depends on type: <b>{{ commonDrawerVehicle.vehicle_type_name || 'not set' }}</b> · Fare setup: <b>{{ fareModesLabel(commonDrawerVehicle) }}</b>.
-          Saving patches every mode row that shares this name and type.
-        </p>
+        <app-vehicle-cities *ngIf="sharedVehicles && commonDrawerOpen" [current]="cityName" [cities]="matchingCities" [canChoose]="availableTargetCities.length > 0" (opened)="matchingState === 'idle' && loadMatchingCities()" [(selected)]="editCityIds" [disabled]="savingCommon || !!pendingCityEdits" />
+        <p class="meta" *ngIf="matchingState === 'loading'" role="status">Checking other cities for this vehicle…</p>
+        <p class="meta" *ngIf="matchingState === 'ready' && !matchingCities.length">This vehicle is only in {{ cityName }}. Use Share to cities to add it elsewhere.</p>
+        <p class="meta" role="alert" *ngIf="editSaveError">{{ editSaveError }}</p>
+        <p class="meta" *ngIf="matchingState === 'error'" role="alert">Couldn’t check other cities. <button type="button" (click)="loadMatchingCities()">Retry</button></p>
       </div>
       <div slot="footer">
-        <tm-button variant="ghost" (clicked)="closeCommonDrawer()">Cancel</tm-button>
+        <tm-button variant="ghost" [disabled]="savingCommon" (clicked)="closeCommonDrawer()">Cancel</tm-button>
         <tm-button variant="green" icon="check" [disabled]="savingCommon || !common.display_name.trim()" (clicked)="saveCommon()">
-          {{ savingCommon ? 'Saving...' : 'Save' }}
+          {{ savingCommon ? 'Saving…' : pendingCityEdits ? 'Retry save' : 'Save' }}
         </tm-button>
       </div>
     </tm-drawer>
@@ -951,19 +966,27 @@ interface TabDef { key: string; label: string; count?: number; }
     </tm-drawer>
 
     <!-- Fare editor — opens the real fare form for one vehicle + ride type. -->
-    <tm-drawer [open]="fareDrawerOpen" [title]="(selected?.display_name || 'Vehicle') + ' — ' + (serviceLabel || activeRideType?.name || 'fare')" [subtitle]="fareSubtitle" [width]="620" (closed)="closeFareDrawer()">
-      <div slot="body" class="form" *ngIf="activeRideType && !activeIsFixed">
+    <tm-drawer [open]="fareDrawerOpen" [title]="(selected?.display_name || 'Vehicle') + ' — ' + (serviceLabel || activeRideType?.name || 'fare')" [width]="620" (closed)="closeFareDrawer()">
+      <div slot="body" class="form" *ngIf="fareDrawerOpen && activeRideType && !activeIsFixed">
         <ng-container *ngIf="activeRow; else preparingFare">
-          <div class="sec" *ngIf="activeKind === 'private' && canManageVehicles">
-            <div class="sec__head"><h3>{{ serviceLabel || activeRideType.name }} options</h3></div>
-            <div class="inline">
-              <label class="check"><input type="checkbox" [(ngModel)]="reverseBidding" /> <span>Reverse bidding</span></label>
-              <tm-button variant="outline" size="sm" icon="check" [disabled]="savingUnique" (clicked)="saveUniqueFields()">{{ savingUnique ? 'Saving...' : 'Save unique fields' }}</tm-button>
+          <ng-template #biddingOptions>
+            <div class="bidding-options" *ngIf="activeKind === 'private' && canManageVehicles">
+              <div class="bidding-label">
+                <span id="reverse-bidding-label">Reverse bidding</span>
+                <app-fare-field-help label="Reverse bidding" text="Allow drivers to offer a different fare for this vehicle when responding to a private ride request."/>
+              </div>
+              <div class="fare-selector" role="group" aria-labelledby="reverse-bidding-label">
+                <button type="button" [attr.aria-pressed]="!reverseBidding" (click)="reverseBidding = false">Off</button>
+                <button type="button" [attr.aria-pressed]="reverseBidding" (click)="reverseBidding = true">On</button>
+              </div>
             </div>
-          </div>
+          </ng-template>
+          <ng-container *ngIf="activeRow.is_outstation || !canManagePricing" [ngTemplateOutlet]="biddingOptions"></ng-container>
           <p *ngIf="!activeRow.is_outstation && !canManagePricing">Pricing permission is required to edit this fare card.</p>
           <div class="sec">
-            <app-vehicle-base-pricing *ngIf="!activeRow.is_outstation && canManagePricing" [cityId]="cityId" [cityVehicleTypeId]="activeRow.id" [title]="(serviceLabel || activeRideType.name) + ' Fare Settings'" [subtitle]="fareSubtitle"></app-vehicle-base-pricing>
+            <app-vehicle-base-pricing *ngIf="!activeRow.is_outstation && canManagePricing" [cityId]="cityId" [cityVehicleTypeId]="activeRow.id" [privateRide]="activeKind === 'private'" [title]="(serviceLabel || activeRideType.name) + ' Fare Settings'" subtitle="">
+              <ng-container *ngTemplateOutlet="biddingOptions"></ng-container>
+            </app-vehicle-base-pricing>
             <app-outstation-packages *ngIf="activeRow.is_outstation && canManageVehicles" [cityId]="cityId" [vehicleTypeId]="activeRow.id"></app-outstation-packages>
           </div>
         </ng-container>
@@ -975,7 +998,12 @@ interface TabDef { key: string; label: string; count?: number; }
           </div>
         </ng-template>
       </div>
-      <div slot="footer"><tm-button variant="ghost" (clicked)="closeFareDrawer()">Done</tm-button></div>
+      <div slot="footer" class="fare-actions">
+        <tm-button *ngIf="activeRideType && activeKind === 'private' && activeRow && (canManageVehicles || (canManagePricing && !activeRow.is_outstation))"
+          variant="green" [disabled]="!canSavePrivateFare" [loading]="savingPrivateFare"
+          (clicked)="savePrivateFare()">Save</tm-button>
+        <tm-button variant="ghost" [disabled]="savingPrivateFare" (clicked)="closeFareDrawer()">Done</tm-button>
+      </div>
     </tm-drawer>
 
     <!-- Seat layouts list for the selected vehicle's type. -->
@@ -1064,129 +1092,93 @@ interface TabDef { key: string; label: string; count?: number; }
       </ng-container>
     </tm-modal>
 
-    <!-- Copy vehicle settings to another location (City) -->
-    <tm-drawer
-      [open]="copyModalOpen"
-      [title]="copyModalTitle"
-      subtitle="Duplicate vehicle name, vehicle type, seat designs & fare rate cards to other cities"
-      [width]="560"
-      (closed)="copyModalOpen = false"
-    >
-      <div slot="body" class="form">
-        <!-- Source city info -->
-        <div class="note" style="display: flex; align-items: center; justify-content: space-between;">
-          <span>Source Location: <b>{{ cityName || 'Current city' }}</b></span>
-          <span class="badge badge--mute">{{ copyForm.vehicle_ids.length }} {{ copyForm.vehicle_ids.length === 1 ? 'vehicle' : 'vehicles' }} selected</span>
-        </div>
+    <tm-drawer [open]="copyModalOpen" [title]="copyModalTitle" [width]="580"
+      [dismissible]="!copyingToLocation" [showClose]="!copyingToLocation" (closed)="copyModalOpen = false">
+      <div slot="body" *ngIf="copyModalOpen">
+        <fieldset class="transfer" [disabled]="copyingToLocation">
+          <section class="transfer-city">
+            <tm-icon name="map-marker" [size]="20" />
+            <div><small>{{ importing ? 'Import into' : 'Share from' }}</small><strong>{{ cityName }}</strong></div>
+          </section>
 
-        <!-- 1. Vehicles being copied -->
-        <div class="f" style="margin-top: 10px;">
-          <div class="f__head-row">
-            <span>Vehicles to Copy</span>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" class="mini-btn" (click)="selectAllVehiclesForCopy()">Select all</button>
-              <button type="button" class="mini-btn" (click)="copyForm.vehicle_ids = []">Clear</button>
+          <label *ngIf="importing" class="transfer-source">
+            <span>Import from</span>
+            <select [ngModel]="importSourceId" (ngModelChange)="loadImportVehicles($event)">
+              <option [ngValue]="null" disabled>Choose a city</option>
+              <option *ngFor="let city of availableTargetCities" [ngValue]="city.id">{{ city.name }}</option>
+            </select>
+          </label>
+
+          <section *ngIf="!importing">
+            <div class="transfer-heading"><h3>Add to cities</h3>
+              <button *ngIf="availableTargetCities.length" type="button" (click)="copyForm.target_city_ids.length === availableTargetCities.length ? clearTargetCities() : selectAllTargetCities()">
+                {{ copyForm.target_city_ids.length === availableTargetCities.length ? 'Clear' : 'Select all' }}
+              </button>
             </div>
-          </div>
-          <div class="chip-grid" *ngIf="vehicles.length; else noVehiclesToCopy">
-            <button
-              *ngFor="let v of vehicles"
-              type="button"
-              class="multi-chip"
-              [class.is-selected]="copyForm.vehicle_ids.includes(v.id)"
-              (click)="toggleCopyVehicle(v.id)"
-            >
-              <tm-icon [name]="copyForm.vehicle_ids.includes(v.id) ? 'check' : 'plus'" [size]="12" />
-              <span><b>{{ v.display_name }}</b> ({{ v.vehicle_type_name || 'Vehicle' }})</span>
-              <span class="muted" style="margin-left: 4px;">· {{ v.max_people }} seats</span>
-            </button>
-          </div>
-          <ng-template #noVehiclesToCopy>
-            <p class="meta">No vehicles available in current location.</p>
-          </ng-template>
-        </div>
+            <div class="chip-grid"><button *ngFor="let city of availableTargetCities" type="button" class="multi-chip"
+              [class.is-selected]="copyForm.target_city_ids.includes(city.id)" [attr.aria-pressed]="copyForm.target_city_ids.includes(city.id)"
+              (click)="toggleTargetCity(city.id)">{{ city.name }}</button></div>
+            <p *ngIf="!availableTargetCities.length">Add another city to share vehicles.</p>
+          </section>
 
-        <!-- 2. Target Cities Selection -->
-        <div class="f" style="margin-top: 12px;">
-          <div class="f__head-row">
-            <span>Target Location(s) / Destination Cities <i>*</i></span>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" class="mini-btn mini-btn--go" (click)="selectAllTargetCities()">Select all</button>
-              <button type="button" class="mini-btn" (click)="clearTargetCities()">Clear</button>
+          <p *ngIf="importing && importLoading" role="status">Loading vehicles…</p>
+          <p *ngIf="importing && importFailed" role="alert">Couldn’t load the vehicles. <button type="button" (click)="loadImportVehicles(importSourceId)">Retry</button></p>
+          <p *ngIf="importing && importSourceId && !importLoading && !importFailed && !transferVehicles.length">This city has no vehicles to import.</p>
+
+          <details class="transfer-details" *ngIf="transferVehicles.length">
+            <summary>Vehicles <span>{{ copyForm.vehicle_ids.length }} of {{ transferVehicles.length }} selected</span></summary>
+            <div class="transfer-list">
+              <button type="button" class="transfer-select" (click)="copyForm.vehicle_ids.length === transferVehicles.length ? copyForm.vehicle_ids = [] : selectAllVehiclesForCopy()">{{ copyForm.vehicle_ids.length === transferVehicles.length ? 'Clear selection' : 'Select all' }}</button>
+              <label *ngFor="let v of transferVehicles"><input type="checkbox" [checked]="copyForm.vehicle_ids.includes(v.id)" (change)="toggleCopyVehicle(v.id)">
+                <span><b>{{ v.display_name }}</b><small>{{ v.vehicle_type_name }} · {{ v.max_people }} seats</small></span>
+              </label>
             </div>
-          </div>
-          <p class="meta" *ngIf="!availableTargetCities.length">No other cities configured yet. Create more cities under Settings &gt; Cities first.</p>
-          <div class="chip-grid" *ngIf="availableTargetCities.length">
-            <button
-              *ngFor="let c of availableTargetCities"
-              type="button"
-              class="multi-chip"
-              [class.is-selected]="copyForm.target_city_ids.includes(c.id)"
-              (click)="toggleTargetCity(c.id)"
-            >
-              <tm-icon [name]="copyForm.target_city_ids.includes(c.id) ? 'check' : 'plus'" [size]="12" />
-              <span>{{ c.name }}</span>
-            </button>
-          </div>
-        </div>
+          </details>
 
-        <!-- 3. Copy Modules & Options -->
-        <div class="f" style="margin-top: 14px;">
-          <span>Copy Modules &amp; Settings</span>
-          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding: 12px; border: 1px solid var(--tm-line); border-radius: 10px; background: var(--tm-canvas);">
-            <label class="check" style="align-items: flex-start;">
-              <input type="checkbox" [checked]="true" disabled style="margin-top: 3px;" />
-              <span style="display: flex; flex-direction: column; gap: 2px;">
-                <b>Vehicle Name, Vehicle Type &amp; Capacities</b>
-                <span class="muted">Name, Type, Seats count, Bags, Dispatch hops</span>
-              </span>
-            </label>
-            <label class="check" style="align-items: flex-start;">
-              <input type="checkbox" [(ngModel)]="copyForm.copy_seat_layouts" style="margin-top: 3px;" />
-              <span style="display: flex; flex-direction: column; gap: 2px;">
-                <b>Design Seats &amp; Seat Layouts</b>
-                <span class="muted">Copies reusable seat map designs for this vehicle type</span>
-              </span>
-            </label>
-            <label class="check" style="align-items: flex-start;">
-              <input type="checkbox" [(ngModel)]="copyForm.copy_pricing" style="margin-top: 3px;" />
-              <span style="display: flex; flex-direction: column; gap: 2px;">
-                <b>Fares &amp; Pricing Rate Cards</b>
-                <span class="muted">Base price, km rates, commissions, and outstation packages</span>
-              </span>
-            </label>
-            <label class="check" style="align-items: flex-start; border-top: 1px solid var(--tm-line); padding-top: 10px; margin-top: 2px;">
-              <input type="checkbox" [(ngModel)]="copyForm.overwrite_existing" style="margin-top: 3px;" />
-              <span style="display: flex; flex-direction: column; gap: 2px;">
-                <b>Overwrite existing</b>
-                <span class="muted">Update vehicle and layout if already present in target city</span>
-              </span>
-            </label>
+          <details class="transfer-details"><summary>Copy settings <span>{{ copyForm.copy_pricing && copyForm.copy_seat_layouts ? 'Fares & seat designs' : 'Custom' }}</span></summary>
+          <div class="transfer-settings">
+            <label><input type="checkbox" [(ngModel)]="copyForm.copy_pricing"> Fares and rate cards</label>
+            <label><input type="checkbox" [(ngModel)]="copyForm.copy_seat_layouts"> Seat designs</label>
           </div>
-        </div>
+            <label class="transfer-overwrite"><input type="checkbox" [(ngModel)]="copyForm.overwrite_existing"> Update matching vehicles and selected settings</label>
+          </details>
+        </fieldset>
       </div>
-
-      <div slot="footer">
-        <span class="drawer-count" *ngIf="copyForm.target_city_ids.length">
-          {{ copyForm.target_city_ids.length }} {{ copyForm.target_city_ids.length === 1 ? 'city' : 'cities' }} selected
-        </span>
-        <span class="ws__grow"></span>
-        <tm-button variant="ghost" (clicked)="copyModalOpen = false">Cancel</tm-button>
-        <tm-button
-          variant="green"
-          icon="copy"
-          [disabled]="!copyForm.target_city_ids.length || !copyForm.vehicle_ids.length || copyingToLocation"
-          (clicked)="submitCopyToLocation()"
-        >
-          {{ copyingToLocation ? 'Copying...' : 'Copy Vehicle Settings' }}
-        </tm-button>
+      <div slot="footer" class="transfer-actions">
+        <tm-button variant="ghost" [disabled]="copyingToLocation" (clicked)="copyModalOpen = false">Cancel</tm-button>
+        <tm-button variant="green" [loading]="copyingToLocation"
+          [disabled]="!copyForm.target_city_ids.length || !copyForm.vehicle_ids.length || (importing && !importSourceId)"
+          (clicked)="submitCopyToLocation()">{{ importing ? 'Import' : 'Share' }} {{ copyForm.vehicle_ids.length || '' }} {{ copyForm.vehicle_ids.length === 1 ? 'vehicle' : 'vehicles' }}</tm-button>
       </div>
     </tm-drawer>
 
     <!-- Hidden picker for "Bulk" import — creates Needs-pricing routes. Multiple files allowed. -->
     <input #bulkKmlInput type="file" accept=".kml,.kmz" multiple hidden (change)="onBulkKmlFileSelected($event)" />
   `,
+  styleUrls: ['../settings/fare-selector.css'],
   styles: [`
+    .transfer { display: grid; gap: 22px; border: 0; padding: 0; margin: 0; min-width: 0; }
+    .transfer-city, .transfer-empty { padding: 16px; border: 1px solid var(--tm-line); border-radius: 12px; background: var(--tm-canvas); }
+    .transfer-city { display: flex; gap: 12px; align-items: center; color: var(--tm-text); }
+    .transfer-city small, .transfer-list small { display: block; font-size: 12px; color: var(--tm-text-muted); }
+    .transfer-city strong { display: block; margin-top: 3px; font-size: 18px; }
+    .transfer h3, .transfer-source > span { margin: 0; font-size: 14px; font-weight: 700; }
+    .transfer-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .transfer-heading button, .transfer-select { color: var(--tm-green-deep); background: none; border: 0; font: inherit; cursor: pointer; }
+    .transfer-source, .transfer-settings { display: grid; gap: 10px; }
+    .transfer-source select { padding: 10px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-surface); color: var(--tm-text); font: inherit; }
+    .transfer-details { border: 1px solid var(--tm-line); border-radius: 10px; }
+    .transfer-details summary { cursor: pointer; padding: 14px; font-weight: 700; }
+    .transfer-details summary span { float: right; color: var(--tm-text-muted); font-size: 12px; font-weight: 500; }
+    .transfer-list { display: grid; gap: 8px; padding: 0 14px 14px; max-height: 260px; overflow-y: auto; }
+    .transfer-select { justify-self: start; padding: 0; }
+    .transfer-list label, .transfer-settings label, .transfer-overwrite { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+    .transfer-overwrite { padding: 0 14px 14px; }
+    .transfer input { accent-color: var(--tm-green-deep); }
+    .transfer-actions { display: flex; gap: 8px; }
+    .transfer-empty { margin: 16px 0; text-align: center; padding: 28px 16px; }
+    .transfer-empty h2 { margin: 0; font-size: 18px; }
+    .transfer-empty p { margin: 6px 0 16px; color: var(--tm-text-muted); }
     .service-fares { width: 100%; min-width: 0; container-type: inline-size; }
     .service-toolbar, .service-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
     .service-toolbar { justify-content: space-between; margin-bottom: 16px; }
@@ -1369,6 +1361,9 @@ interface TabDef { key: string; label: string; count?: number; }
     .f input:focus, .f select:focus { border-color: var(--tm-green, #16a34a); }
     .check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--tm-text); }
     .check input { width: 16px; height: 16px; accent-color: var(--tm-green, #16a34a); }
+    .bidding-options { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
+    .bidding-label { display: flex; align-items: center; flex-basis: 100%; gap: 5px; font-size: 14px; font-weight: 800; color: var(--tm-text); }
+    .fare-actions { display: flex; align-items: center; gap: 8px; }
 
     /* Clickable enabled/disabled pill — same look as the ENABLED status pill in
        the header, so this vehicle's on/off state reads identically wherever shown. */
@@ -2573,6 +2568,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.handleMasterAction(action as MasterAction);
   }
   @ViewChild(FixedRoutesComponent) private fixedRoutes?: FixedRoutesComponent;
+  @ViewChild(VehicleBasePricingComponent) fareEditor?: VehicleBasePricingComponent;
 
   cityId: number | null = null;
   cityName = '';
@@ -2618,7 +2614,6 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   activeKind: ModeKind = 'private';
   activeIsFixed = false;
   activeRow: CityVehicleRow | null = null;
-  fareSubtitle = '';
   selDrivers: DriverOpt[] = [];
   otherDrivers: DriverOpt[] = [];
   selLayouts: VehicleSeatLayout[] = [];
@@ -2653,7 +2648,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   savingCommon = false;
   savingActive = false;
   reverseBidding = false;
-  savingUnique = false;
+  savingPrivateFare = false;
   creatingRideTypeId: number | null = null;
   /** vehicle+ride-type keys we've already tried to auto-create, so a failed
    *  create can never loop into duplicate rows on the next recompute. */
@@ -2670,6 +2665,13 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   // Common setup now lives in a right-side drawer opened by the row pen icon.
   commonDrawerOpen = false;
   commonDrawerVehicle: CityVehicleRow | null = null;
+  editCityIds: number[] = [];
+  matchingCities: CityOption[] = [];
+  matchingState: 'idle' | 'loading' | 'ready' | 'error' = 'idle';
+  private legacyVehicleIds: Map<number, number> | null = null;
+  pendingCityEdits: {cityId: number; vehicleId: number}[] | null = null;
+  editSaveError = '';
+  private matchingRequest?: Subscription;
 
   // ── spreadsheet UI state ───────────────────────────────────
   /** Vehicles whose route-group detail row is expanded. */
@@ -2711,14 +2713,17 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     copy_seat_layouts: true,
     overwrite_existing: true,
   };
-  copyScope: 'single' | 'selected' | 'all' = 'all';
-  copySingleVehicle: CityVehicleRow | null = null;
+  importing = false;
+  importSourceId: number | null = null;
+  importLoading = false;
+  importFailed = false;
+  private sourceRequest?: Subscription;
+  private transferSubset: AddedVehicle[] | null = null;
+
+  get transferVehicles(): AddedVehicle[] { return this.transferSubset ?? this.vehicles; }
 
   get copyModalTitle(): string {
-    if (this.copySingleVehicle) {
-      return `Copy "${this.copySingleVehicle.display_name}" to another location`;
-    }
-    return 'Copy vehicle settings to another location';
+    return this.importing ? 'Import vehicles' : 'Share to cities';
   }
 
   get availableTargetCities(): CityOption[] {
@@ -3356,7 +3361,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
         this.cityName = list.find((c) => c.id === this.cityId)?.name ?? '';
       }),
       this.cityCtx.cityId$.subscribe((id) => {
-        if (this.cityId !== id) { this.vehiclePage = 1; this.sharedCreateOpen = false; this.closeCommonDrawer(); this.layoutsListOpen = false; this.layoutDrawerOpen = false; }
+        if (this.cityId !== id) { this.vehiclePage = 1; this.sharedCreateOpen = false; this.copyModalOpen = false; this.closeCommonDrawer(); this.layoutsListOpen = false; this.layoutDrawerOpen = false; }
         this.cityId = id;
         this.cityName = this.allCities.find(city => city.id === id)?.name ?? '';
         if (id == null) { this.loadedCityId = null; this.resetData(); return; }
@@ -3370,6 +3375,8 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.matchingRequest?.unsubscribe();
+    this.sourceRequest?.unsubscribe();
     this.subs.forEach((s) => s.unsubscribe());
   }
 
@@ -3657,11 +3664,6 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     const key = this.groupKey(this.selected);
     this.activeRow = this.rows.find((r) => this.groupKey(r) === key && r.ride_type_id === id) ?? null;
     this.reverseBidding = !!this.activeRow?.reverse_bidding_enabled;
-    this.fareSubtitle = this.activeKind === 'shuttle'
-      ? ''
-      : 'Fare card used by the current customer and driver flow.';
-
-
   }
 
   select(v: CityVehicleRow): void {
@@ -3738,26 +3740,90 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.select(v);
     this.commonDrawerVehicle = v;
     this.commonDrawerOpen = true;
+    this.editCityIds = [];
+    this.matchingCities = [];
+    this.matchingState = 'idle';
+    this.pendingCityEdits = null;
+    this.editSaveError = '';
+    this.legacyVehicleIds = null;
+  }
+
+  loadMatchingCities(): void {
+    if (!this.commonDrawerVehicle) return;
+    this.matchingRequest?.unsubscribe();
+    this.matchingState = 'loading';
+    const vehicle = this.commonDrawerVehicle;
+    this.matchingRequest = this.api.get<{city_ids: number[]}>(`/admin/cities/${this.cityId}/vehicle-types/${vehicle.id}/matching-cities`).pipe(
+      catchError(err => {
+        if (![404, 405].includes(err.status)) return throwError(() => err);
+        const requests = this.availableTargetCities.map(city => this.api.get<{data: CityVehicleRow[]}>(`/admin/cities/${city.id}/vehicle-types`).pipe(
+          map(res => ({ cityId: city.id, match: res.data.find(row => this.groupKey(row) === this.groupKey(vehicle)) })),
+        ));
+        return forkJoin(requests).pipe(map(results => {
+          this.legacyVehicleIds = new Map();
+          for (const { cityId, match } of results) if (match) this.legacyVehicleIds.set(cityId, match.id);
+          return { city_ids: [...this.legacyVehicleIds.keys()] };
+        }));
+      }),
+    ).subscribe({
+      next: res => {
+        this.matchingCities = this.availableTargetCities.filter(city => res.city_ids.includes(city.id));
+        this.matchingState = 'ready';
+      },
+      error: () => { this.matchingState = 'error'; },
+    });
   }
 
   closeCommonDrawer(): void {
+    this.matchingRequest?.unsubscribe();
+    this.matchingState = 'idle';
+    this.editCityIds = [];
     this.commonDrawerOpen = false;
     this.commonDrawerVehicle = null;
   }
 
   saveCommon(): void {
-    const v = this.selected;
+    const v = this.commonDrawerVehicle ?? this.selected;
     if (!v || this.cityId == null || this.savingCommon) return;
-    const payload = {
-      display_name: this.common.display_name.trim(),
-      max_people: this.common.max_people,
-      luggage_capacity: this.common.luggage_capacity,
-    };
+    const payload: Partial<Pick<CityVehicleRow, 'display_name' | 'max_people' | 'luggage_capacity'>> = {};
+    const name = this.common.display_name.trim();
+    if (name !== v.display_name) payload.display_name = name;
+    if (this.common.max_people !== v.max_people) payload.max_people = this.common.max_people;
+    if (this.common.luggage_capacity !== v.luggage_capacity) payload.luggage_capacity = this.common.luggage_capacity;
+    if (!Object.keys(payload).length) { this.closeCommonDrawer(); return; }
     this.savingCommon = true;
-    this.api.patch(`/admin/cities/${this.cityId}/vehicle-types/${v.id}/shared-details`, payload).subscribe({
-      next: () => { this.savingCommon = false; this.commonDrawerOpen = false; this.commonDrawerVehicle = null; this.toast.success('City vehicle saved'); this.load(); },
+    if (this.legacyVehicleIds && this.editCityIds.length) {
+      this.pendingCityEdits ??= [
+        { cityId: this.cityId, vehicleId: v.id },
+        ...this.editCityIds.map(cityId => ({ cityId, vehicleId: this.legacyVehicleIds!.get(cityId)! })),
+      ];
+      void this.saveCityEdits(payload);
+      return;
+    }
+    this.api.patch(`/admin/cities/${this.cityId}/vehicle-types/${v.id}/shared-details`, { ...payload, target_city_ids: this.editCityIds }).subscribe({
+      next: () => { this.savingCommon = false; this.closeCommonDrawer(); this.toast.success('Vehicle changes saved'); this.load(); },
       error: (err) => { this.savingCommon = false; this.toast.error(err?.error?.message || 'Failed to save city vehicle'); },
     });
+  }
+
+  private async saveCityEdits(payload: Partial<CityVehicleRow>): Promise<void> {
+    const pending = this.pendingCityEdits!;
+    try {
+      while (pending.length) {
+        const { cityId, vehicleId } = pending[0];
+        await firstValueFrom(this.api.patch(`/admin/cities/${cityId}/vehicle-types/${vehicleId}/shared-details`, payload));
+        pending.shift();
+      }
+      this.closeCommonDrawer();
+      this.toast.success('Vehicle changes saved');
+      this.load();
+    } catch (error: any) {
+      const cities = this.allCities.filter(city => pending.some(item => item.cityId === city.id));
+      this.editSaveError = `Still to save in ${cities.map(city => city.name).join(', ')}. ${error?.error?.message || 'Please retry.'}`;
+      if (pending.length === this.editCityIds.length + 1) this.pendingCityEdits = null;
+    } finally {
+      this.savingCommon = false;
+    }
   }
 
   /**
@@ -3791,14 +3857,40 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     });
   }
 
-  saveUniqueFields(): void {
-    if (!this.activeRow || this.cityId == null || this.savingUnique) return;
-    this.savingUnique = true;
-    this.api.patch(`/admin/cities/${this.cityId}/vehicle-types/${this.activeRow.id}`, {
-      reverse_bidding_enabled: this.reverseBidding,
-    }).subscribe({
-      next: () => { this.savingUnique = false; this.toast.success('Unique fields saved'); this.load(); },
-      error: (err) => { this.savingUnique = false; this.toast.error(err?.error?.message || 'Failed to save unique fields'); },
+  private get biddingChanged(): boolean {
+    return this.canManageVehicles && !!this.activeRow && this.reverseBidding !== !!this.activeRow.reverse_bidding_enabled;
+  }
+
+  get canSavePrivateFare(): boolean {
+    if (this.savingPrivateFare || !this.activeRow || this.activeKind !== 'private') return false;
+    if (this.canManagePricing && !this.activeRow.is_outstation && this.fareEditor &&
+        Object.keys(this.fareEditor.changedPricing).length) return this.fareEditor.canSave;
+    return this.biddingChanged;
+  }
+
+  savePrivateFare(): void {
+    if (!this.canSavePrivateFare || !this.activeRow || this.cityId == null) return;
+    const row = this.activeRow;
+    const editor = this.canManagePricing && !row.is_outstation ? this.fareEditor : undefined;
+    const pricing = editor?.changedPricing ?? {};
+    const bidding = this.biddingChanged ? this.reverseBidding : undefined;
+    const changes = bidding === undefined ? pricing : { ...pricing, reverse_bidding_enabled: bidding };
+    this.savingPrivateFare = true;
+    this.api.patch(`/admin/cities/${this.cityId}/vehicle-types/${row.id}/private-rate-card`, changes).subscribe({
+      next: () => {
+        this.savingPrivateFare = false;
+        if (editor?.cityVehicleTypeId === row.id) editor.markPricingSaved(pricing);
+        if (bidding !== undefined) {
+          row.reverse_bidding_enabled = bidding;
+          const current = this.rows.find(vehicle => vehicle.id === row.id);
+          if (current) current.reverse_bidding_enabled = bidding;
+        }
+        this.toast.success('Changes saved');
+      },
+      error: (err) => {
+        this.savingPrivateFare = false;
+        this.toast.error(err?.error?.message || 'Could not save changes. Please try again.');
+      },
     });
   }
 
@@ -4309,7 +4401,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     if (this.serviceMode && this.canManageVehicles && !this.activeRow) this.createFareSetup(rt);
     this.fareDrawerOpen = true;
   }
-  closeFareDrawer(): void { this.fareDrawerOpen = false; }
+  closeFareDrawer(): void { if (!this.savingPrivateFare) this.fareDrawerOpen = false; }
 
   openAppAssets(v: CityVehicleRow): void {
     void this.router.navigate(['/settings/app-assets'], {
@@ -4595,25 +4687,42 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     if (this.cityId == null) return;
     this.cityCtx.ensureCitiesLoaded().subscribe();
 
-    if (v) {
-      this.copyScope = 'single';
-      this.copySingleVehicle = v;
-      this.copyForm.vehicle_ids = [v.id];
-    } else if (this.selectedIds.size > 0) {
-      this.copyScope = 'selected';
-      this.copySingleVehicle = null;
-      this.copyForm.vehicle_ids = Array.from(this.selectedIds);
-    } else {
-      this.copyScope = 'all';
-      this.copySingleVehicle = null;
-      this.copyForm.vehicle_ids = this.vehicles.map((x) => x.id);
-    }
-
+    this.sourceRequest?.unsubscribe();
+    this.importing = false;
+    this.importSourceId = null;
+    this.transferSubset = v ? [v] : null;
+    this.copyForm.vehicle_ids = !v && this.selectedIds.size ? [...this.selectedIds] : this.transferVehicles.map(vehicle => vehicle.id);
     this.copyForm.target_city_ids = [];
     this.copyForm.copy_pricing = true;
     this.copyForm.copy_seat_layouts = true;
-    this.copyForm.overwrite_existing = true;
+    this.copyForm.overwrite_existing = !this.sharedVehicles;
     this.copyModalOpen = true;
+  }
+
+  openImport(): void {
+    if (this.cityId == null) return;
+    this.openCopyModal();
+    this.importing = true;
+    this.copyForm.target_city_ids = [this.cityId];
+    this.loadImportVehicles(this.availableTargetCities.length === 1 ? this.availableTargetCities[0].id : null);
+  }
+
+  loadImportVehicles(source: number | null): void {
+    this.sourceRequest?.unsubscribe();
+    this.importSourceId = source;
+    this.transferSubset = [];
+    this.copyForm.vehicle_ids = [];
+    this.importFailed = false;
+    this.importLoading = source != null;
+    if (source == null) return;
+    this.sourceRequest = this.api.get<{data: CityVehicleRow[]}>(`/admin/cities/${source}/vehicle-types`).subscribe({
+      next: res => {
+        this.importLoading = false;
+        this.transferSubset = this.groupRows(res.data);
+        this.selectAllVehiclesForCopy();
+      },
+      error: () => { this.importLoading = false; this.importFailed = true; },
+    });
   }
 
   openCopyModalForSelected(): void {
@@ -4646,11 +4755,12 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   }
 
   selectAllVehiclesForCopy(): void {
-    this.copyForm.vehicle_ids = this.vehicles.map((v) => v.id);
+    this.copyForm.vehicle_ids = this.transferVehicles.map((v) => v.id);
   }
 
   submitCopyToLocation(): void {
-    if (this.cityId == null) return;
+    const source = this.importing ? this.importSourceId : this.cityId;
+    if (source == null || this.copyingToLocation) return;
     if (!this.copyForm.target_city_ids.length) {
       this.toast.error('Select at least one destination city/location.');
       return;
@@ -4663,14 +4773,15 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.copyingToLocation = true;
     this.api
       .post<{ message: string; copied_count: number; copied_layouts_count: number }>(
-        `/admin/cities/${this.cityId}/vehicle-types/copy-to-city`,
-        this.copyForm,
+        `/admin/cities/${source}/vehicle-types/copy-to-city`,
+        { ...this.copyForm },
       )
       .subscribe({
         next: (res) => {
           this.copyingToLocation = false;
           this.copyModalOpen = false;
           this.toast.success(res?.message || 'Vehicle settings copied successfully.');
+          if (this.importing) this.refresh();
         },
         error: (err) => {
           this.copyingToLocation = false;

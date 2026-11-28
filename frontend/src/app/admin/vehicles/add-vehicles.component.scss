@@ -3,10 +3,16 @@
 table { width: 100%; min-width: 530px; border-spacing: 0; table-layout: fixed; color: var(--tm-text); }
 .number-col { width: 72px; }
 .action-col { width: 42px; }
+.photo-hint { margin: 0 0 12px; color: var(--tm-text-muted); font-size: 13px; }
+.photo-col { width: 82px; }
+.photo-picker { width: 60px; height: 40px; padding: 0; border: 1px dashed var(--tm-line); border-radius: 6px; background: var(--tm-canvas); color: var(--tm-text); cursor: pointer; font-size: 12px; }
+.photo-picker img { width: 100%; height: 100%; object-fit: contain; }
+.clear-photo { display: block; border: 0; background: none; padding: 3px 0; color: var(--tm-text-muted); font-size: 11px; cursor: pointer; }
 th, td { text-align: left; padding: 7px 6px; }
 th:first-child, td:first-child { padding-left: 12px; }
 th { padding-block: 10px; background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 12px; font-weight: 650; }
 td { border-top: 1px solid var(--tm-line); }
+th small { display: block; margin-top: 3px; font-weight: 400; font-size: 11px; }
 input { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--tm-line); background: var(--tm-surface); color: var(--tm-text); border-radius: 7px; height: 34px; padding: 0 8px; font: inherit; font-size: 13px; }
 :focus-visible { outline: 2px solid var(--tm-green); outline-offset: 1px; }
 .type-entry { position: relative; }

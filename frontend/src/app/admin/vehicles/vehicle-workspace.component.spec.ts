@@ -1,5 +1,6 @@
 /// <reference types="google.maps" />
 import { of, Subject, throwError } from 'rxjs';
+import { fakeAsync, flushMicrotasks } from '@angular/core/testing';
 import { VehicleWorkspaceComponent } from './vehicle-workspace.component';
 
 describe('Vehicle workspace group workflow', () => {
@@ -96,6 +97,50 @@ describe('Vehicle workspace group workflow', () => {
     page.handleOperationsAction({ kind: 'copy-vehicles', ids: [1] });
     expect([...page.selectedIds]).toEqual([1]); expect(page.openCopyModal).toHaveBeenCalled();
   });
+  it('copies a batch from Shared Vehicles to selected cities without overwriting their settings by default', () => {
+    const vehicles = Array.from({ length: 10 }, (_, index) => ({ id: index + 11 }));
+    Object.assign(page, {
+      sharedVehicles: true, vehicles, selectedIds: new Set(), copyForm: {},
+      cityCtx: { ensureCitiesLoaded: () => of([]) },
+      allCities: [{ id: 1, name: 'Srinagar' }, { id: 2, name: 'Sopore' }, { id: 3, name: 'Kupwara' }],
+    });
+    page.api.post = jasmine.createSpy().and.returnValue(of({}));
+    page.openCopyModal();
+    expect(page.availableTargetCities.map((city: { id: number }) => city.id)).toEqual([2, 3]);
+    expect(page.copyForm.target_city_ids).toEqual([]);
+    page.toggleTargetCity(2);
+    page.submitCopyToLocation();
+    expect(page.api.post).toHaveBeenCalledOnceWith('/admin/cities/1/vehicle-types/copy-to-city', {
+      vehicle_ids: vehicles.map(vehicle => vehicle.id), target_city_ids: [2],
+      overwrite_existing: false, copy_pricing: true, copy_seat_layouts: true,
+    });
+  });
+  it('imports the source fleet into the current empty city and refreshes it', () => {
+    Object.assign(page, {
+      sharedVehicles: true, vehicles: [], rideTypes: [], selectedIds: new Set(), copyForm: {},
+      cityCtx: { ensureCitiesLoaded: () => of([]) }, refresh: jasmine.createSpy(),
+      allCities: [{ id: 1, name: 'Sopore' }, { id: 2, name: 'Srinagar' }],
+    });
+    page.api.get = jasmine.createSpy().and.returnValue(of({data: [{id: 11, display_name: 'Sumo', vehicle_type_id: 5}]}));
+    page.api.post = jasmine.createSpy().and.returnValue(of({}));
+    page.openImport();
+    expect(page.api.get).toHaveBeenCalledOnceWith('/admin/cities/2/vehicle-types');
+    page.submitCopyToLocation();
+    expect(page.api.post).toHaveBeenCalledOnceWith('/admin/cities/2/vehicle-types/copy-to-city', {
+      vehicle_ids: [11], target_city_ids: [1], overwrite_existing: false, copy_pricing: true, copy_seat_layouts: true,
+    });
+    expect(page.refresh).toHaveBeenCalledTimes(1);
+  });
+  it('edits only the changed field in the current city and the checked cities', () => {
+    Object.assign(page, {
+      commonDrawerVehicle: { id: 7, display_name: 'Sumo', max_people: 4, luggage_capacity: 1 },
+      common: { display_name: 'Sumo', max_people: 7, luggage_capacity: 1 },
+      editCityIds: [2], load: jasmine.createSpy(),
+    });
+    page.saveCommon();
+    expect(page.api.patch).toHaveBeenCalledOnceWith('/admin/cities/1/vehicle-types/7/shared-details',
+      { max_people: 7, target_city_ids: [2] });
+  });
   it('keeps inline edits connected to the existing save and cancel behavior', () => {
     page.vehicles = [vehicle]; page.startCellEdit = jasmine.createSpy(); page.commitCellEdit = jasmine.createSpy(); page.cancelCellEdit = jasmine.createSpy();
     page.handleOperationsCellEdit({ phase: 'start', id: 1, field: 'seats' });
@@ -104,4 +149,19 @@ describe('Vehicle workspace group workflow', () => {
     page.handleOperationsCellEdit({ phase: 'save', id: 1, field: 'seats' }); expect(page.commitCellEdit).toHaveBeenCalledWith(vehicle);
     page.handleOperationsCellEdit({ phase: 'cancel', id: 1, field: 'seats' }); expect(page.cancelCellEdit).toHaveBeenCalled();
   });
+  it('retries only the unfinished cities when the older API saves part of a rename', fakeAsync(() => {
+    Object.assign(page, {
+      commonDrawerVehicle: { id: 7, display_name: 'Sumo', max_people: 4, luggage_capacity: 1 },
+      common: { display_name: 'Sumo XL', max_people: 4, luggage_capacity: 1 },
+      editCityIds: [2], legacyVehicleIds: new Map([[2, 12]]), allCities: [{ id: 2, name: 'Sopore' }],
+      load: jasmine.createSpy(),
+    });
+    page.api.patch.and.returnValues(of({}), throwError(() => ({status: 503})), of({}));
+    page.saveCommon(); flushMicrotasks();
+    expect(page.editSaveError).toContain('Still to save in Sopore');
+    page.saveCommon(); flushMicrotasks();
+    const urls = page.api.patch.calls.allArgs().map((args: any[]) => args[0]);
+    expect(urls).toEqual(['/admin/cities/1/vehicle-types/7/shared-details',
+      '/admin/cities/2/vehicle-types/12/shared-details', '/admin/cities/2/vehicle-types/12/shared-details']);
+  }));
 });

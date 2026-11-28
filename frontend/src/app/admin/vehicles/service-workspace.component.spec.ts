@@ -1,4 +1,4 @@
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
@@ -119,5 +119,42 @@ describe('Master service workspaces', () => {
     card.save();
     expect(post).toHaveBeenCalledOnceWith('/admin/pricing-rules',
       jasmine.objectContaining({city_vehicle_type_id: 21, surge_multiplier: 1.75, base_fare: 110}));
+  });
+
+  it('submits only edited private fare and bidding values together and keeps pending edits on failure', () => {
+    const response = new Subject<void>();
+    const patch = jasmine.createSpy().and.returnValue(response);
+    const api = { get: () => of({ rule: { base_fare: 100, threshold_distance_1_km: 3 } }), patch };
+    const toast = { success: jasmine.createSpy(), error: jasmine.createSpy() };
+    const card = new VehicleBasePricingComponent(api as any, toast as any);
+    card.cityId = 5;
+    card.cityVehicleTypeId = 21;
+    card.load();
+    const page: VehicleWorkspaceComponent = Object.create(VehicleWorkspaceComponent.prototype);
+    const row = { id: 21, reverse_bidding_enabled: false };
+    Object.assign(page, { api, toast, cityId: 5, activeKind: 'private', canManagePricing: true,
+      canManageVehicles: true, activeRow: row, rows: [row], reverseBidding: false, fareEditor: card });
+    expect(page.canSavePrivateFare).toBeFalse();
+    page.reverseBidding = true;
+    card.form['threshold_distance_1_km'] = null;
+    page.savePrivateFare();
+    page.savePrivateFare();
+    const path = '/admin/cities/5/vehicle-types/21/private-rate-card';
+    expect(patch).toHaveBeenCalledOnceWith(path, { threshold_distance_1_km: null, reverse_bidding_enabled: true });
+    response.error({});
+    expect(row.reverse_bidding_enabled).toBeFalse();
+    expect(page.canSavePrivateFare).toBeTrue();
+    patch.and.returnValue(of(null));
+    page.savePrivateFare();
+    expect(row.reverse_bidding_enabled).toBeTrue();
+    expect(page.canSavePrivateFare).toBeFalse();
+    card.commissionType = 'fixed';
+    card.fixedCommission = 15;
+    page.savePrivateFare();
+    expect(patch.calls.mostRecent().args).toEqual([path, { commission_type: 'fixed', fixed_commission: 15 }]);
+    page.reverseBidding = false;
+    page.savePrivateFare();
+    expect(patch.calls.mostRecent().args).toEqual([path, { reverse_bidding_enabled: false }]);
+    expect(page.canSavePrivateFare).toBeFalse();
   });
 });

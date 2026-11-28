@@ -1,0 +1,30 @@
+.fare-selector {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--tm-canvas-2, #eef1f5);
+  border-radius: 9px;
+}
+
+.fare-selector > button {
+  border: 0;
+  padding: 6px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  background: transparent;
+  color: var(--tm-text-muted);
+}
+
+.fare-selector > button[aria-pressed="true"] {
+  background: var(--tm-surface, #fff);
+  color: var(--tm-text);
+  box-shadow: 0 1px 2px rgba(15, 20, 25, .12);
+}
+
+.fare-selector > button:focus-visible {
+  outline: 2px solid var(--tm-text);
+  outline-offset: 1px;
+}
