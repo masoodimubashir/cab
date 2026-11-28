@@ -207,6 +207,8 @@ class PricingController extends Controller
             'route_distance_km' => ['nullable', 'numeric', 'min:0', 'max:10000'],
             'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
             'outstation_package_id' => ['nullable', 'integer', 'exists:outstation_packages,id'],
+            'scope' => ['nullable', 'in:local,outstation'],
+            'service_mode' => ['nullable', 'string'],
             // Toll the client read from Google for this route (₹). Honoured only
             // when the vehicle's toll_mode is 'yes'; absent/blank → no toll.
             'toll_amount' => ['nullable', 'numeric', 'min:0', 'max:100000'],
@@ -233,14 +235,12 @@ class PricingController extends Controller
             : 0.0;
 
         $pricingRule = PricingRule::resolveFor($cityVehicleTypeId);
-        if (!$pricingRule) {
-            return response()->json(['message' => 'Pricing rule not set for this vehicle.'], 404);
-        }
+        $fareInput = $fareEstimationService->bookingFareInput($cvt, $pricingRule, $data);
 
         // Surface the destination geofence early — when the operator enabled the
         // check, refuse to quote a fare to a drop-off outside the city boundary.
         if (OperatorSetting::instance()->check_destination_outside_geofence) {
-            $city = City::query()->find($pricingRule->city_id);
+            $city = $cvt->city;
             if (
                 $city
                 && !empty($city->boundary_polygon)
@@ -271,10 +271,6 @@ class PricingController extends Controller
             'region_visible' => $dynamicPricingService->isFareVisibleToRider($dynamicRule),
         ] : null;
 
-        $fareInput = $fareEstimationService->fareInput(
-            $pricingRule->toArray(),
-            isset($data['outstation_package_id']) ? (int) $data['outstation_package_id'] : null,
-        );
         $estimate = $fareEstimationService->estimateFare(
             $fareInput,
             (float) $data['pickup_lat'],

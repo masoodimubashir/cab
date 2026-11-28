@@ -3,6 +3,8 @@ import { environment } from '../../../src/environments/environment';
 
 declare const google: any;
 
+export interface DrivingMetrics { route_distance_km: number; route_time_min: number; }
+
 export type PlaceSuggestion = {
   place_id: string;
   description: string;
@@ -21,6 +23,31 @@ export type PlaceDetail = {
 export class PlacesService {
   private scriptPromise: Promise<void> | null = null;
   private sessionToken: any | null = null;
+
+  async drivingMetrics(from: {lat: number; lng: number}, to: {lat: number; lng: number}): Promise<DrivingMetrics> {
+    await this.ensureLoaded();
+    const origin = { lat: from.lat, lng: from.lng };
+    const destination = { lat: to.lat, lng: to.lng };
+    const travelMode = google.maps.TravelMode.DRIVING;
+    try {
+      const { Route } = await google.maps.importLibrary('routes');
+      const result = await Route.computeRoutes({ origin, destination, travelMode, fields: ['distanceMeters', 'durationMillis'] });
+      const route = result.routes?.[0];
+      if (Number.isFinite(route?.distanceMeters) && Number.isFinite(route?.durationMillis)) {
+        return { route_distance_km: route.distanceMeters / 1000, route_time_min: route.durationMillis / 60000 };
+      }
+    } catch {
+      // Some deployments enable the Maps Distance Matrix service instead.
+    }
+    const matrix = await new google.maps.DistanceMatrixService().getDistanceMatrix({
+      origins: [origin], destinations: [destination], travelMode,
+    });
+    const leg = matrix.rows?.[0]?.elements?.[0];
+    if (leg?.status !== 'OK' || !Number.isFinite(leg.distance?.value) || !Number.isFinite(leg.duration?.value)) {
+      throw new Error('Driving route unavailable');
+    }
+    return { route_distance_km: leg.distance.value / 1000, route_time_min: leg.duration.value / 60 };
+  }
 
   async ensureLoaded(): Promise<void> {
     if ((window as any).google?.maps?.places) return;

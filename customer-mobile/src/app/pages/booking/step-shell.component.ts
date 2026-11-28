@@ -234,7 +234,7 @@ import { IonicModule } from '@ionic/angular';
     .sf--map-layout .sf__map { position: absolute; inset: 0; min-height: 0; }
     .sf--map-layout .sf__body { flex: 0 1 auto; max-height: 42%; margin: auto 12px 0; padding: 12px; background: var(--dc-canvas); border-radius: 18px; box-shadow: 0 3px 18px #14223716; z-index: 1; }
     .sf--map-layout .sf__dock { position: relative; z-index: 1; margin: 10px 12px max(32px, env(safe-area-inset-bottom)); padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-    .sf__actions--search { grid-template-columns: minmax(0, 8fr) minmax(0, 2fr); gap: 8px; align-items: stretch; }
+    .sf__actions--search { grid-template-columns: var(--dock-columns, minmax(0, 8fr) minmax(0, 2fr)); gap: 8px; align-items: stretch; }
     .sf__body[hidden] { display: none; }
     .sf--map-layout.sf--body-hidden .sf__dock { margin-top: auto; }
     .sf--inline-search .sf__cta { min-width: 0; padding: 8px; font-size: 12px; line-height: 1.3; overflow-wrap: anywhere; }

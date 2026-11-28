@@ -76,13 +76,53 @@ class PrivateCashDepositTest extends TestCase
     {
         $mock = Mockery::mock(RazorpayService::class);
         $mock->shouldReceive('createOrder')->andReturnUsing(
-            fn ($amountPaise, $receipt) => ['order_id' => 'order_' . $amountPaise . '_' . substr(md5($receipt), 0, 5), 'amount' => $amountPaise, 'currency' => 'INR']
+            fn ($amountPaise, $receipt) => ['order_id' => 'order_' . $amountPaise . '_' . bin2hex(random_bytes(5)), 'amount' => $amountPaise, 'currency' => 'INR']
         );
         $mock->shouldReceive('verifyPaymentSignature')->andReturn(true);
         $mock->shouldReceive('createTransfer')->andReturnUsing(
             fn ($paymentId, $account, $amount) => ['id' => 'trf_' . substr(md5($paymentId . $amount), 0, 8), 'status' => 'created', 'amount' => $amount]
         );
         $this->app->instance(RazorpayService::class, $mock);
+    }
+
+    public function test_customer_can_switch_an_unpaid_order_to_cash_and_back(): void
+    {
+        $this->mockRazorpay();
+        $gateway = $this->app->make(RazorpayService::class);
+        $gateway->shouldReceive('fetchOrder')->twice()->andReturn(['status' => 'created', 'amount_paid' => 0]);
+        $trip = $this->confirmedTrip($this->driver(), 100);
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $url = "/api/trips/{$trip->id}/pay";
+        $first = $this->postJson("$url/razorpay")->assertOk()->json('payment.id');
+        $cash = $this->postJson("$url/cash-deposit")->assertOk()->assertJsonPath('breakdown.cash_balance_due', 80)->json('payment.id');
+        $this->postJson("$url/cash-deposit")->assertOk()->assertJsonPath('payment.id', $cash);
+        $this->postJson("$url/razorpay")->assertOk();
+        $this->assertNotNull(Payment::findOrFail($cash)->checkout_replaced_at);
+        $old = Payment::findOrFail($first);
+        $this->assertNotNull($old->checkout_replaced_at);
+
+        $gateway->shouldReceive('refundReplacedCheckout')->once()
+            ->with('pay_late', 10000, 'replaced-pay_late-first')
+            ->andReturn(['id' => 'rfnd_late', 'status' => 'pending']);
+        $service = app(\App\Services\PaymentReconciliationService::class);
+        $this->assertSame('refunded', $service->applyPayment('pay_late', $old->razorpay_order_id, true)['action']);
+        $this->assertSame('already_settled', $service->applyPayment('pay_late', $old->razorpay_order_id, true)['action']);
+        $this->assertSame(0, Payment::where('trip_id', $trip->id)->where('status', 'SUCCESS')->count());
+    }
+
+    public function test_switch_waits_for_an_authorized_payment(): void
+    {
+        $this->mockRazorpay();
+        $gateway = $this->app->make(RazorpayService::class);
+        $gateway->shouldReceive('fetchOrder')->once()->andReturn(['status' => 'attempted', 'amount_paid' => 0]);
+        $gateway->shouldReceive('fetchOrderPayments')->once()->andReturn([['status' => 'authorized']]);
+        $trip = $this->confirmedTrip($this->driver(), 100);
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $url = "/api/trips/{$trip->id}/pay";
+        $payment = $this->postJson("$url/razorpay")->assertOk()->json('payment.id');
+        $this->postJson("$url/cash-deposit")->assertStatus(409);
+        $this->assertNull(Payment::findOrFail($payment)->checkout_replaced_at);
+        $this->assertSame(1, Payment::where('trip_id', $trip->id)->count());
     }
 
     private function driver(): User

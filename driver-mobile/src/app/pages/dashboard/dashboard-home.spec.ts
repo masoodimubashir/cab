@@ -27,7 +27,7 @@ describe('Driver reference Home safeguards', () => {
       declarations: [DashboardPage], imports: [CommonModule], schemas: [NO_ERRORS_SCHEMA],
       providers: [
         { provide: ApiService, useValue: api }, { provide: Router, useValue: router },
-        { provide: AuthService, useValue: { getUser: () => ({ name: 'Test Driver' }), resolveAvatarUrl: () => null } },
+        { provide: AuthService, useValue: { getUser: () => ({ name: 'Test Driver' }), resolveAvatarUrl: () => null, registerSessionCleanup: () => {} } },
         { provide: DriverPresenceService, useValue: { onError: () => {}, onLocated: () => {} } },
         ...[LocationConsentService, GeolocationService, MapsLoaderService, PushService, RealtimeService, AlertController, ModalController].map(provide => ({ provide, useValue: {} })),
       ],
@@ -41,6 +41,20 @@ describe('Driver reference Home safeguards', () => {
     fixture.detectChanges();
     return fixture;
   }
+
+  it('shows two ride requests first and places the third under active requests', () => {
+    const f = setup({service_mode: 'private', is_online: true});
+    f.componentInstance.driveMode = 'private';
+    api.get.and.returnValue(of({data: [3, 1, 2].map(id => ({id, customer_offer: 100}))}));
+    (f.componentInstance as any).refreshRideRequests();
+    f.detectChanges();
+    const rows = f.nativeElement.querySelectorAll('.home-request-row');
+    expect(rows.length).toBe(3);
+    expect(rows[0].textContent).toContain('Ride #1');
+    expect(rows[2].previousElementSibling.textContent).toContain('More active ride requests');
+    rows[2].click();
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/tabs/rides');
+  });
 
   it('holds loaded offers until the opening prompts have finished', async () => {
     const f = setup({ is_online: false });

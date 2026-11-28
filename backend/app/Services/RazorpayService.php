@@ -92,6 +92,15 @@ class RazorpayService
         ];
     }
 
+    public function refundReplacedCheckout(string $paymentId, int $amountPaise, string $key): array
+    {
+        return Http::withBasicAuth($this->keyId, $this->keySecret)
+            ->withHeaders(['X-Refund-Idempotency' => $key])->timeout(15)
+            ->post('https://api.razorpay.com/v1/payments/'.rawurlencode($paymentId).'/refund', [
+                'amount' => $amountPaise,
+            ])->throw()->json();
+    }
+
     /**
      * Fetches an order from Razorpay. Used by the pending-payment sweeper to
      * ask "what actually happened to this order?" when no webhook arrived.

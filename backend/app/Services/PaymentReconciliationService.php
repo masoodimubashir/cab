@@ -8,6 +8,7 @@ use App\Models\FixedSeatHold;
 use App\Models\Payment;
 use App\Models\SeatReservation;
 use App\Models\ShuttlePassengerBooking;
+use App\Models\Trip;
 use App\Models\WalletTopup;
 use App\Models\WalletTransaction;
 use Illuminate\Support\Facades\DB;
@@ -99,9 +100,31 @@ class PaymentReconciliationService
     private function applySolo(Payment $payment, string $paymentId, ?string $orderId, bool $captured, ?array $raw): string
     {
         return DB::transaction(function () use ($payment, $paymentId, $orderId, $captured, $raw) {
+            Trip::query()->whereKey($payment->trip_id)->lockForUpdate()->first();
             $locked = Payment::query()->lockForUpdate()->find($payment->id);
             if (!$locked) {
                 return 'gone';
+            }
+
+            if ($locked->checkout_replaced_at) {
+                if (!$captured) {
+                    if ($paymentId === '' && !$locked->refund_id) {
+                        $locked->update(['status' => 'FAILED']);
+                    }
+                    return 'untouched';
+                }
+                if ($locked->refund_id && $locked->refund_status !== Payment::REFUND_FAILED) {
+                    return 'already_settled';
+                }
+                $refund = $this->razorpay->refundReplacedCheckout($paymentId, (int) round($locked->amount * 100),
+                    'replaced-'.$paymentId.'-'.($locked->refund_id ?: 'first'));
+                $locked->forceFill([
+                    'status' => $refund['status'] === Payment::REFUND_FAILED ? 'PENDING' : 'FAILED',
+                    'razorpay_payment_id' => $paymentId, 'refund_id' => $refund['id'],
+                    'refund_status' => $refund['status'], 'refund_amount' => $locked->amount,
+                    'refunded_at' => $refund['status'] === 'processed' ? now() : null,
+                ])->save();
+                return 'refunded';
             }
 
             // Never downgrade a settled payment: a late "failed attempt"
@@ -439,6 +462,9 @@ class PaymentReconciliationService
         // Solo ride payments (e.g. refund issued manually from the dashboard)
         $payment = Payment::query()->where('razorpay_payment_id', $paymentId)->first();
         if ($payment) {
+            if ($payment->checkout_replaced_at) {
+                return ['matched' => 'solo', 'action' => 'ignored_unrelated_refund'];
+            }
             if ($processed) {
                 $payment->status = 'REFUNDED';
                 $payment->save();
@@ -472,6 +498,18 @@ class PaymentReconciliationService
             $locked = Payment::query()->lockForUpdate()->find($payment->id);
             if (! $locked) {
                 return 'gone';
+            }
+
+            if ($locked->checkout_replaced_at) {
+                if ($locked->refund_status === Payment::REFUND_PROCESSED) {
+                    return 'already_settled';
+                }
+                $locked->forceFill([
+                    'status' => $processed ? 'FAILED' : 'PENDING',
+                    'refund_status' => $processed ? Payment::REFUND_PROCESSED : Payment::REFUND_FAILED,
+                    'refunded_at' => $processed ? now() : null,
+                ])->save();
+                return $processed ? 'marked_refunded' : 'refund_failed_requeued';
             }
 
             if (! $processed) {

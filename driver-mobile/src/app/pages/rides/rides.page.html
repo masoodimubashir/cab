@@ -14,19 +14,30 @@
   </ion-toolbar>
 </ion-header>
 
-<ion-content [class.in-trip]="hasActiveTrip" [class.rides-idle-content]="!hasActiveTrip" class="dc-content pg-content">
+<ion-content [scrollY]="!hasActiveTrip" [class.in-trip]="hasActiveTrip" [class.rides-idle-content]="!hasActiveTrip" class="dc-content pg-content">
 
   <!-- ════════════════════════════════════════════════════════════════
        ACTIVE TRIP — full-bleed driver workspace
        ════════════════════════════════════════════════════════════════ -->
-  <ng-container *ngIf="hasActiveTrip">
+  <section class="active-workspace" [class.sheet-collapsed]="sheetCollapsed" *ngIf="hasActiveTrip">
 
     <!-- Live map fills the top half. -->
     <div class="trip-map-wrap">
       <div id="driver-trip-map" class="trip-map-hero"></div>
+      <div class="map-controls">
+        <button class="trip-map-badge" type="button" *ngIf="mapReady && pickupCoords && dropCoords" (click)="toggleTripView()">
+        {{ fullTripView ? '3D view' : 'Full trip' }}
+        </button>
+        <span class="tracking-pill" [class.is-live]="trackingLive" role="status">{{ trackingLive ? 'Live' : 'Offline' }}</span>
+      </div>
     </div>
 
-    <div class="trip-body dc-stagger">
+    <button class="sheet-toggle" type="button"  (click)="toggleDetails()"
+        [attr.aria-expanded]="!sheetCollapsed" aria-controls="driver-trip-details"
+        [attr.aria-label]="sheetCollapsed ? 'Expand trip details' : 'Collapse trip details'">
+        <ion-icon [name]="sheetCollapsed ? 'chevron-up' : 'chevron-down'" aria-hidden="true"></ion-icon>
+      </button>
+    <div class="trip-body">
 
       <!-- Status hero -->
       <div class="status-hero" [attr.data-tone]="statusCopy().tone">
@@ -35,6 +46,10 @@
         <p *ngIf="statusCopy().sub">{{ statusCopy().sub }}</p>
       </div>
 
+      <div id="driver-trip-details" class="details-reveal" [attr.inert]="sheetCollapsed ? '' : null"
+           (transitionend)="onDetailsTransitionEnd($event)">
+        <div class="details-clip">
+          <div class="dc-stagger">
       <!-- Inline errors / messages -->
       <div class="banner danger" *ngIf="error">
         <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
@@ -101,53 +116,6 @@
           </div>
         </div>
 
-        <!-- The rule that changes at the kerb: nothing to collect in person. -->
-        <p class="no-cash-note" *ngIf="driverPayout && !driverPayout.collect_cash">
-          <ion-icon name="shield-checkmark-outline" aria-hidden="true"></ion-icon>
-          <span>
-            {{ driverPayout.prepaid ? 'Already paid online.' : 'The rider pays online.' }}
-            Do not collect cash — your share reaches your bank after the ride.
-          </span>
-        </p>
-      </div>
-
-      <!-- Pickup / Drop addresses -->
-      <div class="pg-card trip-card legs-card">
-        <div class="leg">
-          <span class="dot pickup" aria-hidden="true"></span>
-          <div class="grow">
-            <small>Pickup</small>
-            <p>{{ lastTrip?.['pickup_address'] || '—' }}</p>
-          </div>
-          <ion-button
-            class="dc-press"
-            fill="clear"
-            size="small"
-            (click)="navigateToPickup()"
-            [disabled]="!canNavigatePickup"
-            aria-label="Navigate to pickup"
-          >
-            <ion-icon slot="icon-only" name="navigate-outline"></ion-icon>
-          </ion-button>
-        </div>
-        <div class="leg-divider"></div>
-        <div class="leg">
-          <span class="dot drop" aria-hidden="true"></span>
-          <div class="grow">
-            <small>Drop</small>
-            <p>{{ lastTrip?.['drop_address'] || '—' }}</p>
-          </div>
-          <ion-button
-            class="dc-press"
-            fill="clear"
-            size="small"
-            (click)="navigateToDrop()"
-            [disabled]="!canNavigateDrop"
-            aria-label="Navigate to drop"
-          >
-            <ion-icon slot="icon-only" name="navigate-outline"></ion-icon>
-          </ion-button>
-        </div>
       </div>
 
       <!-- Shared-departure passenger manifest -->
@@ -230,8 +198,9 @@
       </div>
     </div>
 
-    <!-- Spacer so the sticky bottom CTA doesn't cover content. -->
-    <div class="cta-spacer"></div>
+    </div>
+      </div>
+    </div>
 
     <!-- Sticky bottom progression button. -->
     <div class="sticky-cta" *ngIf="nextAction()">
@@ -245,7 +214,7 @@
         <span>{{ progressBusy ? 'Working…' : nextAction()?.label }}</span>
       </button>
     </div>
-  </ng-container>
+  </section>
 
   <!-- ════════════════════════════════════════════════════════════════
        IDLE — available rides + price panel
@@ -259,9 +228,9 @@
         <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
         <span>{{ error }}</span>
       </div>
-      <div class="banner success" *ngIf="message">
+      <div class="banner success" *ngIf="message || availableReason">
         <ion-icon name="checkmark-circle-outline" aria-hidden="true"></ion-icon>
-        <span>{{ message }}</span>
+        <span>{{ message || availableReason }}</span>
       </div>
 
       <!-- Available rides list -->

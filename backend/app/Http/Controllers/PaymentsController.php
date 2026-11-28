@@ -199,6 +199,7 @@ class PaymentsController extends Controller
             $payment = Payment::query()
                 ->where('trip_id', $trip->id)
                 ->where('status', 'PENDING')
+                ->whereNull('checkout_replaced_at')
                 ->latest('id')
                 ->first();
 
@@ -225,10 +226,13 @@ class PaymentsController extends Controller
                 'settlement_mode' => $prepay ? Payment::SETTLE_BOOKING : null,
             ];
 
+            if ($payment && $payment->razorpay_order_id && !($payment->method === 'RAZORPAY'
+                && (float) $payment->amount === $chargeAmount && $payment->payment_method_group === $methodGroup
+                && $payment->coupon_assignment_id == $couponAssignmentId)) {
+                $this->replaceUnpaidCheckout($payment, $razorpayService);
+                $payment = null;
+            }
             if ($payment && $payment->razorpay_order_id) {
-                abort_unless($payment->method === 'RAZORPAY' && (float) $payment->amount === $chargeAmount
-                    && $payment->payment_method_group === $methodGroup && $payment->coupon_assignment_id == $couponAssignmentId,
-                    409, 'An existing payment checkout must be completed before changing payment details.');
                 return response()->json(['payment' => $payment, 'prepaid' => (bool) $prepay, 'razorpay' => [
                     'key_id' => env('RAZORPAY_KEY_ID'), 'order_id' => $payment->razorpay_order_id,
                     'amount_paise' => $amountPaise, 'currency' => $payment->currency, 'method' => $methodGroup,
@@ -396,7 +400,11 @@ class PaymentsController extends Controller
         }
 
         return DB::transaction(function () use ($payment, $data, $trip) {
+            Trip::query()->whereKey($trip->id)->lockForUpdate()->firstOrFail();
             $payment = Payment::query()->lockForUpdate()->findOrFail($payment->id);
+            if ($payment->checkout_replaced_at) {
+                return response()->json(['message' => 'You changed payment method. Any charge from the previous checkout will be refunded.'], 409);
+            }
             if (in_array($payment->status, ['SUCCESS', 'REFUNDED'], true)) {
                 return response()->json(['payment' => $payment]);
             }
@@ -428,6 +436,20 @@ class PaymentsController extends Controller
 
             return response()->json(['payment' => $payment->fresh()]);
         });
+    }
+
+    private function replaceUnpaidCheckout(Payment $payment, RazorpayService $gateway): void
+    {
+        $order = $gateway->fetchOrder($payment->razorpay_order_id);
+        abort_if(!$order, 503, 'Could not check your previous payment. Please try again.');
+        if ($order['status'] !== 'created' || $order['amount_paid'] > 0) {
+            $attempts = $gateway->fetchOrderPayments($payment->razorpay_order_id);
+            abort_unless($order['status'] === 'attempted' && $order['amount_paid'] === 0 && $attempts
+                && collect($attempts)->every(fn ($attempt) => $attempt['status'] === 'failed'),
+                409, 'Your previous payment is being checked. Refresh before paying again.');
+        }
+        // Keep the gateway order attached for delayed capture callbacks and reconciliation.
+        $payment->forceFill(['checkout_replaced_at' => now()])->save();
     }
 
     public function payCash(Request $request, Trip $trip, CouponService $couponService, PaymentModeService $paymentModeService)
@@ -549,9 +571,11 @@ class PaymentsController extends Controller
                 app(\App\Services\BookingConfirmationService::class)->confirmIfReady($trip);
                 return response()->json(['deposit_required' => false, 'cash_balance_due' => max(0, $fare - $captured)]);
             }
-            if (Payment::query()->where('trip_id', $trip->id)->where('status', 'PENDING')
-                ->where('method', '!=', 'CASH')->whereNotNull('razorpay_order_id')->exists()) {
-                return response()->json(['message' => 'Complete the existing online checkout before changing payment method.'], 409);
+            $onlineCheckouts = Payment::query()->where('trip_id', $trip->id)->where('status', 'PENDING')
+                ->whereNull('checkout_replaced_at')->where('method', '!=', 'CASH')
+                ->whereNotNull('razorpay_order_id')->lockForUpdate()->get();
+            foreach ($onlineCheckouts as $checkout) {
+                $this->replaceUnpaidCheckout($checkout, $razorpayService);
             }
 
             // Mark the trip as cash so completion settles it as cash (commission from
@@ -579,6 +603,7 @@ class PaymentsController extends Controller
                 ->where('trip_id', $trip->id)
                 ->where('status', 'PENDING')
                 ->whereNotNull('cash_deposit_amount')
+                ->whereNull('checkout_replaced_at')
                 ->latest('id')
                 ->first();
 

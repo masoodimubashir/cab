@@ -216,13 +216,19 @@ export class RealtimeService {
     tripId: number,
     onStatus: (p: TripStatusPayload) => void,
     onCustomerLocation?: (p: TripCustomerLocationPayload) => void,
-    onShuttleManifest?: (p: ShuttleManifestPayload) => void
+    onShuttleManifest?: (p: ShuttleManifestPayload) => void,
+    onTrackingLive?: (live: boolean) => void
   ): () => void {
     const pusher = this.ensure();
     if (!pusher) return () => {};
 
     const channelName = `private-trip.${tripId}.tracking`;
     const channel = pusher.subscribe(channelName);
+
+    const reportConnection = () => onTrackingLive?.(channel.subscribed && pusher.connection.state === 'connected');
+    reportConnection();
+    channel.bind('pusher:subscription_succeeded', reportConnection);
+    pusher.connection.bind('state_change', reportConnection);
 
     const statusHandler = (data: TripStatusPayload) => onStatus(data);
     const custLocHandler = (data: TripCustomerLocationPayload) => onCustomerLocation?.(data);
@@ -233,6 +239,9 @@ export class RealtimeService {
     if (onShuttleManifest) channel.bind('ShuttleManifestUpdated', manifestHandler);
 
     return () => {
+      channel.unbind('pusher:subscription_succeeded', reportConnection);
+      pusher.connection.unbind('state_change', reportConnection);
+      onTrackingLive?.(false);
       channel.unbind('TripStatusUpdated', statusHandler);
       if (onCustomerLocation) channel.unbind('TripCustomerLocationUpdated', custLocHandler);
       if (onShuttleManifest) channel.unbind('ShuttleManifestUpdated', manifestHandler);

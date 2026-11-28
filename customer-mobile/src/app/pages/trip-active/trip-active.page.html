@@ -8,7 +8,7 @@
     <ion-spinner name="crescent"></ion-spinner>
   </div>
 
-  <ng-container *ngIf="!loading">
+  <div class="trip-layout" *ngIf="!loading">
 
     <!-- ============ Full-screen map ============ -->
     <div class="trip-map-wrap">
@@ -22,8 +22,8 @@
         <ion-icon name="arrow-back-outline"></ion-icon>
       </button>
       <div class="trip-top__right">
+        <button type="button" class="trip-chip" *ngIf="canPreviewTrip" (click)="toggleMapView()">{{ showOverview ? '3D view' : 'Full trip' }}</button>
         <span class="live-pill" *ngIf="liveConnected"><span class="live-dot"></span> Live</span>
-        <span class="trip-chip">{{ tripKindLabel }} #{{ tripId }}</span>
       </div>
     </div>
 
@@ -34,8 +34,10 @@
       [class.is-expanded]="isCompleted()"
       [class.is-collapsed]="sheetCollapsed && !isCompleted()"
     >
-      <button class="sheet-grab" (click)="toggleSheet()" aria-label="Toggle trip details">
-        <span class="sheet-grab__bar"></span>
+      <button class="sheet-toggle" type="button" *ngIf="!isCompleted()" (click)="toggleSheet()"
+        [attr.aria-expanded]="!sheetCollapsed" aria-controls="customer-trip-details"
+        [attr.aria-label]="sheetCollapsed ? 'Expand trip details' : 'Collapse trip details'">
+        <ion-icon [name]="sheetCollapsed ? 'chevron-up' : 'chevron-down'" aria-hidden="true"></ion-icon>
       </button>
 
       <!-- Always-visible head: status + details button -->
@@ -64,7 +66,7 @@
       </div>
 
       <!-- Collapsible body -->
-      <div class="sheet-body dc-stagger">
+      <div id="customer-trip-details" class="sheet-body dc-stagger" [attr.inert]="sheetCollapsed && !isCompleted() ? '' : null">
 
         <!-- Start-ride code: shown once the driver is at the pickup and has
              requested it. The rider reads it back to the driver to begin. -->
@@ -82,7 +84,7 @@
         </div>
 
         <!-- Fare summary -->
-        <div class="info-card fare-card" *ngIf="(isCompleted() || canPayNow) && (t.final_fare != null || paymentDue != null || couponPreview)">
+        <div class="info-card fare-card" *ngIf="isCompleted() && (t.final_fare != null || paymentDue != null || couponPreview)">
           <span class="card-label">Fare summary</span>
           <div class="fare-row" *ngIf="t.final_fare != null || paymentDue != null">
             <span>Fare</span><span>₹{{ t.final_fare ?? paymentDue?.amount }}</span>
@@ -144,6 +146,17 @@
             {{ couponPreview.coupon.title }} applied — saved ₹{{ couponPreview.discount }}
           </small>
           <small *ngIf="couponError" class="coupon-msg err">{{ couponError }}</small>
+        </div>
+
+        <div class="pay-bar" *ngIf="canPayNow">
+          <div class="pay-bar-info">
+            <span class="pay-bar-label">{{ isPrepaying ? 'Pay to confirm' : 'Total payable' }}</span>
+            <span class="pay-bar-amount">₹{{ payableAmount }}</span>
+          </div>
+          <button class="pay-bar-btn dc-press" (click)="pay()">
+            <ion-icon name="card-outline"></ion-icon>
+            <span>Pay now</span>
+          </button>
         </div>
 
         <!-- Completed: rating -->
@@ -211,25 +224,9 @@
           <span>You tipped <strong>₹{{ trip.tip_amount }}</strong>. Thanks!</span>
         </div>
 
-        <!-- Sticky pay bar. Shown whenever there's something to collect: up
-             front once the fare is agreed, or afterwards for the balance. -->
-        <div class="pay-bar" *ngIf="canPayNow">
-          <div class="pay-bar-info">
-            <span class="pay-bar-label">{{ isPrepaying ? 'Pay to confirm' : 'Total payable' }}</span>
-            <span class="pay-bar-amount">₹{{ payableAmount }}</span>
-          </div>
-          <button class="pay-bar-btn dc-press" (click)="pay()">
-            <ion-icon name="card-outline"></ion-icon>
-            <span>Pay now</span>
-          </button>
-        </div>
-        <p class="prepay-hint" *ngIf="canPayNow && isPrepaying">
-          <ion-icon name="shield-checkmark-outline"></ion-icon>
-          <span>Paid up front. Cancel before pickup and you're refunded automatically.</span>
-        </p>
       </div>
     </div>
-  </ng-container>
+  </div>
 
   <!-- Custom amount tipping modal -->
   <ion-modal [isOpen]="tipCustomOpen" (didDismiss)="tipCustomOpen = false" class="custom-premium-modal">

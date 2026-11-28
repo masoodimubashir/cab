@@ -6,7 +6,7 @@ export interface NearbyHomeCar {
   map_marker_url?: string | null;
   driver_name?: string | null;
   image_url?: string | null;
-  vehicle?: { name?: string | null; type?: string | null; brand?: string | null; model?: string | null; color?: string | null; image_url?: string | null };
+  vehicle?: { name?: string | null; type?: string | null; brand?: string | null; model?: string | null; color?: string | null; reg_no?: string | null; image_url?: string | null };
 }
 
 export interface NearbyCarGroup { key: number; cars: NearbyHomeCar[] }

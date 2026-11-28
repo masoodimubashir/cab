@@ -1,3 +1,4 @@
+import { buildPrivateOriginMarker } from '../../../core/private-trip-pin';
 import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
@@ -6,7 +7,7 @@ import { GeolocationService } from '../../../core/geolocation.service';
 import { CUSTOMER_MAP_STYLE, focusCustomerNavigation } from '../../../core/customer-map';
 import { watchMapCamera, releaseMapCamera, resumeMapCamera } from '../../../core/map-camera';
 import { Place } from '../booking.models';
-import { JourneyPreview } from './journey-preview';
+import { JourneyPreview, journeyCurve } from './journey-preview';
 
 declare const google: any;
 type Point = { lat: number; lng: number };
@@ -58,6 +59,7 @@ export class PrivatePlaceMapComponent implements AfterViewInit, OnChanges, OnDes
   @Input() place: Point | null = null;
   @Input() initialPosition: Point | null = null;
   @Input() destinationMode = false;
+  @Input() readOnly = false;
   private previousDestinationMode = false;
   @Output() picked = new EventEmitter<Place>();
   @Output() currentLocation = new EventEmitter<Place>();
@@ -107,20 +109,37 @@ export class PrivatePlaceMapComponent implements AfterViewInit, OnChanges, OnDes
         ...CUSTOMER_MAP_STYLE, center: position, mapId: 'DEMO_MAP_ID', disableDefaultUI: true, clickableIcons: false,
       });
       watchMapCamera(this.map, false);
+      const canvas = this.canvas.nativeElement;
+      const shell = canvas.closest('.sf');
+      const header = shell?.querySelector('.pv-offer-header');
+      const panel = shell?.querySelector('.sf__body');
       this.resizeObserver = new ResizeObserver(() => {
         if (!this.map || this.destroyed) return;
         google.maps.event.trigger(this.map, 'resize');
+        if (this.readOnly && this.place && this.initialPosition && header && panel) {
+          const rect = canvas.getBoundingClientRect();
+          if (!rect.width || !rect.height) return;
+          const bounds = new google.maps.LatLngBounds();
+          for (const point of journeyCurve(this.initialPosition, this.place)) bounds.extend(point);
+          const top = Math.max(0, header.getBoundingClientRect().bottom - rect.top);
+          const bottom = Math.max(0, rect.bottom - panel.getBoundingClientRect().top);
+          this.map.fitBounds(bounds, { top: Math.ceil(top + 90), bottom: Math.ceil(bottom + 24), left: 62, right: 62 });
+        }
       });
       this.resizeObserver.observe(this.canvas.nativeElement);
+      if (this.readOnly && header && panel) {
+        this.resizeObserver.observe(header);
+        this.resizeObserver.observe(panel);
+      }
       const current = this.geo.recentPosition() || this.geo.lastKnownPosition() || (!this.place ? position : null);
-      if (current) void this.reportCurrentLocation(current);
-      this.map.addListener('click', (event: any) => {
+      if (current && !this.readOnly) void this.reportCurrentLocation(current);
+      if (!this.readOnly) this.map.addListener('click', (event: any) => {
         if (event.latLng) this.zone.run(() => void this.selectAt(event.latLng.toJSON()));
       });
       this.showPosition(this.place || position, true);
       this.loading = false;
       this.cdr.markForCheck();
-      if (!this.place) {
+      if (!this.place && !this.readOnly) {
         const id = await this.geo.watchPosition({ enableHighAccuracy: true, maximumAge: 0 }, fix => {
           if (fix && !this.destroyed) void this.reportCurrentLocation(fix);
           if (this.destroyed || !fix || this.place || this.manuallySelected || this.destinationMode) return;
@@ -156,7 +175,7 @@ export class PrivatePlaceMapComponent implements AfterViewInit, OnChanges, OnDes
     else {
       this.marker = new google.maps.marker.AdvancedMarkerElement({
       map: this.map, position: this.center, title: label,
-      gmpDraggable: true,
+      gmpDraggable: !this.readOnly,
       content: buildPrivateOriginMarker(label, destination),
       });
       this.marker.addListener('dragend', (event: any) => {
@@ -173,7 +192,7 @@ export class PrivatePlaceMapComponent implements AfterViewInit, OnChanges, OnDes
       if (key !== this.journeyKey) {
         this.journeyKey = key;
         this.marker.map = null;
-        this.journey ??= new JourneyPreview(this.map);
+        this.journey ??= new JourneyPreview(this.map, this.readOnly);
         this.journey.start(this.initialPosition, position, () => {
           if (this.destroyed || key !== this.journeyKey) return;
           this.marker.map = this.map;
@@ -242,24 +261,4 @@ export class PrivatePlaceMapComponent implements AfterViewInit, OnChanges, OnDes
     this.marker = null;
     this.map = null;
   }
-}
-
-let pinGradientSequence = 0;
-/** Shaded pin with a fixed ground anchor and a small perspective sway. */
-export function buildPrivateOriginMarker(label: string, destination = false): HTMLElement {
-  const marker = document.createElement('div');
-  marker.className = 'private-origin-marker' + (destination ? ' private-origin-marker--destination' : '');
-  marker.setAttribute('aria-label', label);
-  const id = `private-pin-${++pinGradientSequence}`;
-  const light = destination ? '#ff9bb0' : '#52dfac', main = destination ? '#df4d6e' : '#00945d', dark = destination ? '#9d2544' : '#005f43';
-  marker.innerHTML = `<span class="private-origin-marker__shadow"></span><span class="private-origin-marker__halo"></span>
-    <svg width="38" height="48" viewBox="0 0 38 48" aria-hidden="true">
-      <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${light}"/><stop offset=".43" stop-color="${main}"/><stop offset="1" stop-color="${dark}"/></linearGradient>
-      <radialGradient id="${id}-core" cx=".3" cy=".2" r=".8"><stop stop-color="#fff"/><stop offset=".65" stop-color="#f3fffb"/><stop offset="1" stop-color="#c8e2d9"/></radialGradient></defs>
-      <path d="M19 47C15 40 4 28 4 20a15 15 0 0 1 30 0c0 8-11 20-15 27Z" fill="${dark}" opacity=".65"/>
-      <path d="M19 45C15 38 3 26 3 18a16 16 0 0 1 32 0c0 8-12 20-16 27Z" fill="url(#${id})" stroke="white" stroke-width="2"/>
-      <path d="M7 16a12 12 0 0 1 18-9" fill="none" stroke="white" stroke-opacity=".45" stroke-width="2" stroke-linecap="round"/>
-      <circle cx="19" cy="18" r="7" fill="${dark}" opacity=".35"/><circle cx="18.5" cy="17" r="6" fill="url(#${id}-core)"/>
-    </svg><span class="private-origin-marker__label">${destination ? 'Destination' : 'Pickup'}</span>`;
-  return marker;
 }

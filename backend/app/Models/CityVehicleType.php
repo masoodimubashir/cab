@@ -48,6 +48,11 @@ class CityVehicleType extends Model
         return $this->belongsTo(VehicleType::class, 'vehicle_type_id');
     }
 
+    public function outstationPackages(): HasMany
+    {
+        return $this->hasMany(OutstationPackage::class)->orderBy('sort_order')->orderBy('id');
+    }
+
     public function vehicleSet(): BelongsTo
     {
         return $this->belongsTo(VehicleSet::class, 'vehicle_set_id');

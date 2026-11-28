@@ -122,8 +122,8 @@ class AdminOutstationPackagesController
         if ($vehicleType->city_id !== $city->id) {
             throw new NotFoundHttpException('Vehicle type not found in this city.');
         }
-        if (! $vehicleType->rideType?->isOutstation()) {
-            throw new NotFoundHttpException('Packages are only available for outstation vehicles.');
+        if ($vehicleType->rideType?->resolvedMode() !== \App\Models\RideType::MODE_PRIVATE) {
+            throw new NotFoundHttpException('Packages are only available for private vehicles.');
         }
         if ($package && $package->city_vehicle_type_id !== $vehicleType->id) {
             throw new NotFoundHttpException('Package not found for this vehicle.');

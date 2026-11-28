@@ -27,4 +27,9 @@ class OutstationPackage extends Model
     {
         return $this->belongsTo(CityVehicleType::class, 'city_vehicle_type_id');
     }
+
+    public function hasFare(): bool
+    {
+        return count(array_filter($this->fare_config ?? [], fn ($value) => $value !== null && $value !== '')) > 0;
+    }
 }

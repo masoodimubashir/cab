@@ -1,9 +1,11 @@
+import { journeyCurve } from '../../core/journey-curve';
 import { defaultServiceNames, loadServiceBranding, ServiceBranding } from '../../core/service-branding';
-import { watchMapCamera, releaseMapCamera } from '../../core/map-camera';
-import { DriverMapCamera, DRIVER_MAP_STYLE, fitDriverMap, offsetPassengerMarker } from '../../core/driver-map';
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { watchMapCamera, releaseMapCamera, resumeMapCamera, updateMapCamera } from '../../core/map-camera';
+import { DriverMapCamera, DRIVER_MAP_STYLE, moveDriverMap, fitDriverMap, offsetPassengerMarker } from '../../core/driver-map';
+import { Component, OnDestroy } from '@angular/core';
 import { AlertController, ModalController, ToastController } from '@ionic/angular';
 import { Router } from '@angular/router';
+import { HomeSessionService } from '../../core/home-session.service';
 import { firstValueFrom, interval, Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService, PaymentMethod } from '../../core/auth.service';
@@ -108,7 +110,7 @@ type DriverPayout = {
   styleUrls: ['./rides.page.scss'],
   standalone: false,
 })
-export class RidesPage implements OnInit, OnDestroy {
+export class RidesPage implements OnDestroy {
   private unsubscribeStatus: (() => void) | null = null;
   private availablePoll: any = null;
 
@@ -140,6 +142,9 @@ export class RidesPage implements OnInit, OnDestroy {
 
   // Full-screen incoming trip modal & circular countdown timer
   activeIncomingTrip: AvailableTrip | null = null;
+  private readonly prompted = new Set<number>();
+  private ridesVisible = false;
+  private refreshVersion = 0;
   requestCountdown = 45;
   private requestTimerSubscription?: Subscription;
 
@@ -192,6 +197,31 @@ export class RidesPage implements OnInit, OnDestroy {
 
   // Live map for the active trip — shows pickup pin + the customer's GPS as
   // they walk to the curb, plus this driver's own position for context.
+  trackingLive = false;
+  sheetCollapsed = false;
+  private overviewArrow: any = null;
+
+  toggleDetails(): void {
+    this.sheetCollapsed = !this.sheetCollapsed;
+    if (this.fullTripView && window.matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(() => {
+      if (this.fullTripView) this.frameOverview();
+    });
+  }
+
+  onDetailsTransitionEnd(event: TransitionEvent): void {
+    if (this.fullTripView && event.target === event.currentTarget && event.propertyName === 'grid-template-rows') {
+      this.frameOverview();
+    }
+  }
+
+  private frameOverview(): void {
+    const bounds = new google.maps.LatLngBounds();
+    this.overviewArrow?.getPath().forEach((point: any) => bounds.extend(point));
+    if (!bounds.isEmpty()) updateMapCamera(this.map, () => this.map.fitBounds(bounds, { top: 60, left: 50, right: 50, bottom: 35 }));
+  }
+
+  fullTripView = false;
+  availableReason: string | null = null;
   private gpsCamera = new DriverMapCamera();
   private map: any | null = null;
   private pickupMarker: any | null = null;
@@ -208,6 +238,7 @@ export class RidesPage implements OnInit, OnDestroy {
   private latestSelfFix: GeoFix | null = null;
 
   constructor(
+    private homeSession: HomeSessionService,
     private api: ApiService,
     private auth: AuthService,
     private bgLocation: BackgroundLocationService,
@@ -323,11 +354,7 @@ export class RidesPage implements OnInit, OnDestroy {
     }
   }
 
-  ngOnInit(): void {
-    // Resume any in-flight trip first so a cold start (page reload, FCM tap,
-    // app reopen) drops the driver straight into the in-trip view rather
-    // than showing "Driver has an active trip" while the list stays empty.
-    this.resumeActiveTrip();
+  private startQueue(): void {
     this.refreshAvailable();
     this.availablePoll = setInterval(() => {
       this.refreshAvailable();
@@ -342,6 +369,8 @@ export class RidesPage implements OnInit, OnDestroy {
   readonly defaultServiceNames = defaultServiceNames;
 
   ionViewWillEnter(): void {
+    this.ridesVisible = true;
+    if (!this.availablePoll) this.startQueue();
     loadServiceBranding(this.api).subscribe(branding => this.serviceBranding = branding);
     if (!this.lastTrip) {
       this.resumeActiveTrip();
@@ -349,6 +378,11 @@ export class RidesPage implements OnInit, OnDestroy {
   }
 
   ionViewWillLeave(): void {
+    this.ridesVisible = false;
+    this.refreshVersion++;
+    clearInterval(this.availablePoll);
+    this.availablePoll = null;
+    this.activeIncomingTrip = null;
     this.stopRequestCountdown();
     this.ringtone.stopRinging();
   }
@@ -384,6 +418,7 @@ export class RidesPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.overviewArrow?.setMap(null);
     releaseMapCamera(this.map);
     this.stopRequestCountdown();
     this.ringtone.stopRinging();
@@ -401,25 +436,28 @@ export class RidesPage implements OnInit, OnDestroy {
   }
 
   refreshAvailable(): void {
+    const version = ++this.refreshVersion;
     this.loadingAvailable = true;
     this.api.get<{ data: AvailableTrip[]; reason?: string }>('/trips/available').subscribe({
       next: (res) => {
-        this.available = res?.data || [];
-        if (res?.reason && !this.available.length) {
-          this.message = res.reason;
-        }
-        if (this.available.length > 0 && !this.hasActiveTrip && !this.priceOpen) {
-          const currentId = this.activeIncomingTrip?.id;
-          if (!currentId || !this.available.some((t) => t.id === currentId)) {
-            this.activeIncomingTrip = this.available[0];
-            this.startRequestCountdown();
-            this.ringtone.startRinging('incoming-trip-' + this.activeIncomingTrip.id, this.requestCountdown);
-          }
-        } else if (this.available.length === 0) {
+        if (!this.ridesVisible || version !== this.refreshVersion) return;
+        this.available = (res?.data || []).filter(t => !this.homeSession.handledRequests.has(t.id));
+        this.availableReason = this.available.length ? null : res?.reason || null;
+        if (this.activeIncomingTrip && !this.available.some(t => t.id === this.activeIncomingTrip?.id)) {
           this.activeIncomingTrip = null;
           this.stopRequestCountdown();
           this.ringtone.stopRinging('available-rides');
           this.ringtone.stopRinging();
+        }
+        const requestedId = this.homeSession.selectedRequestId;
+        this.homeSession.selectedRequestId = null;
+        const candidate = requestedId ? this.available.find(t => t.id === requestedId)
+          : this.available.length === 1 && !this.prompted.has(this.available[0].id) ? this.available[0] : null;
+        if (candidate && !this.activeIncomingTrip && !this.hasActiveTrip && !this.priceOpen && !this.negBusy && !this.busy) {
+          this.prompted.add(candidate.id);
+          this.activeIncomingTrip = candidate;
+          this.startRequestCountdown();
+          this.ringtone.startRinging('incoming-trip-' + candidate.id, this.requestCountdown);
         }
       },
       error: () => {
@@ -961,7 +999,8 @@ export class RidesPage implements OnInit, OnDestroy {
       },
       (payload) => this.onCustomerLocation(payload),
       // A rider boarded / was dropped on this pool — refresh the manifest live.
-      () => this.maybeRefreshPool()
+      () => this.maybeRefreshPool(),
+      live => this.trackingLive = live
     );
 
     void this.initLiveMap();
@@ -1001,6 +1040,10 @@ export class RidesPage implements OnInit, OnDestroy {
         mapId: 'DEMO_MAP_ID',
       });
       watchMapCamera(this.map);
+      this.overviewArrow?.setMap(null);
+      this.overviewArrow = null;
+      this.sheetCollapsed = false;
+      this.fullTripView = false;
       this.mapReady = true;
       if (this.latestSelfFix) this.onSelfPosition(this.latestSelfFix);
       this.refreshTripMarkers();
@@ -1066,14 +1109,42 @@ export class RidesPage implements OnInit, OnDestroy {
     const previousHeading = this.navRoute.headingAhead();
     void this.navRoute.render(map, origin, target, isHeadingDrop ? 'drop' : 'pickup').then(() => {
       const heading = this.navRoute.headingAhead();
-      if (map === this.map && this.selfPosition && this.selfMarker && heading !== previousHeading && heading !== null) {
+      if (!this.fullTripView && map === this.map && this.selfPosition && this.selfMarker && heading !== previousHeading && heading !== null) {
         this.navRoute.updateDriverProgress(this.selfPosition);
         this.gpsCamera.follow(map, this.selfPosition, null, this.selfMarker, this.navRoute.headingAhead());
       }
     });
   }
 
+  toggleTripView(): void {
+    const map = this.map;
+    const pickup = this.pickupCoords;
+    const drop = this.dropCoords;
+    if (!map || !pickup || !drop) return;
+    resumeMapCamera(map);
+    this.fullTripView = !this.fullTripView;
+    if (this.fullTripView) {
+      this.gpsCamera.reset();
+      this.overviewArrow = new google.maps.Polyline({
+        map, path: journeyCurve(pickup, drop), clickable: false,
+        strokeColor: '#008453', strokeOpacity: 1, strokeWeight: 7,
+        icons: [{ icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3, fillOpacity: 1 },
+          offset: '94%' }],
+      });
+      this.frameOverview();
+      return;
+    }
+    this.overviewArrow?.setMap(null);
+    this.overviewArrow = null;
+    if (this.selfPosition) {
+      this.gpsCamera.follow(map, this.selfPosition, this.latestSelfFix?.bearing, this.selfMarker, this.navRoute.headingAhead());
+    } else {
+      moveDriverMap(map, { center: pickup, zoom: DRIVER_MAP_STYLE.zoom, tilt: DRIVER_MAP_STYLE.tilt });
+    }
+  }
+
   private fitMap(): void {
+    if (this.fullTripView) return;
     if (!this.map || this.gpsCamera.isFollowing(this.map)) return;
     const bounds = new google.maps.LatLngBounds();
     let any = false;
@@ -1167,10 +1238,9 @@ export class RidesPage implements OnInit, OnDestroy {
       this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
         position: p,
         map: this.map,
-        title: 'You',
+        title: 'Your vehicle',
         content: buildReusableCarMarkerElement({
           bearing: fix.bearing ?? 0,
-          label: 'You',
           markerUrl,
         }),
         zIndex: 1000,
@@ -1178,7 +1248,8 @@ export class RidesPage implements OnInit, OnDestroy {
     } else if (markerUrl) {
       updateCarMarkerImage(this.selfMarker, markerUrl);
     }
-    this.gpsCamera.follow(this.map, p, fix.bearing, this.selfMarker, this.navRoute.headingAhead());
+    if (this.fullTripView) this.selfMarker.position = p;
+    else this.gpsCamera.follow(this.map, p, fix.bearing, this.selfMarker, this.navRoute.headingAhead());
     if (this.customerMarker) offsetPassengerMarker(this.customerMarker, p);
     this.updateNavigation();
   }
@@ -1476,11 +1547,13 @@ export class RidesPage implements OnInit, OnDestroy {
     this.api.post<{ message?: string }>(`/trips/${id}/driver-reject`, {}).subscribe({
       next: (res) => {
         this.ringtone.playRejectChime();
+        this.markHandled(id);
         this.message = res.message || 'Rejected';
         this.lastTrip = null;
       },
       error: (err) => {
         this.error = err?.error?.message || 'Reject failed';
+        this.busy = false;
       },
       complete: () => {
         this.busy = false;
@@ -1501,11 +1574,13 @@ export class RidesPage implements OnInit, OnDestroy {
     }).subscribe({
       next: (res) => {
         this.ringtone.playSuccessChime();
+        this.markHandled(id);
         this.negotiation = res.negotiation || null;
         this.message = this.isShuttleTrip(this.lastTrip) ? 'Shuttle fare accepted' : 'Offer accepted';
       },
       error: (err) => {
         this.error = err?.error?.message || 'Accept failed';
+        this.negBusy = false;
         this.negotiation = null;
       },
       complete: () => {
@@ -1544,9 +1619,11 @@ export class RidesPage implements OnInit, OnDestroy {
         next: (res) => {
           this.negotiation = res.negotiation || null;
           this.message = `Price sent · ₹${this.counterAmount}`;
+          this.markHandled(id);
         },
         error: (err) => {
           this.error = err?.error?.message || 'Could not send price.';
+          this.negBusy = false;
           this.negotiation = null;
         },
         complete: () => {
@@ -1575,16 +1652,9 @@ export class RidesPage implements OnInit, OnDestroy {
 
   private handleIncomingTripTimeout(): void {
     if (!this.activeIncomingTrip) return;
-    const expiredId = this.activeIncomingTrip.id;
-    this.available = this.available.filter((t) => t.id !== expiredId);
-    this.activeIncomingTrip = this.available[0] || null;
-    if (this.activeIncomingTrip) {
-      this.startRequestCountdown();
-      this.ringtone.startRinging('incoming-trip-' + this.activeIncomingTrip.id, this.requestCountdown);
-    } else {
-      this.stopRequestCountdown();
-      this.ringtone.stopRinging();
-    }
+    this.activeIncomingTrip = null;
+    this.stopRequestCountdown();
+    this.ringtone.stopRinging();
   }
 
   getCircleDashOffset(countdown: number, totalSeconds = 45): number {
@@ -1651,15 +1721,17 @@ export class RidesPage implements OnInit, OnDestroy {
   declineIncomingTrip(trip: AvailableTrip): void {
     this.ringtone.stopRinging();
     this.ringtone.playRejectChime();
-    this.available = this.available.filter((t) => t.id !== trip.id);
-    this.activeIncomingTrip = this.available[0] || null;
-    if (this.activeIncomingTrip) {
-      this.startRequestCountdown();
-      this.ringtone.startRinging('incoming-trip-' + this.activeIncomingTrip.id, this.requestCountdown);
-    } else {
-      this.stopRequestCountdown();
-    }
-    this.api.post(`/trips/${trip.id}/driver-reject`, {}).subscribe({ error: () => {} });
+    this.activeIncomingTrip = null;
+    this.stopRequestCountdown();
+    this.api.post(`/trips/${trip.id}/driver-reject`, {}).subscribe({
+      next: () => this.markHandled(trip.id),
+      error: err => this.error = err?.error?.message || 'Could not reject this request. Please try again.',
+    });
+  }
+
+  private markHandled(id: number): void {
+    this.homeSession.handledRequests.add(id);
+    this.available = this.available.filter(t => t.id !== id);
   }
 
   openPriceFromModal(trip: AvailableTrip): void {

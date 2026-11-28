@@ -113,41 +113,88 @@ ion-content.rides-idle-content { --background: #fff; }
 
 ion-content.in-trip {
   --background: #f5f7fa;
-  --padding-bottom: 5.5rem; /* sticky CTA clearance */
+  --padding-bottom: 0;
 }
 
+.active-workspace { height: 100%; display: flex; flex-direction: column; }
+
 .trip-map-wrap {
+  flex: 1 0 min(38vh, 42dvh);
   position: relative;
 }
 
-.trip-map-badge {
+.map-controls {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 10px);
   right: 14px;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trip-map-badge, .tracking-pill {
+  background: #101d2b; color: white; padding: 9px 16px; border-radius: 999px; font-weight: 700;
+}
+
+.tracking-pill {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+  &::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  &.is-live { color: #6ee7a0; }
 }
 
 #driver-trip-map,
 .trip-map-hero {
   width: 100%;
-  height: 38vh;
-  min-height: 240px;
+  position: absolute;
+  inset: 0;
+  height: 100%;
   background: #eef0f2;
 }
 
+.sheet-toggle {
+  align-self: center;
+  flex: none;
+  width: 56px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #284b40;
+  cursor: pointer;
+  ion-icon { font-size: 24px; }
+  &:focus-visible { outline: 2px solid #008453; }
+}
+
+.details-reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows .3s cubic-bezier(.16, 1, .3, 1), opacity .2s ease;
+}
+
+.details-clip { min-height: 0; overflow: hidden; }
+.sheet-collapsed .details-reveal { grid-template-rows: 0fr; opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .details-reveal { transition: none; }
+}
+
 .trip-body {
-  padding: 14px 14px 0;
-  margin-top: -18px;
+  padding: 12px 14px calc(16px + env(safe-area-inset-bottom));
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   position: relative;
   z-index: 1;
 }
 
 .status-hero {
-  background: #ffffff;
-  border: 1px solid #eef0f2;
-  border-radius: 18px;
-  padding: 0.9rem 1rem;
-  box-shadow: 0 2px 10px rgba(13, 27, 42, 0.04);
+  padding: 0.9rem 0;
 
   .status-pill {
     display: inline-block;
@@ -280,15 +327,8 @@ ion-content.in-trip {
   }
 }
 
-.cta-spacer {
-  height: 5rem;
-}
-
 .sticky-cta {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  flex: none;
   background: #ffffff;
   border-top: 1px solid #eef0f2;
   padding: 0.7rem 0.9rem calc(env(safe-area-inset-bottom, 0px) + 0.7rem);
@@ -653,22 +693,6 @@ ion-content.in-trip {
 
 /* Commission breakdown on the trip card. */
 .earn-sub { font-weight: 600; opacity: 0.75; }
-
-/* The kerb rule: fares are paid online, so there is nothing to collect. */
-.no-cash-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  background: rgba(14, 143, 71, 0.08);
-  border-radius: 12px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  line-height: 1.45;
-  color: #0b7a3e;
-  ion-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
-}
 
 /* ==================== FULL-SCREEN INCOMING RIDE REQUEST MODAL ==================== */
 .incoming-request-overlay.full-screen-ring-modal {

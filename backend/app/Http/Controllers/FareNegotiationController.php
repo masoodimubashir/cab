@@ -146,6 +146,10 @@ class FareNegotiationController extends Controller
             'trip_id' => $trip->id,
             'trip' => $tripWithDriver,
             'negotiation' => $negotiation,
+            ...($trip->customer_id === $user->id && $trip->status === 'NEGOTIATION' ? [
+                'rejected_driver_ids' => \App\Models\TripAssignment::query()->where('trip_id', $trip->id)
+                    ->where('status', 'REJECTED')->pluck('driver_id')->map(fn ($id) => (int) $id)->values(),
+            ] : []),
             'city_payment_modes' => $cityPaymentModes,
             'cancel_block_radius_m' => $cancelBlockRadiusM,
             // Authoritative list the customer can actually pay with — operator
