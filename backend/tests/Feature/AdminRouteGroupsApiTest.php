@@ -110,6 +110,30 @@ class AdminRouteGroupsApiTest extends TestCase
         $this->assertDatabaseCount('route_groups', 2); $this->assertDatabaseMissing('route_groups', ['name' => 'New draft']);
     }
 
+    public function test_vehicle_form_saves_existing_and_new_types_without_assigning_routes_or_fares(): void
+    {
+        $type = DB::table('vehicle_types')->insertGetId(['name' => 'Existing minibus', 'is_active' => true]);
+        $payload = ['route_group_ids' => [], 'vehicles' => [
+            ['vehicle_type_id' => $type, 'display_name' => 'City minibus', 'max_people' => 9, 'luggage_capacity' => 0],
+            ['vehicle_type_name' => 'New coach', 'display_name' => 'Coach', 'max_people' => 30, 'luggage_capacity' => 4],
+        ]];
+        $url = "/api/admin/cities/{$this->cityId}/vehicle-types/batch";
+        $result = $this->postJson($url, $payload)->assertCreated();
+        $this->assertCount(2, $result->json('data'));
+        foreach ($payload['vehicles'] as $vehicle) {
+            $this->assertDatabaseHas('city_vehicle_types', [
+                'display_name' => $vehicle['display_name'], 'city_id' => $this->cityId,
+                'max_people' => $vehicle['max_people'], 'luggage_capacity' => $vehicle['luggage_capacity'],
+                'vehicle_set_id' => null, 'ride_type_id' => null,
+            ]);
+        }
+        $this->assertDatabaseCount('vehicle_sets', 0);
+        $this->assertDatabaseCount('pricing_rules', 0);
+        $payload['vehicles'][0]['display_name'] = 'Rolled back';
+        $this->postJson($url, $payload)->assertUnprocessable()->assertJsonValidationErrors('vehicles.1');
+        $this->assertDatabaseMissing('city_vehicle_types', ['display_name' => 'Rolled back']);
+    }
+
     public function test_multiple_vehicles_can_join_groups_and_a_failed_batch_creates_nothing(): void
     {
         $group = $this->postJson("/api/admin/cities/{$this->cityId}/route-groups", ['name' => 'Town'])->assertCreated()->json('route_group.id');
@@ -458,7 +482,7 @@ class AdminRouteGroupsApiTest extends TestCase
     public function test_city_drivers_endpoint_lists_only_this_city(): void
     {
         $a = $this->makeDriver($this->cityId);
-        $a->user()->update(['avatar_path' => 'avatars/driver.jpg']);
+        $a->user()->update(['avatar_path' => 'avatars/driver.jpg', 'address' => 'Test address']);
         $this->makeDriver($this->otherCityId);
 
         $res = $this->getJson("/api/admin/cities/{$this->cityId}/route-group-drivers");
@@ -467,5 +491,17 @@ class AdminRouteGroupsApiTest extends TestCase
         $userIds = collect($res->json('data'))->pluck('user_id')->all();
         $this->assertContains($a->user_id, $userIds);
         $this->assertCount(1, $userIds);
+        $a->forceFill(['service_modes' => ['private', 'shuttle']])->save();
+        $vehicleId = $this->makeCityVehicleType($this->cityId);
+        $this->patchJson("/api/admin/drivers/{$a->id}", ['city_vehicle_type_id' => $vehicleId])->assertOk();
+        $this->getJson("/api/admin/cities/{$this->cityId}/vehicle-drivers")
+            ->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $a->id)
+            ->assertJsonPath('data.0.city_vehicle_type_id', $vehicleId)
+            ->assertJsonPath('data.0.email', $a->user->email)
+            ->assertJsonPath('data.0.address', 'Test address')
+            ->assertJsonPath('data.0.service_modes', ['private', 'shuttle']);
+        $this->patchJson("/api/admin/drivers/{$a->id}", ['city_vehicle_type_id' => null])->assertOk();
+        $this->assertNull($a->fresh()->city_vehicle_type_id);
     }
 }

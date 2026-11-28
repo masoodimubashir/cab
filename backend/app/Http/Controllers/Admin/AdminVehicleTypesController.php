@@ -13,6 +13,7 @@ use App\Models\Route;
 use App\Models\VehicleSeatLayout;
 use App\Models\VehicleSeatLayoutCell;
 use App\Services\VehicleFamilyImageService;
+use App\Services\ManagerScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,8 @@ class AdminVehicleTypesController
     {
         $data = $request->validate([
             'vehicles' => ['required', 'array', 'min:1', 'max:30'], 'vehicles.*' => ['required', 'array'],
+            'target_city_ids' => ['sometimes', 'array'],
+            'target_city_ids.*' => ['integer', 'distinct', 'exists:cities,id', Rule::notIn([$city->id])],
             'vehicle_set_id' => ['nullable', 'integer', Rule::exists('vehicle_sets', 'id')->where('city_id', $city->id)],
             'set_name' => ['nullable', 'string', 'max:100'],
             'route_group_ids' => ['present', 'array'],
@@ -52,6 +55,9 @@ class AdminVehicleTypesController
                 $rows[] = $response->getData(true)['vehicle_type'];
             }
             if ($setId && $data['route_group_ids']) \App\Models\VehicleSet::findOrFail($setId)->routeGroups()->syncWithoutDetaching($data['route_group_ids']);
+            if (!empty($data['target_city_ids'])) {
+                $this->copyVehicles($city, $data['target_city_ids'], array_column($rows, 'id'), true, true, false);
+            }
             return $rows;
         });
         return response()->json(['data' => $rows, 'message' => count($rows).' vehicles added.'], 201);
@@ -64,7 +70,7 @@ class AdminVehicleTypesController
     {
         $images = $this->vehicleImages->preloadForPlatform();
         $rows = CityVehicleType::query()
-            ->with(['rideType:id,name', 'vehicleType:id,name', 'vehicleSet:id,name'])
+            ->with(['rideType:id,name,mode', 'vehicleType:id,name', 'vehicleSet:id,name'])
             ->where('city_id', $city->id)
             ->orderBy('display_order')
             ->orderBy('id')
@@ -76,8 +82,9 @@ class AdminVehicleTypesController
             'data' => $rows,
             'available_ride_types' => RideType::query()
                 ->orderBy('sort_order')
-                ->get(['id', 'name'])
-                ->toArray(),
+                ->get(['id', 'name', 'mode'])
+                ->map(fn (RideType $type) => ['id' => $type->id, 'name' => $type->name, 'mode' => $type->resolvedMode()])
+                ->values(),
             'available_vehicle_types' => \App\Models\VehicleType::query()
                 ->where('is_active', true)
                 ->orderBy('sort_order')
@@ -89,7 +96,7 @@ class AdminVehicleTypesController
     public function show(City $city, CityVehicleType $vehicleType)
     {
         $this->guard($city, $vehicleType);
-        $vehicleType->load(['rideType:id,name', 'vehicleType:id,name', 'vehicleSet:id,name']);
+        $vehicleType->load(['rideType:id,name,mode', 'vehicleType:id,name', 'vehicleSet:id,name']);
 
         return response()->json(['vehicle_type' => $this->shape($vehicleType)]);
     }
@@ -115,7 +122,7 @@ class AdminVehicleTypesController
         ]);
 
         $rideType = isset($data['ride_type_id']) ? RideType::query()->find((int) $data['ride_type_id']) : null;
-        if (!$rideType || !$this->isPrivateRideType($rideType?->name)) {
+        if ($rideType?->resolvedMode() !== RideType::MODE_PRIVATE) {
             $data['reverse_bidding_enabled'] = false;
         }
 
@@ -154,9 +161,64 @@ class AdminVehicleTypesController
         });
 
         return response()->json([
-            'vehicle_type' => $this->shape($row->fresh()->load(['rideType:id,name', 'vehicleType:id,name'])),
+            'vehicle_type' => $this->shape($row->fresh()->load(['rideType:id,name,mode', 'vehicleType:id,name'])),
             'message' => 'Vehicle created.',
         ], 201);
+    }
+
+    private function matchingVehicles(CityVehicleType $vehicleType)
+    {
+        return CityVehicleType::where('vehicle_type_id', $vehicleType->vehicle_type_id)
+            ->whereRaw('LOWER(TRIM(display_name)) = ?', [mb_strtolower(trim($vehicleType->display_name))]);
+    }
+
+    public function matchingCities(City $city, CityVehicleType $vehicleType)
+    {
+        $this->guard($city, $vehicleType);
+        $matches = ManagerScope::applyCityScope($this->matchingVehicles($vehicleType));
+        return response()->json(['city_ids' => $matches->where('city_id', '!=', $city->id)->distinct()->pluck('city_id')]);
+    }
+
+    public function updateSharedDetails(Request $request, City $city, CityVehicleType $vehicleType)
+    {
+        $this->guard($city, $vehicleType);
+        $details = $request->validate([
+            'target_city_ids' => ['sometimes', 'array'],
+            'target_city_ids.*' => ['integer', 'distinct', 'exists:cities,id', Rule::notIn([$city->id])],
+            'display_name' => ['sometimes', 'required', 'string', 'max:120'],
+            'max_people' => ['sometimes', 'required', 'integer', 'min:1', 'max:99'],
+            'luggage_capacity' => ['sometimes', 'required', 'integer', 'min:0', 'max:99'],
+        ]);
+
+        $targets = $details['target_city_ids'] ?? [];
+        unset($details['target_city_ids']);
+        foreach ($targets as $id) {
+            ManagerScope::assertCityAllowed($id);
+        }
+        DB::transaction(function () use ($city, $vehicleType, $details, $targets) {
+            $cities = City::whereIn('id', [$city->id, ...$targets])->orderBy('id')->lockForUpdate()->get();
+            foreach ($cities as $destination) {
+                $family = $this->matchingVehicles($vehicleType)->where('city_id', $destination->id)
+                    ->orderBy('id')->lockForUpdate()->get();
+                abort_if($family->isEmpty() || ($destination->is($city) && !$family->contains('id', $vehicleType->id)),
+                    409, "Vehicle details changed in {$destination->name}. Reopen the editor and try again.");
+
+                if (isset($details['display_name']) && $details['display_name'] !== $vehicleType->display_name) {
+                    $other = CityVehicleType::where('city_id', $destination->id)
+                        ->whereRaw('LOWER(TRIM(display_name)) = ?', [mb_strtolower(trim($details['display_name']))])
+                        ->whereNotIn('id', $family->modelKeys());
+                    abort_if($other->exists(), 409, "Another vehicle already uses that name in {$destination->name}.");
+                }
+                foreach ($family as $row) {
+                    $row->fill($details);
+                    $changes = $row->getDirty();
+                    $row->save();
+                    $this->syncFixedRoutesForVehicle($destination, $row, $changes);
+                }
+            }
+        });
+
+        return response()->json(['message' => 'Shared vehicle details saved.']);
     }
 
     /**
@@ -194,7 +256,7 @@ class AdminVehicleTypesController
             : ($targetRideTypeId === $vehicleType->ride_type_id
                 ? $vehicleType->rideType
                 : RideType::query()->find((int) $targetRideTypeId));
-        if (!$this->isPrivateRideType($targetRideType?->name)) {
+        if ($targetRideType !== null && $targetRideType->resolvedMode() !== RideType::MODE_PRIVATE) {
             $data['reverse_bidding_enabled'] = false;
         }
 
@@ -237,7 +299,7 @@ class AdminVehicleTypesController
         $this->syncFixedRoutesForVehicle($city, $vehicleType->fresh(), $data);
 
         return response()->json([
-            'vehicle_type' => $this->shape($vehicleType->fresh()->load(['rideType:id,name', 'vehicleType:id,name', 'vehicleSet:id,name'])),
+            'vehicle_type' => $this->shape($vehicleType->fresh()->load(['rideType:id,name,mode', 'vehicleType:id,name', 'vehicleSet:id,name'])),
             'message' => 'Vehicle type updated.',
         ]);
     }
@@ -267,18 +329,23 @@ class AdminVehicleTypesController
             'overwrite_existing' => ['nullable', 'boolean'],
         ]);
 
-        $targetCityIds = array_unique($data['target_city_ids']);
-        $copyPricing = $request->boolean('copy_pricing', true);
-        $copySeatLayouts = $request->boolean('copy_seat_layouts', true);
-        $overwriteExisting = $request->boolean('overwrite_existing', true);
+        return $this->copyVehicles($city, $data['target_city_ids'], $data['vehicle_ids'] ?? [],
+            $request->boolean('copy_pricing', true), $request->boolean('copy_seat_layouts', true), $request->boolean('overwrite_existing', true));
+    }
+
+    private function copyVehicles(City $city, array $targetCityIds, array $vehicleIds, bool $copyPricing, bool $copySeatLayouts, bool $overwriteExisting)
+    {
+        foreach ($targetCityIds as $id) {
+            ManagerScope::assertCityAllowed($id);
+        }
 
         // Fetch source vehicles
         $sourceQuery = CityVehicleType::query()->where('city_id', $city->id);
 
-        if (!empty($data['vehicle_ids'])) {
+        if ($vehicleIds) {
             $pickedVehicles = CityVehicleType::query()
                 ->where('city_id', $city->id)
-                ->whereIn('id', $data['vehicle_ids'])
+                ->whereIn('id', $vehicleIds)
                 ->get();
             $names = $pickedVehicles->pluck('display_name')->unique()->toArray();
             $sourceQuery->whereIn('display_name', $names);
@@ -476,12 +543,6 @@ class AdminVehicleTypesController
         if ($vehicleType->city_id !== $city->id) {
             abort(404);
         }
-    }
-
-    private function isPrivateRideType(?string $name): bool
-    {
-        $name = strtolower((string) $name);
-        return !str_contains($name, 'fixed') && !str_contains($name, 'shuttle');
     }
 
     private function nextDisplayOrder(City $city): int

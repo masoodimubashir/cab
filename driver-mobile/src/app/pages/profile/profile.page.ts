@@ -1,3 +1,4 @@
+import { defaultServiceNames, loadServiceBranding, ServiceBranding, resolveArtworkUrl } from '../../core/service-branding';
 import { DRIVER_MAP_STYLE } from '../../core/driver-map';
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -547,6 +548,10 @@ export class ProfilePage implements OnInit, OnDestroy {
           this.approvedServiceModes = res.driver.service_modes ?? null;
           this.driverApproved = res.driver.approval_status === 'approved';
 
+          const brandingCity = this.city_id;
+          loadServiceBranding(this.api, brandingCity).subscribe(branding => {
+            if (this.city_id === brandingCity) this.serviceBranding = branding;
+          });
           if (this.onboarding && this.city_id) this.loadRegistrationRideModes(this.city_id);
           if (this.city_id && this.vehicle_type_id) this.loadCityVehicles();
         }
@@ -581,11 +586,16 @@ export class ProfilePage implements OnInit, OnDestroy {
     return this.service_scope === 'outstation' ? 'Outstation Service' : 'Local Service';
   }
 
+  serviceBranding: ServiceBranding = {};
+
+  get displayedServiceModes(): ServiceMode[] {
+    return this.approvedServiceModes ?? (this.service_mode ? [this.service_mode] : []);
+  }
+  readonly defaultServiceNames = defaultServiceNames;
+
   get serviceModeDisplay(): string {
     if (!this.profileLoaded) return 'Profile unavailable';
-    const modes = this.approvedServiceModes ?? (this.service_mode ? [this.service_mode] : []);
-    const labels: Record<ServiceMode, string> = { fixed: 'Fixed Route', shuttle: 'Shared Shuttle', private: 'Private Taxi' };
-    return modes.map(mode => labels[mode]).join(', ') || 'Not registered';
+    return this.displayedServiceModes.map(mode => this.serviceBranding[mode]?.label || defaultServiceNames[mode]).join(', ') || 'Not registered';
   }
 
   get serviceModeIcon(): string {
@@ -982,7 +992,7 @@ export class ProfilePage implements OnInit, OnDestroy {
         const modes: Array<RideModeOption & { key: string }> = [];
         for (const sc of res.scopes ?? []) {
           for (const m of sc.modes ?? []) {
-            modes.push({ ...m, name: m.display_name || m.name, key: `${m.scope}:${m.mode}:${m.id}` });
+            modes.push({ ...m, image_url: resolveArtworkUrl(m.image_url), name: m.display_name || m.name, key: `${m.scope}:${m.mode}:${m.id}` });
           }
         }
         this.rideModes = modes;

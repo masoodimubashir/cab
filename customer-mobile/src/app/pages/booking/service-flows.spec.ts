@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { RealtimeService } from '../../core/realtime.service';
@@ -54,13 +54,68 @@ describe('Private and Shuttle booking safeguards', () => {
 
   it('keeps the Private guide separate from the customer offer and advances without sending a trip', () => {
     const fixture = privatePage('car');
-    expect(fixture.nativeElement.querySelector('.sf--reference')).toBeTruthy();
-    fixture.nativeElement.querySelector('.sf__cta').click();
+    expect(fixture.nativeElement.querySelector('.pv-rides')).toBeTruthy();
+    fixture.nativeElement.querySelector('.pv-rides-next').click();
     refresh(fixture);
     expect(fixture.componentInstance.step).toBe('price');
     expect(fixture.componentInstance.offer).toBeNull();
     expect(fixture.nativeElement.querySelector('.sf__cta').disabled).toBeTrue();
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('explains missing vehicle pricing without asking the customer to retry', async () => {
+    const f = privatePage('car');
+    api.post.and.returnValue(throwError(() => ({ status: 404, error: { message: 'Pricing rule not set for this vehicle.' } })));
+    f.componentInstance.vehicleTypeId = 9;
+    await (f.componentInstance as any).loadEstimate();
+    refresh(f);
+    expect(f.nativeElement.textContent).toContain('This vehicle isn’t available for your journey. Please choose another vehicle.');
+    expect(f.nativeElement.querySelector('.pv-rides-error')).toBeNull();
+    expect(f.nativeElement.querySelector('.pv-rides-footer-row')).toBeNull();
+    expect(f.nativeElement.querySelector('.pv-rides-next')).toBeNull();
+    f.componentInstance.goToPrice();
+    expect(f.componentInstance.step).toBe('car');
+    api.post.and.returnValue(of({ estimated_fare: 220 }));
+    await (f.componentInstance as any).loadEstimate();
+    refresh(f);
+    expect(f.nativeElement.querySelector('.pv-rides-unavailable')).toBeNull();
+    expect(f.nativeElement.querySelector('.pv-rides-next').disabled).toBeFalse();
+  });
+
+  it('keeps connection and server errors retryable instead of claiming no service', async () => {
+    const f = privatePage('car');
+    for (const status of [0, 500, 404]) {
+      api.post.and.returnValue(throwError(() => ({ status, error: { message: 'Request failed' } })));
+      await (f.componentInstance as any).loadEstimate();
+      refresh(f);
+      expect(f.componentInstance.vehicleUnavailable).toBeFalse();
+      expect(f.nativeElement.textContent).toContain('We couldn’t check the fare. Please try again.');
+      expect(f.nativeElement.querySelector('.pv-rides-error button').textContent).toContain('Retry');
+    }
+  });
+
+  it('handles missing fares and destination restrictions with customer guidance', async () => {
+    const f = privatePage('car');
+    api.post.and.returnValue(of({ estimated_fare: 0 }));
+    await (f.componentInstance as any).loadEstimate();
+    expect(f.componentInstance.availabilityMessage).toContain('Please choose a specific vehicle.');
+    api.post.and.returnValue(throwError(() => ({ status: 422, error: { message: 'Destination is outside the service area for Sopore.' } })));
+    await (f.componentInstance as any).loadEstimate();
+    expect(f.componentInstance.availabilityMessage).toContain('Please choose a different destination.');
+  });
+
+  it('ignores a stale fare response after another vehicle is selected', async () => {
+    const f = privatePage('car');
+    const old = new Subject<any>();
+    api.post.and.returnValue(old);
+    const pending = (f.componentInstance as any).loadEstimate();
+    api.post.and.returnValue(of({ estimated_fare: 275 }));
+    f.componentInstance.chooseVehicle(2);
+    await Promise.resolve();
+    old.error({ status: 404, error: { message: 'No matching vehicle for this booking.' } });
+    await pending;
+    expect(f.componentInstance.estimatedFare).toBe(275);
+    expect(f.componentInstance.vehicleUnavailable).toBeFalse();
   });
 
   it('prevents submitting a Private offer below the minimum fare', async () => {
@@ -74,6 +129,51 @@ describe('Private and Shuttle booking safeguards', () => {
     fixture.componentInstance.offer = 175;
     refresh(fixture);
     expect(fixture.nativeElement.querySelector('.sf__cta').disabled).toBeFalse();
+  });
+
+  it('keeps five distinct carousel vehicles and wraps selection in both directions', () => {
+    const page = privatePage('car').componentInstance;
+    page.vehicleTypes = [1, 2, 3, 4, 5, 6].map(id => ({ id, name: `Car ${id}` }));
+    api.post.and.returnValue(of({ estimated_fare: 200 }));
+    expect(page.carouselSlots.map(slot => slot.offset)).toEqual([-2, -1, 0, 1, 2]);
+    expect(new Set(page.carouselSlots.map(slot => slot.vehicle.id)).size).toBe(5);
+    expect(page.carouselSlots[2].vehicle.id).toBeNull();
+    page.moveCarousel(-1);
+    expect(page.vehicleTypeId).toBe(6);
+    page.moveCarousel(1);
+    expect(page.vehicleTypeId).toBeNull();
+    page.vehicleQuery = 'Car 3';
+    expect(page.vehicleSearchResults.map(v => v.id)).toEqual([3]);
+    expect(page.vehicleTypeId).toBeNull();
+    page.selectCarouselVehicle(3);
+    expect(page.vehicleQuery).toBe('');
+    expect(page.carouselSlots[2].vehicle.id).toBe(3);
+  });
+
+  it('swipes horizontally once, suppresses the following click and ignores vertical gestures', () => {
+    const page = privatePage('car').componentInstance;
+    page.vehicleTypes = [{ id: 1, name: 'Car 1' }, { id: 2, name: 'Car 2' }];
+    const start = { isPrimary: true, button: 0, pointerId: 1, clientX: 200, clientY: 100 } as PointerEvent;
+    page.startCarouselSwipe(start);
+    page.moveCarouselSwipe({ ...start, clientX: 160, clientY: 103 } as PointerEvent);
+    expect(page.carouselDrag).toBe(-40);
+    expect(page.carouselDragging).toBeTrue();
+    page.finishCarouselSwipe({ ...start, clientX: 130, clientY: 105 } as PointerEvent);
+    expect(page.carouselDrag).toBe(0);
+    expect(page.carouselDragging).toBeFalse();
+    expect(page.vehicleTypeId).toBe(1);
+    page.selectCarouselVehicle(2);
+    expect(page.vehicleTypeId).toBe(1);
+    page.startCarouselSwipe(start);
+    page.finishCarouselSwipe({ ...start, clientX: 195, clientY: 180 } as PointerEvent);
+    expect(page.vehicleTypeId).toBe(1);
+    expect(new Set(page.carouselSlots.map(slot => slot.vehicle.id)).size).toBe(3);
+    page.startCarouselSwipe(start);
+    page.moveCarouselSwipe({ ...start, clientX: 450 } as PointerEvent);
+    expect(page.carouselDrag).toBeLessThan(250);
+    page.cancelCarouselSwipe();
+    expect(page.carouselDrag).toBe(0);
+    expect(page.carouselDragging).toBeFalse();
   });
 
   it('opens Shuttle payment-method selection without creating a booking or charging', () => {

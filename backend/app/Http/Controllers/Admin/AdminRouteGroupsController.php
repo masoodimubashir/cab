@@ -9,6 +9,7 @@ use App\Models\RouteGroup;
 use App\Models\CityVehicleType;
 use App\Models\VehicleSet;
 use Illuminate\Http\Request;
+use App\Services\ManagerScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
@@ -194,17 +195,21 @@ class AdminRouteGroupsController
     }
 
     /** Lightweight list of the city's drivers for the assignment picker. */
-    public function cityDrivers(City $city)
+    public function cityDrivers(Request $request, City $city)
     {
+        $fleets = ManagerScope::fleetIds($request->user());
+        $showContact = $request->routeIs('admin.vehicle-drivers');
         $drivers = Driver::query()
             ->forCity((int) $city->id)
-            ->with(['user:id,name,phone,avatar_path', 'cities:id,name'])
+            ->when($fleets !== null, fn ($query) => $query->whereIn('fleet_id', $fleets))
+            ->with([$showContact ? 'user:id,name,phone,avatar_path,email,address' : 'user:id,name,phone,avatar_path', 'cities:id,name'])
             ->get()
             ->map(fn (Driver $d) => [
                 'id' => (int) $d->id,
                 'user_id' => (int) $d->user_id,
                 'name' => $d->user?->name ?: ('Driver #' . $d->user_id),
                 'phone' => $d->user?->phone,
+                ...($showContact ? ['email' => $d->user?->email, 'address' => $d->user?->address] : []),
                 'avatar_url' => $d->user?->avatar_path
                     ? (str_starts_with($d->user->avatar_path, 'http') ? $d->user->avatar_path : url('/storage/'.ltrim($d->user->avatar_path, '/')))
                     : null,
@@ -214,6 +219,7 @@ class AdminRouteGroupsController
                 'city_vehicle_type_id' => $d->city_vehicle_type_id !== null ? (int) $d->city_vehicle_type_id : null,
                 'vehicle_type_id' => $d->vehicle_type_id !== null ? (int) $d->vehicle_type_id : null,
                 'vehicle_reg_no' => $d->vehicle_reg_no,
+                'service_modes' => $d->allowedServiceModes(),
                 'vehicle_model' => $d->vehicle_model,
                 'vehicle_color' => $d->vehicle_color,
             ])

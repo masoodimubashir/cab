@@ -1,6 +1,7 @@
 import { Component, Input, OnChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { FareFieldHelpComponent } from './fare-field-help.component';
 import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
 import { ButtonComponent } from '../../ui';
@@ -8,6 +9,7 @@ import { ButtonComponent } from '../../ui';
 interface FareField {
   key: string;
   label: string;
+  help: string;
   req?: boolean;
 }
 
@@ -21,61 +23,62 @@ const FARE_SECTIONS: FareSection[] = [
   {
     title: 'Base fare',
     fields: [
-      { key: 'base_fare', label: 'Base fare', req: true },
+      { key: 'base_fare', label: 'Base fare', req: true, help: 'Starting amount in rupees before distance, time and pickup charges.' },
+      { key: 'surge_multiplier', label: 'Base surge multiplier', req: true, help: 'Multiplies the ride subtotal before dynamic pricing and tax. Use 1 for the standard fare or 1.2 for a 20% increase.' },
     ],
   },
   {
     title: 'Distance thresholds',
     fields: [
-      { key: 'threshold_distance_1_km', label: 'Threshold 1 (km)' },
-      { key: 'fare_per_km_after_threshold_1', label: 'Fare/km after T1' },
-      { key: 'threshold_distance_2_km', label: 'Threshold 2 (km)' },
-      { key: 'fare_per_km_after_threshold_2', label: 'Fare/km after T2' },
+      { key: 'threshold_distance_1_km', label: 'Threshold 1 (km)', help: 'Kilometres included in the base fare before the first distance rate starts.' },
+      { key: 'fare_per_km_after_threshold_1', label: 'Fare/km after T1', help: 'Price per additional kilometre beyond the first distance threshold, up to the second threshold if set.' },
+      { key: 'threshold_distance_2_km', label: 'Threshold 2 (km)', help: 'Total trip distance at which the second per-kilometre rate starts. Set it above the first threshold.' },
+      { key: 'fare_per_km_after_threshold_2', label: 'Fare/km after T2', help: 'Price per kilometre for the part of the trip beyond the second distance threshold.' },
     ],
   },
   {
     title: 'Time thresholds',
     fields: [
-      { key: 'threshold_time_1_min', label: 'Threshold 1 (min)' },
-      { key: 'fare_per_min_after_threshold_time_1', label: 'Fare/min after T1' },
-      { key: 'threshold_time_2_min', label: 'Threshold 2 (min)' },
-      { key: 'fare_per_min_after_threshold_time_2', label: 'Fare/min after T2' },
+      { key: 'threshold_time_1_min', label: 'Threshold 1 (min)', help: 'Minutes included in the base fare before the first time-based rate starts.' },
+      { key: 'fare_per_min_after_threshold_time_1', label: 'Fare/min after T1', help: 'Price per additional minute beyond the first time threshold, up to the second threshold if set.' },
+      { key: 'threshold_time_2_min', label: 'Threshold 2 (min)', help: 'Total trip time at which the second per-minute rate starts. Set it above the first threshold.' },
+      { key: 'fare_per_min_after_threshold_time_2', label: 'Fare/min after T2', help: 'Price per minute for the part of the trip beyond the second time threshold.' },
     ],
   },
   {
     title: 'Waiting & tax',
     fields: [
-      { key: 'threshold_waiting_time_min', label: 'Waiting threshold (min)' },
-      { key: 'fare_per_waiting_minute', label: 'Fare per waiting min' },
-      { key: 'tax_percent', label: 'Tax %' },
-      { key: 'luggage_charges', label: 'Luggage charges' },
-      { key: 'scheduled_ride_fare', label: 'Scheduled-ride fare' },
+      { key: 'threshold_waiting_time_min', label: 'Waiting threshold (min)', help: 'Free waiting time before the per-minute waiting charge starts.' },
+      { key: 'fare_per_waiting_minute', label: 'Fare per waiting min', help: 'Amount charged for each minute of waiting beyond the free waiting time.' },
+      { key: 'tax_percent', label: 'Tax %', help: 'Tax rate as a percentage of the taxable fare. Enter 5 for 5%.' },
+      { key: 'luggage_charges', label: 'Luggage charges', help: 'Amount in rupees configured for luggage on this rate card.' },
+      { key: 'scheduled_ride_fare', label: 'Scheduled-ride fare', help: 'Fare amount in rupees configured for a ride booked in advance.' },
     ],
   },
   {
     title: 'Cancellation',
     fields: [
-      { key: 'cancellation_charges', label: 'Cancellation charges' },
-      { key: 'cancel_threshold_distance_km', label: 'Cancel threshold (km)' },
-      { key: 'cancel_threshold_time_min', label: 'Cancel threshold (min)' },
+      { key: 'cancellation_charges', label: 'Cancellation charges', help: 'Flat cancellation amount in rupees once the configured cancellation thresholds are met.' },
+      { key: 'cancel_threshold_distance_km', label: 'Cancel threshold (km)', help: 'Distance the driver must cover before the cancellation charge can apply.' },
+      { key: 'cancel_threshold_time_min', label: 'Cancel threshold (min)', help: 'Time that must elapse before the cancellation charge can apply.' },
     ],
   },
   {
     title: 'Pickup',
     fields: [
-      { key: 'pickup_charge_before_threshold', label: 'Charge before threshold' },
-      { key: 'pickup_charge_after_threshold', label: 'Charge after threshold' },
-      { key: 'pickup_threshold_distance_km', label: 'Threshold distance (km)' },
+      { key: 'pickup_charge_before_threshold', label: 'Charge before threshold', help: 'Flat pickup charge when the driver travels less than the pickup distance threshold.' },
+      { key: 'pickup_charge_after_threshold', label: 'Charge after threshold', help: 'Flat pickup charge when the driver travels at least the pickup distance threshold.' },
+      { key: 'pickup_threshold_distance_km', label: 'Threshold distance (km)', help: 'Distance from the driver to the pickup point at which the second pickup charge applies.' },
     ],
   },
   {
     title: 'No-show & cancel subsidy',
     fields: [
-      { key: 'no_show_charges_per_minute', label: 'No-show charge / min' },
-      { key: 'no_show_threshold_minutes', label: 'No-show threshold (min)' },
-      { key: 'cancel_subsidy', label: 'Cancel subsidy' },
-      { key: 'cancel_subsidy_threshold_minutes', label: 'Subsidy threshold (min)' },
-      { key: 'cancel_subsidy_threshold_distance_km', label: 'Subsidy threshold (km)' },
+      { key: 'no_show_charges_per_minute', label: 'No-show charge / min', help: 'Amount per minute of waiting beyond the no-show threshold.' },
+      { key: 'no_show_threshold_minutes', label: 'No-show threshold (min)', help: 'Waiting time allowed before no-show charges begin.' },
+      { key: 'cancel_subsidy', label: 'Cancel subsidy', help: 'Amount in rupees configured as a driver subsidy for a qualifying cancellation.' },
+      { key: 'cancel_subsidy_threshold_minutes', label: 'Subsidy threshold (min)', help: 'Time threshold in minutes configured for the driver’s cancellation subsidy.' },
+      { key: 'cancel_subsidy_threshold_distance_km', label: 'Subsidy threshold (km)', help: 'Distance threshold in kilometres configured for the driver’s cancellation subsidy.' },
     ],
   },
 ];
@@ -90,13 +93,13 @@ const ALL_KEYS: string[] = FARE_SECTIONS.flatMap((s) => s.fields.map((f) => f.ke
 @Component({
   selector: 'app-vehicle-base-pricing',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, FareFieldHelpComponent],
   template: `
-    <div class="bp">
-      <div class="bp__head">
+    <div class="bp" [class.bp--private]="privateRide">
+      <div class="bp__head" *ngIf="!privateRide">
         <div>
           <h3 class="bp__title">{{ title }}</h3>
-          <p class="bp__sub">{{ subtitle }}</p>
+          <p class="bp__sub" *ngIf="subtitle">{{ subtitle }}</p>
         </div>
         <tm-button variant="green" size="sm" [disabled]="saving || !canSave" (clicked)="save()">
           {{ saving ? 'Saving…' : 'Save rate card' }}
@@ -105,47 +108,62 @@ const ALL_KEYS: string[] = FARE_SECTIONS.flatMap((s) => s.fields.map((f) => f.ke
 
       <div class="bp__cue" *ngIf="loading">Loading rate card…</div>
 
-      <ng-container *ngIf="!loading">
+      <p *ngIf="loadFailed">Could not load this rate card. <button type="button" (click)="load()">Retry</button></p>
+      <ng-container *ngIf="!loading && !loadFailed">
         <section class="psec">
           <h4 class="psec__title">Commission</h4>
-          <div class="seg">
-            <button type="button" class="seg__btn" [class.is-on]="commissionType === 'percent'" (click)="commissionType = 'percent'">Percent</button>
-            <button type="button" class="seg__btn" [class.is-on]="commissionType === 'fixed'" (click)="commissionType = 'fixed'">Fixed</button>
+          <div class="commission-controls">
+          <div class="fare-selector" role="group" aria-label="Commission type">
+            <button type="button" [attr.aria-pressed]="commissionType === 'percent'" (click)="commissionType = 'percent'">Percent</button>
+            <button type="button" [attr.aria-pressed]="commissionType === 'fixed'" (click)="commissionType = 'fixed'">Fixed</button>
           </div>
           <div class="pgrid">
-            <label class="pfield">
-              <span class="pfield__lbl">{{ commissionType === 'percent' ? 'Commission %' : 'Commission (₹ per ride)' }}</span>
+            <div class="pfield">
+              <div class="field-heading">
+                <label class="pfield__lbl" [attr.for]="'commission-' + cityVehicleTypeId">{{ commissionType === 'percent' ? 'Commission %' : 'Commission (₹ per ride)' }}</label>
+                <app-fare-field-help *ngIf="privateRide" label="Commission" [text]="commissionType === 'percent' ? 'The percentage of the ride fare charged as commission.' : 'The flat amount in rupees charged as commission per ride.'"/>
+              </div>
               <input
                 *ngIf="commissionType === 'percent'"
+                [id]="'commission-' + cityVehicleTypeId"
                 type="number" min="0" max="100"
                 [ngModel]="commissionPercent" (ngModelChange)="commissionPercent = $event"
               />
               <input
                 *ngIf="commissionType === 'fixed'"
+                [id]="'commission-' + cityVehicleTypeId"
                 type="number" min="0"
                 [ngModel]="fixedCommission" (ngModelChange)="fixedCommission = $event"
               />
-            </label>
+            </div>
           </div>
-          <p class="psec__hint">The platform's cut on each ride, taken from the driver. Percent = a share of the fare; Fixed = a flat ₹ per ride. Also used as the cancellation fee.</p>
+          </div>
+          <p class="psec__hint" *ngIf="!privateRide">The platform's cut on each ride, taken from the driver. Percent = a share of the fare; Fixed = a flat ₹ per ride. Also used as the cancellation fee.</p>
         </section>
-
+      </ng-container>
+      <ng-content></ng-content>
+      <ng-container *ngIf="!loading && !loadFailed">
         <section class="psec" *ngFor="let sec of sections">
           <h4 class="psec__title">{{ sec.title }}</h4>
           <div class="pgrid">
-            <label class="pfield" *ngFor="let f of sec.fields">
-              <span class="pfield__lbl">{{ f.label }}<i *ngIf="f.req"> *</i></span>
+            <div class="pfield" *ngFor="let f of sec.fields">
+              <div class="field-heading">
+                <label class="pfield__lbl" [attr.for]="'fare-' + cityVehicleTypeId + '-' + f.key">{{ f.label }}<i *ngIf="f.req"> *</i></label>
+                <app-fare-field-help *ngIf="privateRide" [label]="f.label" [text]="f.help"/>
+              </div>
               <input
+                [id]="'fare-' + cityVehicleTypeId + '-' + f.key"
                 type="number" min="0"
                 [ngModel]="form[f.key]"
                 (ngModelChange)="form[f.key] = $event"
               />
-            </label>
+            </div>
           </div>
         </section>
       </ng-container>
     </div>
   `,
+  styleUrls: ['./fare-selector.css'],
   styles: [`
     .bp { display: flex; flex-direction: column; gap: 16px; }
     .bp__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
@@ -166,6 +184,7 @@ const ALL_KEYS: string[] = FARE_SECTIONS.flatMap((s) => s.fields.map((f) => f.ke
     .pfield { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
     .pfield__lbl { font-size: 11px; font-weight: 700; color: var(--tm-text); }
     .pfield__lbl i { color: var(--tm-danger, #ef4444); font-style: normal; }
+    .bp--private .pfield__lbl i { color: inherit; }
     .pfield input {
       width: 100%; height: 36px; padding: 0 10px;
       border: 1px solid var(--tm-line); border-radius: 8px;
@@ -174,16 +193,19 @@ const ALL_KEYS: string[] = FARE_SECTIONS.flatMap((s) => s.fields.map((f) => f.ke
     }
     .pfield input:focus { border-color: var(--tm-green); }
     .psec__hint { margin: 2px 0 0; font-size: 11px; color: var(--tm-text-muted); line-height: 1.4; }
-    .seg { display: inline-flex; padding: 3px; gap: 3px; background: var(--tm-canvas-2, #eef1f5); border-radius: 9px; }
-    .seg__btn {
-      border: 0; padding: 6px 14px; border-radius: 7px; cursor: pointer;
-      font-family: inherit; font-size: 12px; font-weight: 700;
-      background: transparent; color: var(--tm-text-muted);
-    }
-    .seg__btn.is-on { background: var(--tm-surface, #fff); color: var(--tm-text); box-shadow: 0 1px 2px rgba(15,20,25,.12); }
+    .commission-controls { display: flex; flex-direction: column; gap: 8px; }
+    .bp--private .commission-controls { flex-direction: row; align-items: flex-end; flex-wrap: wrap; gap: 10px 16px; }
+    .bp--private .commission-controls .pgrid { grid-template-columns: minmax(0, 9rem); }
+    .bp--private .psec { gap: 12px; padding-top: 16px; border-top: 1px solid var(--tm-line); }
+    .bp--private .psec:first-of-type { padding-top: 0; border-top: 0; }
+    .bp--private .psec__title { color: var(--tm-text); font-size: 14px; text-transform: none; letter-spacing: normal; }
+    .bp--private .pgrid { gap: 12px 18px; }
+    .field-heading { display: flex; align-items: center; gap: 5px; }
+    @media (max-width: 480px) { .bp--private .pgrid { grid-template-columns: 1fr; } }
   `],
 })
 export class VehicleBasePricingComponent implements OnChanges {
+  @Input() privateRide = false;
   @Input() cityId: number | null = null;
   @Input() cityVehicleTypeId: number | null = null;
   @Input() title = 'Base Pricing';
@@ -196,7 +218,9 @@ export class VehicleBasePricingComponent implements OnChanges {
   commissionPercent: number | null = null;
   fixedCommission: number | null = null;
   loading = false;
+  loadFailed = false;
   saving = false;
+  private savedPricing: Record<string, string | number | null> | null = null;
 
   constructor(private api: ApiService, private toast: ToastService) {}
 
@@ -208,16 +232,41 @@ export class VehicleBasePricingComponent implements OnChanges {
 
   get canSave(): boolean {
     const filled = (v: unknown) => v !== null && v !== undefined && (v as any) !== '';
-    return filled(this.form['base_fare']);
+    return !this.loading && !this.loadFailed && filled(this.form['base_fare']) && filled(this.form['surge_multiplier']);
+  }
+
+  private pricingValues(): Record<string, string | number | null> {
+    return {
+      ...this.form,
+      commission_type: this.commissionType,
+      commission_percent: this.commissionPercent ?? 0,
+      fixed_commission: this.fixedCommission ?? 0,
+    };
+  }
+
+  get changedPricing(): Record<string, string | number | null> {
+    const saved = this.savedPricing;
+    if (!saved) return {};
+    const inactiveAmount = this.commissionType === 'percent' ? 'fixed_commission' : 'commission_percent';
+    return Object.fromEntries(Object.entries(this.pricingValues()).filter(([key, value]) =>
+      key !== inactiveAmount && value !== saved[key]));
+  }
+
+  markPricingSaved(changes: Record<string, string | number | null>): void {
+    if (this.savedPricing) Object.assign(this.savedPricing, changes);
   }
 
   load(): void {
     if (this.cityId == null || this.cityVehicleTypeId == null) return;
     this.loading = true;
+    this.loadFailed = false;
+    this.savedPricing = null;
+    const rowId = this.cityVehicleTypeId;
     const params = new URLSearchParams({ city_vehicle_type_id: String(this.cityVehicleTypeId) });
 
     this.api.get<{ rule: Record<string, any> | null }>(`/admin/pricing-rules/resolve?${params}`).subscribe({
       next: (res) => {
+        if (rowId !== this.cityVehicleTypeId) return;
         const rule = res?.rule ?? null;
         const f = this.blankForm();
         if (rule) {
@@ -226,13 +275,17 @@ export class VehicleBasePricingComponent implements OnChanges {
             f[k] = v === undefined || v === null ? null : Number(v);
           }
         }
+        f['surge_multiplier'] = Number(rule?.['surge_multiplier'] ?? 1);
         this.form = f;
         this.commissionType = rule?.['commission_type'] === 'fixed' ? 'fixed' : 'percent';
         this.commissionPercent = rule?.['commission_percent'] != null ? Number(rule['commission_percent']) : null;
         this.fixedCommission = rule?.['fixed_commission'] != null ? Number(rule['fixed_commission']) : null;
+        this.savedPricing = this.pricingValues();
         this.loading = false;
       },
-      error: () => { this.loading = false; this.toast.error('Failed to load rate card'); },
+      error: () => {
+        if (rowId === this.cityVehicleTypeId) { this.loading = false; this.loadFailed = true; }
+      },
     });
   }
 
@@ -241,7 +294,6 @@ export class VehicleBasePricingComponent implements OnChanges {
     this.saving = true;
     const payload: Record<string, unknown> = {
       city_vehicle_type_id: this.cityVehicleTypeId,
-      surge_multiplier: 1,
       commission_type: this.commissionType,
       commission_percent: this.commissionType === 'percent' ? (this.commissionPercent ?? 0) : 0,
       fixed_commission: this.commissionType === 'fixed' ? (this.fixedCommission ?? 0) : 0,

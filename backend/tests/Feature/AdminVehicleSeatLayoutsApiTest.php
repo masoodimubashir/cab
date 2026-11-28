@@ -80,6 +80,92 @@ class AdminVehicleSeatLayoutsApiTest extends TestCase
         ], $overrides);
     }
 
+    public function test_private_rate_card_saves_only_edited_fields_and_validates_combined_edits_together(): void
+    {
+        $ride = DB::table('ride_types')->insertGetId(['name' => 'Private test', 'mode' => 'private']);
+        $url = "/api/admin/cities/{$this->cityId}/vehicle-types";
+        $id = $this->postJson($url, ['vehicle_type_id' => $this->ertigaId, 'ride_type_id' => $ride,
+            'display_name' => 'Private Ertiga', 'max_people' => 6, 'luggage_capacity' => 1,
+            'reverse_bidding_enabled' => false])->assertCreated()->json('vehicle_type.id');
+        $path = "$url/$id/private-rate-card";
+        $this->patchJson($path, ['reverse_bidding_enabled' => true])->assertNoContent();
+        $this->assertDatabaseMissing('pricing_rules', ['city_vehicle_type_id' => $id]);
+        $this->patchJson($path, ['reverse_bidding_enabled' => false, 'threshold_distance_1_km' => 2])
+            ->assertUnprocessable();
+        $this->assertDatabaseHas('city_vehicle_types', ['id' => $id, 'reverse_bidding_enabled' => true]);
+        $this->patchJson($path, ['base_fare' => 100, 'reverse_bidding_enabled' => false,
+            'threshold_distance_1_km' => 3])->assertNoContent();
+        $this->assertDatabaseHas('city_vehicle_types', ['id' => $id, 'reverse_bidding_enabled' => false]);
+        $this->patchJson($path, ['commission_type' => 'fixed', 'fixed_commission' => 10,
+            'threshold_distance_1_km' => null])->assertNoContent();
+        $this->assertDatabaseHas('pricing_rules', ['city_vehicle_type_id' => $id, 'base_fare' => 100,
+            'surge_multiplier' => 1, 'commission_type' => 'fixed', 'fixed_commission' => 10,
+            'threshold_distance_1_km' => null]);
+    }
+
+    public function test_vehicle_details_are_shared_while_layout_identity_and_service_prices_are_preserved(): void
+    {
+        $url = "/api/admin/cities/{$this->cityId}/vehicle-types";
+        $vehicle = ['vehicle_type_id' => $this->ertigaId, 'display_name' => 'Ertiga', 'max_people' => 6, 'luggage_capacity' => 1];
+        $shared = $this->postJson($url, $vehicle)->assertCreated()->json('vehicle_type.id');
+        $layout = $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-seat-layouts", $this->ertigaPayload())
+            ->assertCreated()->json('layout.id');
+
+        $serviceIds = [];
+        foreach (['private' => 200, 'shuttle' => 40] as $mode => $fare) {
+            $ride = DB::table('ride_types')->insertGetId(['name' => "Test $mode", 'mode' => $mode]);
+            $id = $this->postJson($url, $vehicle + ['ride_type_id' => $ride])->assertCreated()->json('vehicle_type.id');
+            $serviceIds[$mode] = $id;
+            $this->postJson('/api/admin/pricing-rules', ['city_vehicle_type_id' => $id, 'base_fare' => $fare, 'surge_multiplier' => 1])->assertSuccessful();
+        }
+        $details = ['display_name' => 'Ertiga XL', 'max_people' => 7, 'luggage_capacity' => 3];
+        $this->patchJson("$url/$shared/shared-details", $details)->assertOk();
+        foreach ([$shared, ...array_values($serviceIds)] as $id) {
+            $this->assertDatabaseHas('city_vehicle_types', ['id' => $id] + $details);
+        }
+        $this->postJson('/api/admin/pricing-rules', ['city_vehicle_type_id' => $serviceIds['shuttle'], 'base_fare' => 55, 'surge_multiplier' => 2])->assertSuccessful();
+        $this->assertDatabaseHas('pricing_rules', ['city_vehicle_type_id' => $serviceIds['private'], 'base_fare' => 200, 'surge_multiplier' => 1]);
+        $this->assertDatabaseMissing('pricing_rules', ['city_vehicle_type_id' => $shared]);
+        $this->assertDatabaseHas('vehicle_seat_layouts', ['id' => $layout, 'vehicle_type_id' => $this->ertigaId]);
+    }
+
+    public function test_add_and_edit_in_selected_cities_preserve_local_details_and_roll_back_on_conflict(): void
+    {
+        $third = $this->makeCity('Third city');
+        $url = "/api/admin/cities/{$this->cityId}/vehicle-types";
+        $vehicle = ['vehicle_type_id' => $this->ertigaId, 'display_name' => 'Ertiga', 'max_people' => 6, 'luggage_capacity' => 1];
+        $id = $this->postJson("$url/batch-in-cities", ['vehicles' => [$vehicle], 'route_group_ids' => [],
+            'target_city_ids' => [$this->otherCityId]])->assertCreated()->json('data.0.id');
+        $this->getJson("$url/$id/matching-cities")->assertOk()->assertExactJson(['city_ids' => [$this->otherCityId]]);
+        $this->assertDatabaseMissing('city_vehicle_types', ['city_id' => $third, 'display_name' => 'Ertiga']);
+        DB::table('city_vehicle_types')->where('city_id', $this->otherCityId)->update(['luggage_capacity' => 4]);
+        $this->patchJson("$url/$id/shared-details", ['max_people' => 7, 'target_city_ids' => [$this->otherCityId]])->assertOk();
+        $this->assertDatabaseHas('city_vehicle_types', ['city_id' => $this->otherCityId, 'max_people' => 7, 'luggage_capacity' => 4]);
+        $this->patchJson("$url/$id/shared-details", ['display_name' => 'New name', 'target_city_ids' => [$this->otherCityId, $third]])->assertConflict();
+        $this->assertDatabaseMissing('city_vehicle_types', ['display_name' => 'New name']);
+        $this->patchJson("$url/$id/shared-details", ['display_name' => 'New name', 'target_city_ids' => [$this->otherCityId]])->assertOk();
+        $this->assertDatabaseHas('city_vehicle_types', ['city_id' => $this->otherCityId, 'display_name' => 'New name']);
+    }
+
+    public function test_importing_a_vehicle_into_an_empty_city_includes_its_fare_and_seat_design(): void
+    {
+        $ride = DB::table('ride_types')->insertGetId(['name' => 'Test private', 'mode' => 'private']);
+        $url = "/api/admin/cities/{$this->cityId}/vehicle-types";
+        $vehicle = ['vehicle_type_id' => $this->ertigaId, 'display_name' => 'Ertiga', 'max_people' => 6, 'luggage_capacity' => 1];
+        $shared = $this->postJson($url, $vehicle)->assertCreated()->json('vehicle_type.id');
+        $private = $this->postJson($url, $vehicle + ['ride_type_id' => $ride])->assertCreated()->json('vehicle_type.id');
+        $this->postJson('/api/admin/pricing-rules', ['city_vehicle_type_id' => $private, 'base_fare' => 80, 'surge_multiplier' => 1])->assertSuccessful();
+        $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-seat-layouts", $this->ertigaPayload())->assertCreated();
+        $payload = ['target_city_ids' => [$this->otherCityId], 'vehicle_ids' => [$shared],
+            'copy_pricing' => true, 'copy_seat_layouts' => true, 'overwrite_existing' => false];
+        $this->postJson("$url/copy-to-city", $payload)->assertOk();
+        $target = DB::table('city_vehicle_types')->where(['city_id' => $this->otherCityId, 'ride_type_id' => $ride])->value('id');
+        $this->assertDatabaseHas('pricing_rules', ['city_vehicle_type_id' => $target, 'base_fare' => 80]);
+        $layout = DB::table('vehicle_seat_layouts')->where(['city_id' => $this->otherCityId, 'vehicle_type_id' => $this->ertigaId])->value('id');
+        $this->assertDatabaseHas('vehicle_seat_layout_cells', ['vehicle_seat_layout_id' => $layout, 'label' => '1A', 'price_delta' => 20]);
+        $this->postJson("$url/copy-to-city", $payload)->assertOk()->assertJsonPath('copied_count', 0);
+    }
+
     public function test_create_layout_with_cells(): void
     {
         $res = $this->postJson("/api/admin/cities/{$this->cityId}/vehicle-seat-layouts", $this->ertigaPayload());

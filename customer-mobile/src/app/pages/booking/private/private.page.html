@@ -33,43 +33,41 @@
     <section *ngIf="step === 'car'" class="pv-rides" aria-labelledby="ride-choice-title">
       <header class="pv-rides-header">
         <button type="button" class="pv-summary-back" aria-label="Go back" (click)="back()"><ion-icon name="arrow-back-outline"></ion-icon></button>
-        <h1 id="ride-choice-title">Choose your ride</h1><span class="pv-rides-step">3/5</span>
+        <div class="pv-rides-title"><h1 id="ride-choice-title">Choose your ride</h1></div>
+        <span class="pv-rides-step" aria-label="Step 3 of 5">3 <span>/ 5</span></span>
       </header>
       <div class="pv-rides-progress" aria-label="Step 3 of 5"><span class="on"></span><span class="on"></span><span class="on"></span><span></span><span></span></div>
       <div class="pv-rides-body">
-        <div class="pv-rides-route">
-          <div><span class="pv-location-dot" aria-hidden="true"></span><span><small>Pickup</small><strong>{{ fromLabel }}</strong></span></div>
-          <div><span class="pv-location-dot pv-location-dot--drop" aria-hidden="true"></span><span><small>Destination</small><strong>{{ toLabel }}</strong></span></div>
-          <button type="button" aria-label="Edit journey locations" (click)="back()"><ion-icon name="create-outline" aria-hidden="true"></ion-icon></button>
+        <label class="pv-vehicle-search" *ngIf="vehicleTypes.length > 6"><ion-icon name="search-outline" aria-hidden="true"></ion-icon><input type="search" aria-label="Search vehicles" placeholder="Find a vehicle…" [(ngModel)]="vehicleQuery" /><button *ngIf="vehicleQuery" type="button" aria-label="Clear vehicle search" (click)="vehicleQuery = ''"><ion-icon name="close-outline"></ion-icon></button></label>
+        <div class="pv-vehicle-results" *ngIf="vehicleQuery.trim()" aria-label="Matching vehicles">
+          <button type="button" *ngFor="let v of vehicleSearchResults" (click)="selectCarouselVehicle(v.id)">{{ v.name }}<ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon></button>
+          <p *ngIf="!vehicleSearchResults.length">No matching vehicles. Try another name.</p>
         </div>
-
-        <article class="pv-rides-selection" aria-label="Selected vehicle">
-          <div class="pv-rides-hero-image">
-            <img *ngIf="selectedVehicle?.image_url; else selectedVehicleIcon" [src]="selectedVehicle!.image_url" alt="" (error)="selectedVehicle!.image_url = null" />
-            <ng-template #selectedVehicleIcon><ion-icon name="car-sport-outline" aria-hidden="true"></ion-icon></ng-template>
-          </div>
-          <div class="pv-rides-selection-copy"><span class="pv-rides-eyebrow">YOUR SELECTION</span><h2>{{ selectedVehicle?.name || 'Any car' }}</h2>
-            <p>{{ vehicleTypeId === null ? 'Open to any vehicle type' : 'Private ride' }}</p>
-            <span class="pv-rides-duration" *ngIf="!estimating && estimate?.time_min"><ion-icon name="time-outline" aria-hidden="true"></ion-icon>{{ estimate!.time_min }} min journey</span>
-          </div>
-        </article>
-
-        <div class="pv-rides-list-heading"><h2>Pick a vehicle</h2><span>{{ vehicleTypes.length + 1 }} options</span></div>
-        <div class="pv-rides-grid" role="radiogroup" aria-label="Vehicle type">
-          <button class="pv-vehicle" type="button" role="radio" [attr.aria-checked]="vehicleTypeId === null" [class.is-selected]="vehicleTypeId === null" (click)="chooseVehicle(null)">
-            <span class="pv-vehicle-image"><ion-icon name="car-sport-outline" aria-hidden="true"></ion-icon></span>
-            <span class="pv-vehicle-name">Any car</span><span class="pv-vehicle-radio" aria-hidden="true"><ion-icon *ngIf="vehicleTypeId === null" name="checkmark-outline"></ion-icon></span>
-          </button>
-          <button *ngFor="let v of vehicleTypes" class="pv-vehicle" type="button" role="radio" [attr.aria-checked]="vehicleTypeId === v.id" [class.is-selected]="vehicleTypeId === v.id" (click)="chooseVehicle(v.id)">
-            <span class="pv-vehicle-image"><img *ngIf="v.image_url" [src]="v.image_url" alt="" (error)="v.image_url = null" /><ion-icon *ngIf="!v.image_url" name="car-sport-outline" aria-hidden="true"></ion-icon></span>
-            <span class="pv-vehicle-name">{{ v.name }}</span><span class="pv-vehicle-radio" aria-hidden="true"><ion-icon *ngIf="vehicleTypeId === v.id" name="checkmark-outline"></ion-icon></span>
+        <div class="pv-carousel" role="radiogroup" aria-label="Vehicle type" aria-roledescription="carousel"
+          [class.is-dragging]="carouselDragging" [style.--drag]="carouselDrag + 'px'"
+          (pointerdown)="startCarouselSwipe($event)" (pointermove)="moveCarouselSwipe($event)" (pointerup)="finishCarouselSwipe($event)" (pointercancel)="cancelCarouselSwipe()" (pointerleave)="cancelCarouselSwipe()" (keydown)="carouselKey($event)">
+          <button *ngFor="let slot of carouselSlots; trackBy: trackCarouselSlot" type="button" class="pv-carousel-card"
+            [class.is-centre]="slot.offset === 0" [class.is-near]="slot.offset === -1 || slot.offset === 1"
+            [class.is-far]="slot.offset === -2 || slot.offset === 2" [style.--slot]="slot.offset"
+            [style.z-index]="3 - (slot.offset < 0 ? -slot.offset : slot.offset)"
+            role="radio" [attr.aria-label]="slot.vehicle.name" [attr.aria-checked]="vehicleTypeId === slot.vehicle.id"
+            [attr.tabindex]="slot.offset === 0 ? 0 : -1" (click)="selectCarouselVehicle(slot.vehicle.id)">
+            <span class="pv-carousel-art"><img *ngIf="slot.vehicle.image_url" [src]="slot.vehicle.image_url" alt="" draggable="false" (error)="slot.vehicle.image_url = null" /><ion-icon *ngIf="!slot.vehicle.image_url" [name]="vehicleIcon(slot.vehicle.name)" aria-hidden="true"></ion-icon></span>
+            <span class="pv-carousel-name">{{ slot.vehicle.name }}</span>
+            <span class="pv-carousel-check" *ngIf="slot.offset === 0" aria-hidden="true"><ion-icon name="checkmark-outline"></ion-icon></span>
           </button>
         </div>
-        <p class="pv-rides-price-note"><ion-icon name="pricetag-outline" aria-hidden="true"></ion-icon>You’ll set your own price in the next step.</p>
+        <div class="pv-carousel-navigation">
+          <button type="button" aria-label="Previous vehicle" [disabled]="carouselVehicles.length < 2" (click)="moveCarousel(-1)"><ion-icon name="chevron-back-outline" aria-hidden="true"></ion-icon></button>
+          <div aria-live="polite" aria-atomic="true"><strong>{{ carouselVehicles[carouselIndex].name }}</strong><span>{{ carouselIndex + 1 }} of {{ carouselVehicles.length }} · Swipe to explore</span></div>
+          <button type="button" aria-label="Next vehicle" [disabled]="carouselVehicles.length < 2" (click)="moveCarousel(1)"><ion-icon name="chevron-forward-outline" aria-hidden="true"></ion-icon></button>
+        </div>
+        <p class="pv-rides-price-note"><ion-icon name="pricetag-outline" aria-hidden="true"></ion-icon>Next, make an offer. You’re in control.</p>
       </div>
       <footer class="pv-rides-footer">
+        <div class="pv-rides-unavailable" *ngIf="vehicleUnavailable && !estimating" role="status"><ion-icon name="car-outline" aria-hidden="true"></ion-icon><div><strong>Ride not available</strong><p>{{ availabilityMessage }}</p></div></div>
         <div class="pv-rides-error" *ngIf="error && !estimating" role="status"><ion-icon name="information-circle-outline" aria-hidden="true"></ion-icon><span>{{ error }}</span><button type="button" (click)="retryEstimate()">Retry</button></div>
-        <div class="pv-rides-footer-row"><div class="pv-rides-fare" aria-live="polite"><span>Estimated fare</span><strong *ngIf="!estimating && estimatedFare">~₹{{ estimatedFare | number:'1.0-0' }}</strong><strong *ngIf="estimating" class="is-loading">Calculating…</strong><strong *ngIf="!estimating && !estimatedFare" class="is-unavailable">Unavailable</strong></div>
+        <div class="pv-rides-footer-row" *ngIf="!vehicleUnavailable || estimating"><div class="pv-rides-fare" aria-live="polite"><span>Estimated fare</span><strong *ngIf="!estimating && estimatedFare">~₹{{ estimatedFare | number:'1.0-0' }}</strong><strong *ngIf="estimating" class="is-loading">Checking fare…</strong><strong *ngIf="!estimating && !estimatedFare" class="is-unavailable">Unable to load</strong></div>
           <button class="pv-rides-next" type="button" [disabled]="estimating || !estimatedFare" (click)="goToPrice()">Next<ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon></button>
         </div>
       </footer>

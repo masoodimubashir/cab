@@ -165,3 +165,142 @@
 .pv-rides-error button { padding: 7px 9px; border: 0; border-radius: 8px; color: #008453; background: #ecf7f1; font-size: 11px; font-weight: 750; }
 .pv-rides button:focus-visible { outline: 2px solid #008453; outline-offset: 3px; }
 @media (max-width: 380px) { .pv-rides-header h1 { font-size: 20px; } .pv-rides-hero-image { flex-basis: 104px; } .pv-rides-selection { gap: 12px; } .pv-vehicle { padding: 10px 8px; gap: 7px; } .pv-vehicle-image { flex-basis: 42px; width: 42px; } .pv-vehicle-name { font-size: 11px; } .pv-rides-next { flex-basis: 130px; } }
+
+/* A quiet canvas, a prominent selection, and compact full-width choices. */
+.pv-vehicle-empty { text-align: center; padding: 18px 10px; font-size: 12px; color: #688171; }
+.pv-rides { background: #f7f9f8; }
+.pv-rides-header { padding-bottom: 15px; gap: 13px; flex-shrink: 0; }
+.pv-rides-title { flex: 1; min-width: 0; }
+.pv-rides-title > span { display: block; margin-bottom: 4px; color: #6b8076; font-size: 8px; font-weight: 750; letter-spacing: 1.3px; }
+.pv-rides-header h1 { font-size: 23px; letter-spacing: -.8px; line-height: 1.15; }
+.pv-rides-header .pv-summary-back { width: 40px; height: 40px; border-radius: 50%; box-shadow: none; }
+.pv-rides-step { background: none; padding: 0; font-size: 16px; }
+.pv-rides-step > span { color: #96a69d; font-size: 11px; font-weight: 500; }
+.pv-rides-progress { margin-bottom: 16px; gap: 5px; flex-shrink: 0; }
+.pv-rides-progress span { height: 2px; }
+.pv-rides-body { padding-bottom: 12px; }
+.pv-rides-route { border-radius: 16px; padding: 11px 42px 11px 15px; background: #fff; border-color: #e5ebe7; }
+.pv-rides-route > div + div { margin-top: 9px; }
+.pv-rides-route small { display: none; }
+.pv-rides-route strong { font-size: 11px; font-weight: 550; }
+.pv-rides-route .pv-location-dot { width: 7px; height: 7px; flex-basis: 7px; box-shadow: none; }
+.pv-rides-route .pv-location-dot--drop { border-radius: 2px; }
+.pv-rides-selection { position: relative; min-height: 156px; flex-direction: row-reverse; gap: 0; margin: 14px 0 23px; padding: 23px 20px; background: radial-gradient(ellipse at 100% 80%, #2a6954 0, transparent 65%), #123e32; border: 0; border-radius: 22px; box-shadow: 0 10px 22px #153c3214; color: #fff; }
+.pv-rides-selection::after { content: ''; position: absolute; width: 170px; height: 170px; right: -20px; top: -26px; border: 1px solid #ffffff10; border-radius: 50%; box-shadow: 0 0 0 26px #ffffff04, 0 0 0 52px #ffffff03; pointer-events: none; }
+.pv-rides-selection-copy { flex: 1; position: relative; z-index: 1; }
+.pv-rides-eyebrow { display: flex; align-items: center; gap: 5px; color: #a5d6bd; font-size: 7px; letter-spacing: 1px; }
+.pv-rides-eyebrow > span { width: 5px; height: 5px; background: #9fe3b7; border-radius: 50%; }
+.pv-rides-selection h2 { margin: 12px 0 7px; font-size: 29px; font-weight: 700; letter-spacing: -1px; text-transform: capitalize; }
+.pv-rides-selection p { font-size: 10px; color: #c2d9cd; }
+.pv-rides-duration { color: #c2d9cd; font-size: 10px; margin-top: 9px; }
+.pv-rides-hero-image { position: relative; z-index: 1; flex: 0 0 43%; height: 94px; margin-right: -8px; }
+.pv-rides-hero-image ion-icon { font-size: 91px; color: #d8eee1; filter: drop-shadow(0 12px 8px #001a1680); }
+.pv-rides-hero-image img { filter: drop-shadow(0 12px 7px #001a1660); }
+.pv-rides-list-heading { margin-bottom: 11px; }
+.pv-rides-list-heading h2 { font-size: 19px; letter-spacing: -.5px; }
+.pv-rides-list-heading > span { font-size: 10px; color: #7e8f86; }
+.pv-vehicle-search { display: flex; gap: 9px; align-items: center; min-height: 42px; padding: 0 12px; border: 1px solid #e1e8e3; background: #fff; border-radius: 12px; margin-bottom: 10px; color: #7a8e83; }
+.pv-vehicle-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 12px; color: #173d2f; }
+.pv-vehicle-search:focus-within { border-color: #008453; box-shadow: 0 0 0 2px #00845312; }
+.pv-vehicle-search button { border: 0; background: transparent; color: #64796d; width: 30px; height: 36px; }
+.pv-rides-grid { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+.pv-vehicle { min-height: 66px; padding: 9px 15px 9px 10px; gap: 15px; border-radius: 15px; border-color: #e6ece8; color: #233e33; }
+.pv-vehicle.is-selected { background: #edf7f0; border-color: #178855; box-shadow: inset 0 0 0 .5px #178855; }
+.pv-vehicle-image { flex-basis: 77px; width: 77px; height: 45px; }
+.pv-vehicle-image img { filter: drop-shadow(0 3px 2px #173d2f15); }
+.pv-vehicle-image ion-icon { font-size: 37px; color: #82978b; }
+.pv-vehicle-name { padding: 0; font-size: 14px; font-weight: 650; text-transform: capitalize; }
+.pv-vehicle-name small { display: block; font-size: 10px; font-weight: 450; color: #63816f; margin-top: 3px; text-transform: none; }
+.pv-vehicle-radio { position: static; flex: 0 0 20px; width: 20px; height: 20px; border-color: #d5e0d8; }
+.pv-vehicle-radio ion-icon { font-size: 14px; }
+.pv-rides-price-note { color: #688171; font-size: 10px; margin-top: 17px; }
+.pv-rides-footer { border-top-color: #e4ebe6; padding-top: 13px; box-shadow: 0 -5px 22px #153c3205; flex-shrink: 0; }
+.pv-rides-fare > span { font-size: 10px; }
+.pv-rides-next { background: #113e31; border-radius: 15px; min-height: 48px; flex-basis: 148px; }
+.pv-rides-next:disabled { background: #eaf0ec; color: #96a89d; }
+.pv-rides-error { border: 0; border-radius: 10px; background: #fbf5eb; padding: 8px 10px; margin-bottom: 12px; font-size: 10px; }
+.pv-rides-error button { background: #fff; }
+@media (prefers-reduced-motion: no-preference) {
+  .pv-vehicle { transition: background 160ms, border-color 160ms, box-shadow 160ms; }
+  .pv-vehicle:active { transform: scale(.99); }
+}
+@media (max-width: 360px) {
+  .pv-rides-header h1 { font-size: 20px; }
+  .pv-rides-title > span { font-size: 6px; }
+  .pv-rides-selection { padding: 20px 16px; }
+  .pv-rides-selection h2 { font-size: 25px; }
+  .pv-rides-eyebrow { font-size: 6px; letter-spacing: .6px; }
+  .pv-vehicle-image { flex-basis: 64px; width: 64px; }
+}
+
+/* Reference vehicle cards: full-width artwork over a soft colour wash. */
+.pv-rides-grid { gap: 13px; }
+.pv-vehicle { --card-tint: #d6effa; --card-ink: #376d81; display: flex; flex-direction: column; align-items: stretch; gap: 0; min-height: 220px; padding: 15px 20px 17px; border: 1px solid #e0edf3; border-radius: 23px; background: linear-gradient(165deg, #fafdff 3%, #edf8fd 42%, var(--card-tint)); overflow: hidden; }
+.pv-vehicle--rose { --card-tint: #fbd8f1; --card-ink: #95537f; border-color: #f3e0ed; background: linear-gradient(165deg, #fffafd 3%, #fff0fa 42%, var(--card-tint)); }
+.pv-vehicle--silver { --card-tint: #dce8ef; --card-ink: #5b788a; background: linear-gradient(165deg, #fcfdff 3%, #f3f8fb 42%, var(--card-tint)); }
+.pv-vehicle.is-selected { background: linear-gradient(165deg, #f8fffb 3%, #edf9f1 42%, #ceebd9); border-color: #07834f; box-shadow: inset 0 0 0 1px #07834f, 0 7px 17px #1e6f4510; }
+.pv-vehicle-overline { color: var(--card-ink); font-size: 11px; font-weight: 500; padding-right: 28px; }
+.pv-vehicle-image { position: relative; align-self: center; flex: none; width: 100%; height: 134px; min-height: 0; margin: 2px 0 1px; }
+.pv-vehicle-image img { position: absolute; inset: 0; margin: auto; width: 91%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; mix-blend-mode: multiply; filter: drop-shadow(0 9px 5px #234e581b); }
+.pv-vehicle-image ion-icon { font-size: 90px; color: #7a9ba9; filter: drop-shadow(0 8px 4px #234e5815); }
+.pv-vehicle-name { font-size: 23px; line-height: 1.1; letter-spacing: -.65px; color: #153c4b; }
+.pv-vehicle-name small { margin-top: 6px; font-size: 11px; letter-spacing: 0; color: var(--card-ink); }
+.pv-vehicle-radio { position: absolute; top: 14px; right: 16px; width: 22px; height: 22px; border-color: #92aeb74d; background: #ffffff80; }
+.pv-vehicle.is-selected .pv-vehicle-radio { background: #008453; }
+.pv-vehicle.is-selected .pv-vehicle-image ion-icon { color: #3f8b68; }
+@media (max-width: 360px) { .pv-vehicle { padding: 14px 17px 17px; } .pv-vehicle-image { width: 100%; height: 122px; } }
+
+.pv-rides-unavailable { display: flex; align-items: flex-start; gap: 10px; padding: 11px 12px; margin-bottom: 12px; border-radius: 12px; background: #f1f5f3; color: #426455; }
+.pv-rides-unavailable > ion-icon { flex: none; font-size: 21px; margin-top: 1px; }
+.pv-rides-unavailable strong { display: block; font-size: 12px; color: #203e30; }
+.pv-rides-unavailable p { margin: 4px 0 0; font-size: 11px; line-height: 1.5; }
+.pv-rides-unavailable:last-child { margin-bottom: 0; }
+
+.pv-any-car-symbol { position: relative; display: grid; place-items: center; width: 122px; height: 108px; border-radius: 50%; background: #ffffff60; border: 1px solid #ffffff80; }
+.pv-any-car-symbol > ion-icon { font-size: 79px; color: #387b61; filter: none; }
+.pv-any-car-choice { position: absolute; right: 0; bottom: 1px; display: grid; place-items: center; width: 33px; height: 33px; border-radius: 50%; background: #f5fff8; border: 2px solid #d9eee2; }
+.pv-any-car-choice > ion-icon { font-size: 20px; color: #008453; filter: none; }
+
+/* Compact single-column catalogue with search always within reach. */
+.pv-vehicle-search { position: sticky; top: 0; z-index: 2; min-height: 42px; margin-bottom: 12px; box-shadow: 0 5px 0 5px #f7f9f8; }
+.pv-rides-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.pv-vehicle { flex-direction: row; align-items: center; gap: 18px; min-height: 104px; padding: 13px 16px 13px 12px; border-radius: 18px; }
+.pv-vehicle-image { flex: 0 0 120px; width: 120px; height: 76px; margin: 0; }
+.pv-vehicle-image img { width: 100%; }
+.pv-vehicle-image ion-icon { font-size: 57px; }
+.pv-vehicle-name { font-size: 17px; line-height: 1.2; letter-spacing: -.3px; padding-right: 0; }
+.pv-vehicle-name small { font-size: 10px; margin-top: 6px; line-height: 1.35; }
+.pv-vehicle-radio { position: static; flex: 0 0 20px; width: 20px; height: 20px; }
+.pv-vehicle-radio ion-icon { font-size: 12px; }
+@media (max-width: 380px) { .pv-vehicle { gap: 10px; min-height: 94px; padding: 10px; } .pv-vehicle-image { flex-basis: 92px; width: 92px; height: 72px; } .pv-vehicle-name { font-size: 14px; } .pv-vehicle-name small { font-size: 9px; } }
+
+/* Five-position carousel: two neighbours on each side of the selected car. */
+.pv-rides-body { position: relative; display: flex; flex-direction: column; overflow-x: hidden; }
+.pv-vehicle-search { flex: 0 0 42px; }
+.pv-carousel { position: relative; flex: 1 0 220px; min-height: 220px; max-height: 320px; margin: 8px -16px 0; overflow: hidden; touch-action: pan-y; user-select: none; }
+.pv-carousel-card { --shift: 0%; position: absolute; top: 50%; left: 50%; width: 53%; max-width: 300px; height: 214px; display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: 20px 16px; border: 1px solid #dce8e1; border-radius: 25px; background: linear-gradient(150deg,#fbfefd,#dceddf); color: #234839; transform: translate(calc(-50% + var(--drag, 0px)),-50%) translateX(calc(var(--slot) * 70%)); cursor: pointer; box-shadow: 0 10px 24px #264e3210; }
+.pv-carousel-card.is-centre { border: 2px solid #008453; background: radial-gradient(ellipse at 50% 40%,#fff9,transparent 75%),linear-gradient(145deg,#f0fcf4,#cee9d9); box-shadow: 0 13px 26px #125e3424; }
+.pv-carousel-card.is-near { transform: translate(calc(-50% + var(--drag, 0px)),-50%) translateX(calc(var(--slot) * 48%)) scale(.72); background: linear-gradient(145deg,#f4f9fc,#dcebf2); opacity: .85; }
+.pv-carousel-card.is-far { transform: translate(calc(-50% + var(--drag, 0px)),-50%) translateX(calc(var(--slot) * 43%)) scale(.49); background: linear-gradient(145deg,#f7f6fb,#e8e4ef); opacity: .58; }
+.pv-carousel-art { position: relative; display: grid; place-items: center; height: 125px; flex: 0 0 125px; pointer-events: none; }
+.pv-carousel-art img { position: absolute; inset: 0; margin: auto; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; filter: drop-shadow(0 9px 4px #315b3b22); }
+.pv-carousel-art ion-icon { font-size: 85px; color: #729787; }
+.pv-carousel-name { font-size: 17px; font-weight: 750; line-height: 1.2; text-align: center; overflow-wrap: anywhere; pointer-events: none; }
+.pv-carousel-check { position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: #fff; background: #008453; font-size: 15px; }
+.pv-carousel-navigation { display: flex; justify-content: center; align-items: center; gap: 18px; padding: 13px 0 4px; flex: none; }
+.pv-carousel-navigation button { flex: 0 0 38px; height: 38px; display: grid; place-items: center; background: #fff; border: 1px solid #dde7e0; border-radius: 50%; color: #176343; font-size: 19px; }
+.pv-carousel-navigation button:disabled { opacity: .4; }
+.pv-carousel-navigation > div { min-width: 0; text-align: center; width: 180px; }
+.pv-carousel-navigation strong { display: block; color: #183e2d; font-size: 17px; line-height: 1.2; }
+.pv-carousel-navigation span { display: block; color: #799184; font-size: 10px; margin-top: 6px; }
+.pv-vehicle-results { position: absolute; z-index: 6; top: 47px; left: 16px; right: 16px; max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid #e0e9e3; border-radius: 14px; box-shadow: 0 12px 24px #183e2d20; }
+.pv-vehicle-results button { display: flex; justify-content: space-between; width: 100%; padding: 13px 15px; text-align: left; font-size: 13px; color: #244633; background: #fff; border: 0; border-bottom: 1px solid #eff3f0; }
+.pv-vehicle-results p { font-size: 12px; padding: 8px 14px; color: #688171; }
+.pv-carousel-card:focus-visible { outline: 3px solid #008453; outline-offset: -5px; }
+.pv-rides-price-note { flex: none; margin-top: 12px; }
+@media (prefers-reduced-motion: no-preference) { .pv-carousel-card { transition: transform 440ms cubic-bezier(.22,1,.36,1), opacity 330ms ease, background 330ms ease, box-shadow 330ms ease; will-change: transform; backface-visibility: hidden; } }
+@media (max-height: 600px) { .pv-carousel { flex-basis: 175px; min-height: 175px; } .pv-carousel-card { height: 172px; padding: 15px 12px; gap: 8px; } .pv-carousel-art { height: 95px; flex-basis: 95px; } .pv-carousel-navigation { padding-top: 8px; } }
+
+.pv-carousel { cursor: grab; }
+.pv-carousel.is-dragging, .pv-carousel.is-dragging .pv-carousel-card { cursor: grabbing; }
+.pv-carousel.is-dragging .pv-carousel-card { transition: none; }

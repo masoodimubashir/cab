@@ -1,4 +1,6 @@
-import { Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { Component, Input, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { RideMode, ServiceNamesService, resolvedRideMode } from '../../core/service-names.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -69,7 +71,7 @@ type PolygonSource = 'city' | 'custom';
   selector: 'app-dynamic-pricing-panel',
   standalone: true,
   imports: [
-    CommonModule, FormsModule,
+    RouterLink, CommonModule, FormsModule,
     ButtonComponent, DrawerComponent, FilterPillComponent, FilterSelectComponent,
     IconComponent, InputComponent, ModalComponent,
   ],
@@ -99,7 +101,7 @@ type PolygonSource = 'city' | 'custom';
             [value]="vehicleFilterValue"
             (valueChange)="onVehicleFilterChange($event)"
           />
-          <tm-button variant="green" icon="plus" (clicked)="openCreate()">Add surge region</tm-button>
+          <tm-button variant="green" icon="plus" [disabled]="!vehicleScopeLoaded || !vehicleTypes.length" (clicked)="openCreate()">Add surge region</tm-button>
         </div>
       </div>
 
@@ -113,9 +115,9 @@ type PolygonSource = 'city' | 'custom';
       </p>
 
       <!-- Stats -->
-      <div class="dp__stats" *ngIf="rules.length">
+      <div class="dp__stats" *ngIf="serviceRules.length">
         <div class="stat">
-          <span class="stat__v">{{ rules.length }}</span>
+          <span class="stat__v">{{ serviceRules.length }}</span>
           <span class="stat__l">Surge regions</span>
         </div>
         <div class="stat">
@@ -142,20 +144,21 @@ type PolygonSource = 'city' | 'custom';
       </div>
 
       <!-- Empty -->
-      <div class="cue" *ngIf="!loading && !rules.length">
+      <div class="cue" *ngIf="!loading && !serviceRules.length">
         <tm-icon name="bolt" [size]="24" />
-        <p class="cue__title">No surge regions yet</p>
-        <p class="cue__text">Add one to charge a higher fare in a busy area at peak times.</p>
-        <tm-button variant="green" size="sm" icon="plus" (clicked)="openCreate()">Add surge region</tm-button>
+        <p class="cue__title">{{ vehicleScopeFailed ? 'Could not load vehicles' : (vehicleScopeLoaded ? 'No surge regions yet' : 'Loading vehicles…') }}</p>
+        <button type="button" *ngIf="vehicleScopeFailed" (click)="reloadVehicles()">Reload vehicles</button>
+        <tm-button variant="green" size="sm" icon="plus" [disabled]="!vehicleScopeLoaded || !vehicleTypes.length" (clicked)="openCreate()">Add surge region</tm-button>
       </div>
 
       <!-- Rule cards -->
-      <div class="grid" *ngIf="!loading && rules.length">
+      <div class="grid" *ngIf="!loading && serviceRules.length">
         <article class="rcard" *ngFor="let r of filteredRules()">
           <div class="rcard__head">
             <span class="rcard__icon" [class.is-flat]="r.fare_type === 'flat'"><tm-icon name="bolt" [size]="16" /></span>
             <span class="rcard__name">{{ r.name }}</span>
-            <div class="rcard__actions">
+            <a *ngIf="isShared(r)" routerLink="/operations/shared-surge">Manage shared rule</a>
+            <div class="rcard__actions" *ngIf="!isShared(r)">
               <button class="icon-btn" (click)="openEdit(r)" aria-label="Edit"><tm-icon name="edit" [size]="14" /></button>
               <button class="icon-btn icon-btn--danger" (click)="deleteTarget = r" aria-label="Delete"><tm-icon name="trash" [size]="14" /></button>
             </div>
@@ -171,14 +174,14 @@ type PolygonSource = 'city' | 'custom';
           </div>
 
           <div class="rcard__primary">
-            <span class="rcard__fare">{{ r.customer_fare_factor }}×</span>
+            <span class="rcard__fare">{{ r.fare_type === 'flat' ? '₹' + r.customer_fare_factor : r.customer_fare_factor + '×' }}</span>
             <span class="rcard__fare-l">customer fare</span>
           </div>
 
           <div class="rcard__meta">
             <div class="rcard__metarow">
               <tm-icon name="car" [size]="13" />
-              <span>{{ vehicleTypeLabel(r) }}</span>
+              <span>{{ vehicleTypeLabel(r) }}<ng-container *ngIf="isShared(r)"> · {{ affectedServices(r) }}</ng-container></span>
             </div>
             <div class="rcard__metarow">
               <tm-icon name="calendar" [size]="13" />
@@ -281,7 +284,7 @@ type PolygonSource = 'city' | 'custom';
                 <span class="vtchips__empty" *ngIf="!vehicleTypes.length">No vehicles in this city yet</span>
                 <span class="vtchips__empty" *ngIf="vehicleTypes.length && !filteredVehicleChips.length">No vehicles in this category.</span>
               </div>
-              <span class="pfield__hint">Pick at least one vehicle this surge applies to.</span>
+              <span class="pfield__hint">{{ sharedOnly ? (keepAllVehicles ? 'This existing rule applies to all vehicles in its region.' : 'Choose vehicles from multiple services or a shared vehicle. Use the service tab for a single-service region.') : 'Pick at least one vehicle this surge applies to.' }}</span>
             </div>
             <label class="pfield">
               <span class="pfield__lbl">{{ form.fare_type === 'flat' ? 'Flat Customer Charge' : 'Customer fare factor' }} <i>*</i></span>
@@ -577,6 +580,12 @@ type PolygonSource = 'city' | 'custom';
 })
 export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
   rules: DynamicRule[] = [];
+  @Input() serviceMode: RideMode | null = null;
+  @Input() sharedOnly = false;
+  private vehicleModes = new Map<number, RideMode | null>();
+  vehicleScopeFailed = false;
+  vehicleScopeLoaded = false;
+  keepAllVehicles = false;
   vehicleTypes: { id: number; name: string; vehicle_type_id: number | null; vehicle_type_name: string | null }[] = [];
   filterVehicleTypeId: number | null = null;
   vehicleCategoryId: number | null = null;
@@ -642,6 +651,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
     private toast: ToastService,
     private zone: NgZone,
     private mapsLoader: GoogleMapsLoaderService,
+    readonly serviceNames: ServiceNamesService,
   ) {}
 
   ngOnInit(): void {
@@ -655,6 +665,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
         this.cityId = id;
         this.cityName = this.cityList.find((c) => c.id === id)?.name ?? '';
         this.drawerOpen = false;
+        this.deleteTarget = null;
         this.filterVehicleTypeId = null;
         this.loadVehicleTypes();
         this.loadCity();
@@ -673,7 +684,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
   }
 
   get activeCount(): number {
-    return this.rules.filter((r) => r.is_active).length;
+    return this.serviceRules.filter((r) => r.is_active).length;
   }
 
   get canSubmit(): boolean {
@@ -684,7 +695,9 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
     return (
       !!f.name.trim() &&
       this.polygon.length >= 3 &&
-      f.city_vehicle_type_ids.length > 0 &&
+      (f.city_vehicle_type_ids.length > 0 || (this.sharedOnly && this.keepAllVehicles)) &&
+      (!this.sharedOnly || (this.vehicleScopeLoaded && this.isSharedSelection(f.city_vehicle_type_ids))) &&
+      (!this.serviceMode || f.city_vehicle_type_ids.every(id => this.vehicleTypes.some(v => v.id === id))) &&
       f.customer_fare_factor != null && Number.isFinite(cff) && cff >= 0 &&
       f.customer_priority != null && Number.isFinite(cp) && cp >= 0 &&
       f.driver_fare_factor != null && Number.isFinite(dff) && dff >= 0 &&
@@ -710,25 +723,39 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
    * and customer work with, e.g. "SWIFT/SEDAN O") — so this list is scoped to
    * the city in the topbar switcher and reloads whenever it changes.
    */
+  reloadVehicles(): void { this.loadVehicleTypes(); }
+
   private loadVehicleTypes(): void {
+    this.vehicleScopeLoaded = false;
+    this.vehicleScopeFailed = false;
+    this.vehicleModes.clear();
     if (this.cityId == null) {
       this.vehicleTypes = [];
       return;
     }
-    this.api
-      .get<{ data: { id: number; display_name: string; vehicle_type_id: number | null; vehicle_type_name: string | null }[] }>(
-        `/admin/cities/${this.cityId}/vehicle-types`,
-      )
-      .subscribe({
-        next: (res) =>
-          (this.vehicleTypes = (res?.data || []).map((v) => ({
-            id: v.id,
-            name: v.display_name,
-            vehicle_type_id: v.vehicle_type_id ?? null,
-            vehicle_type_name: v.vehicle_type_name ?? null,
-          }))),
-        error: () => (this.vehicleTypes = []),
-      });
+    const cityId = this.cityId;
+    this.vehicleTypes = [];
+    this.api.get<{ data: { id: number; display_name: string; ride_type_id?: number | null; ride_type_mode?: RideMode; ride_type_name: string | null;
+      vehicle_type_id: number | null; vehicle_type_name: string | null }[] }>(`/admin/cities/${cityId}/vehicle-types`).subscribe({
+      next: res => {
+        if (this.cityId !== cityId) return;
+        const rows = res.data ?? [];
+        for (const row of rows) {
+          this.vehicleModes.set(row.id, row.ride_type_id == null ? null : resolvedRideMode(row.ride_type_mode, row.ride_type_name));
+        }
+        this.vehicleTypes = rows.filter(row => !this.serviceMode || this.vehicleModes.get(row.id) === this.serviceMode)
+          .map(row => {
+            const mode = this.vehicleModes.get(row.id);
+            const suffix = this.sharedOnly ? ' · ' + (mode ? this.serviceNames.labels()[mode] : 'Shared vehicle') : '';
+            return { id: row.id, name: row.display_name + suffix, vehicle_type_id: row.vehicle_type_id, vehicle_type_name: row.vehicle_type_name };
+          });
+        this.vehicleScopeLoaded = true;
+        this.drawOverview();
+      },
+      error: () => {
+        if (this.cityId === cityId) { this.vehicleTypes = []; this.vehicleScopeFailed = true; }
+      },
+    });
   }
 
   get vehicleCategories(): { id: number; name: string }[] {
@@ -746,11 +773,38 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
     return this.vehicleTypes.filter((v) => v.vehicle_type_id === this.vehicleCategoryId);
   }
 
+  get serviceRules(): DynamicRule[] {
+    if (this.sharedOnly) return this.vehicleScopeLoaded
+      ? this.rules.filter(rule => this.isSharedSelection(rule.city_vehicle_type_ids ?? [])) : [];
+    if (!this.serviceMode) return this.rules;
+    const vehicles = new Set(this.vehicleTypes.map(vehicle => vehicle.id));
+    return this.rules.filter(rule => !rule.city_vehicle_type_ids?.length || rule.city_vehicle_type_ids.some(id => vehicles.has(id)));
+  }
+
+  // Legacy unassigned and fixed-only regions have no private/shuttle editor.
+  private isSharedSelection(ids: number[]): boolean {
+    const modes = new Set(ids.map(id => this.vehicleModes.get(id)));
+    return modes.size !== 1 || (!modes.has('private') && !modes.has('shuttle'));
+  }
+
+  affectedServices(rule: DynamicRule): string {
+    if (!rule.city_vehicle_type_ids?.length) return 'All vehicles in this region';
+    return [...new Set(rule.city_vehicle_type_ids.map(id => {
+      const mode = this.vehicleModes.get(id);
+      return mode ? this.serviceNames.labels()[mode] : 'Shared or legacy vehicle';
+    }))].join(', ');
+  }
+
+  isShared(rule: DynamicRule): boolean {
+    return !!this.serviceMode && (!rule.city_vehicle_type_ids?.length
+      || rule.city_vehicle_type_ids.some(id => !this.vehicleTypes.some(vehicle => vehicle.id === id)));
+  }
+
   /** Rules visible under the current vehicle-type filter and search. */
   filteredRules(): DynamicRule[] {
     const id = this.filterVehicleTypeId;
     const q = this.search.trim().toLowerCase();
-    return this.rules.filter((r) => {
+    return this.serviceRules.filter((r) => {
       if (id != null) {
         const ids = r.city_vehicle_type_ids;
         const match = !ids || ids.length === 0 || ids.includes(id);
@@ -788,6 +842,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
   }
 
   toggleVehicleType(id: number): void {
+    this.keepAllVehicles = false;
     const ids = this.form.city_vehicle_type_ids;
     const i = ids.indexOf(id);
     if (i >= 0) ids.splice(i, 1);
@@ -808,8 +863,10 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
     this.cityFence = null;
     this.cityCenter = null;
     if (this.cityId == null) return;
+    const cityId = this.cityId;
     this.api.get<any>(`/admin/cities/${this.cityId}`).subscribe({
       next: (res) => {
+        if (this.cityId !== cityId) return;
         const c = res?.city ?? res?.data ?? res ?? {};
         const poly: any[] = Array.isArray(c.boundary_polygon) ? c.boundary_polygon : [];
         const fence: LatLng[] = poly
@@ -831,8 +888,11 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
       return;
     }
     this.loading = true;
+    this.rules = [];
+    const cityId = this.cityId;
     this.api.get<{ data: DynamicRule[] }>(`/admin/dynamic-pricing-rules?city_id=${this.cityId}`).subscribe({
       next: (res) => {
+        if (this.cityId !== cityId) return;
         this.rules = (res?.data || []).map((r) => ({
           ...r,
           region_polygon: Array.isArray(r.region_polygon) ? r.region_polygon : [],
@@ -841,6 +901,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
         this.drawOverview();
       },
       error: (err) => {
+        if (this.cityId !== cityId) return;
         this.loading = false;
         this.toast.error(err?.error?.message || 'Failed to load surge regions');
       },
@@ -852,6 +913,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
   openCreate(): void {
     if (this.cityId == null) return;
     this.editMode = false;
+    this.keepAllVehicles = false;
     this.form = this.blankForm();
     this.vehicleCategoryId = null;
     this.outsideWarning = null;
@@ -866,12 +928,16 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
   }
 
   openEdit(rule: DynamicRule): void {
+    if (this.isShared(rule)) return;
+    const cityId = this.cityId;
     this.editMode = true;
     this.vehicleCategoryId = null;
     this.outsideWarning = null;
     this.api.get<{ rule: any }>(`/admin/dynamic-pricing-rules/${rule.id}`).subscribe({
       next: (res) => {
         const r = res?.rule ?? rule;
+        if (this.cityId !== cityId || this.isShared(r) || (this.sharedOnly && !this.isSharedSelection(r.city_vehicle_type_ids ?? []))) return;
+        this.keepAllVehicles = this.sharedOnly && !r.city_vehicle_type_ids?.length;
         this.form = {
           id: r.id,
           name: r.name ?? '',
@@ -947,7 +1013,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
 
   confirmDelete(): void {
     const rule = this.deleteTarget;
-    if (!rule || this.submitting) return;
+    if (!rule || this.isShared(rule) || this.submitting) return;
     this.submitting = true;
     this.api.delete(`/admin/dynamic-pricing-rules/${rule.id}`).subscribe({
       next: () => {

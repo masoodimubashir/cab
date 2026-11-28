@@ -50,6 +50,7 @@ export interface SelectOption<T = unknown> {
         class="trigger"
         [disabled]="disabled"
         [attr.aria-expanded]="open"
+        [attr.aria-label]="ariaLabel"
         aria-haspopup="listbox"
         (click)="toggle($event)"
         (keydown)="onTriggerKey($event)"
@@ -186,6 +187,7 @@ export class SelectComponent<T = unknown> implements ControlValueAccessor {
 
   @Input() options: SelectOption<T>[] = [];
   @Input() placeholder = 'Select…';
+  @Input() ariaLabel: string | null = null;
   @Input() disabled = false;
   /** Two-way binding fallback when not using forms. */
   @Input() value: T | null = null;

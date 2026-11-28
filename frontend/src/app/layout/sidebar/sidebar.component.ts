@@ -67,7 +67,11 @@ import { NavItem, NavSection } from '../nav.types';
               class="sb__item"
               [class.is-active]="rla.isActive"
             >
-              <tm-icon class="sb__item-icon" [name]="item.icon" [size]="18" />
+              @if (item.imageUrl) {
+                <img class="sb__item-icon sb__service-image" [src]="item.imageUrl" alt="" width="18" height="18">
+              } @else {
+                <tm-icon class="sb__item-icon" [name]="item.icon" [size]="18" />
+              }
               <span class="sb__item-lbl">{{ item.label }}</span>
               <span class="sb__badge" *ngIf="item.badge != null">{{ item.badge }}</span>
             </a>

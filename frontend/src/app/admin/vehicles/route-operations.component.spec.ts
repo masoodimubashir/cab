@@ -195,7 +195,7 @@ describe('Routes operations workspace', () => {
     const fixture = TestBed.createComponent(RouteOperationsComponent); Object.assign(fixture.componentInstance, page); fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('h1').textContent).toBe('Routes');
     const tabs: HTMLButtonElement[] = [...fixture.nativeElement.querySelectorAll('.overview button')];
-    tabs[1].click(); fixture.detectChanges(); expect(fixture.nativeElement.textContent).toContain('Manage types'); expect(fixture.nativeElement.textContent).toContain('Seat layouts');
+    tabs[1].click(); fixture.detectChanges(); expect(fixture.nativeElement.textContent).toContain('Manage types'); expect(fixture.nativeElement.textContent).toContain('Manage shared vehicle');
     tabs[2].click(); fixture.detectChanges();
     const assign = fixture.nativeElement.querySelector('.assign') as HTMLButtonElement; assign.click(); fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.assignment').textContent).toContain('Fixed route access');
@@ -358,15 +358,19 @@ describe('Routes operations workspace', () => {
     expect(fixture.nativeElement.querySelector('.driver-photo').textContent.trim()).toBe('DO');
     fixture.destroy();
   });
-  it('focuses inline editing immediately and supports keyboard cancellation', () => {
+  it('opens the shared editor for the selected city vehicle', () => {
     TestBed.configureTestingModule({ imports: [RouteOperationsComponent] });
     const fixture = TestBed.createComponent(RouteOperationsComponent);
-    fixture.componentInstance.vehicles = page.vehicles; fixture.componentInstance.view = 'vehicles';
-    fixture.componentInstance.editId = 1; fixture.componentInstance.editField = 'seats'; fixture.componentInstance.editValue = '9';
-    const event = jasmine.createSpy(); fixture.componentInstance.cellEdit.subscribe(event); fixture.detectChanges();
-    const input = fixture.nativeElement.querySelector('.cell-input'); expect(document.activeElement).toBe(input);
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    expect(event).toHaveBeenCalledWith({ phase: 'cancel', id: 1, field: 'seats', value: undefined }); fixture.destroy();
+    fixture.componentInstance.vehicles = page.vehicles;
+    fixture.componentInstance.view = 'vehicles';
+    const open = jasmine.createSpy();
+    fixture.componentInstance.manageSharedVehicles.subscribe(open);
+    fixture.detectChanges();
+    const edit = Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('.row-actions button'))
+      .find(button => button.textContent?.trim() === 'Manage shared vehicle');
+    edit!.click();
+    expect(open).toHaveBeenCalledOnceWith(page.vehicles[0].id);
+    fixture.destroy();
   });
   it('paginates filtered results and returns to page one when search or page size changes', () => {
     page.routes = Array.from({ length: 23 }, (_, index) => ({ ...page.routes[0], id: index + 100, name: `Route ${index + 1}` }));
