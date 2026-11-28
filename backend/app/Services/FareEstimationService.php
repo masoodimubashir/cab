@@ -3,6 +3,9 @@
 namespace App\Services;
 
 use App\Models\DriverLocation;
+use App\Models\CityVehicleType;
+use App\Models\OutstationPackage;
+use App\Models\RideType;
 use App\Models\PricingRule;
 use App\Models\Trip;
 
@@ -192,11 +195,49 @@ class FareEstimationService
         if (!$outstationPackageId) {
             return $pricingRule;
         }
-        $package = \App\Models\OutstationPackage::query()->find($outstationPackageId);
+        $package = OutstationPackage::query()->find($outstationPackageId);
         if (!$package || !is_array($package->fare_config)) {
             return $pricingRule;
         }
-        $override = array_filter($package->fare_config, fn ($v) => $v !== null);
+        return $this->packageFare($pricingRule, $package);
+    }
+
+    /** Quote and trip creation must select exactly the same eligible rate card. */
+    public function bookingFareInput(CityVehicleType $vehicle, ?PricingRule $rule, array $data): array
+    {
+        $packageId = $data['outstation_package_id'] ?? null;
+        $private = ($data['service_mode'] ?? null) === 'private';
+        if ($private) {
+            $scope = $data['scope'] ?? null;
+            $city = $vehicle->city;
+            $type = $vehicle->rideType;
+            abort_unless($vehicle->is_active && $vehicle->vehicleType?->is_active && $city?->is_active
+                && (int) $city->id === (int) ($data['city_id'] ?? $city->id)
+                && $type?->resolvedMode() === RideType::MODE_PRIVATE
+                && in_array($scope, ['local', 'outstation'], true)
+                && \App\Support\RideCatalog::isActive($type, $scope), 404, 'No matching vehicle for this booking.');
+            if (count($city->boundary_polygon ?? []) >= 3) {
+                $geo = app(DynamicPricingService::class);
+                abort_unless($geo->pointInPolygon($data['pickup_lat'], $data['pickup_lng'], $city->boundary_polygon),
+                    422, 'Pickup location is outside the service area for ' . $city->name . '.');
+                $inside = $geo->pointInPolygon($data['drop_lat'], $data['drop_lng'], $city->boundary_polygon);
+                abort_unless($scope === ($inside ? 'local' : 'outstation'), 422, 'The journey category has changed. Check your destination again.');
+            }
+            abort_if($scope === 'local' && ($packageId || $type->isOutstation()),
+                404, 'Pricing rule not set for this vehicle.');
+        }
+        if ($packageId) {
+            $package = $vehicle->outstationPackages()->where('is_active', true)->find($packageId);
+            abort_unless($package && ((!$private && $rule) || $package->hasFare()), 404, 'Pricing rule not set for this vehicle.');
+            return $this->packageFare($rule?->toArray() ?? [], $package);
+        }
+        abort_unless($rule, 404, 'Pricing rule not set for this vehicle.');
+        return $rule->toArray();
+    }
+
+    private function packageFare(array $pricingRule, OutstationPackage $package): array
+    {
+        $override = array_filter($package->fare_config ?? [], fn ($v) => $v !== null);
         $merged = array_merge($pricingRule, $override);
         // A zero/blank surge would multiply the whole fare to 0, so never let a
         // package override sink surge below 1 — an unset or non-positive surge
@@ -204,7 +245,7 @@ class FareEstimationService
         if (!isset($merged['surge_multiplier']) || !((float) $merged['surge_multiplier'] > 0)) {
             $merged['surge_multiplier'] = 1;
         }
-        return $merged;
+        return $merged + ['base_fare' => 0.0];
     }
 
     /**
@@ -431,7 +472,7 @@ class FareEstimationService
             ? PricingRule::resolveFor((int) $trip->city_vehicle_type_id)
             : null;
 
-        if (!$rule) {
+        if (!$rule && !$trip->outstation_package_id) {
             // No rule means we can't recompute — fall back to the negotiated
             // amount untouched. Callers should ensure a rule exists at booking.
             return [
@@ -440,7 +481,7 @@ class FareEstimationService
                 'breakdown' => [],
             ];
         }
-        $r = $this->fareInput($rule->toArray(), $trip->outstation_package_id);
+        $r = $this->fareInput($rule?->toArray() ?? [], $trip->outstation_package_id);
 
         // Telemetry window. If the trip lacks the drop-leg timestamps (older
         // trips, manual completions), zero distance/time → only the base fare

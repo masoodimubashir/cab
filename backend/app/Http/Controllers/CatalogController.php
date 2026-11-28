@@ -94,7 +94,8 @@ class CatalogController extends Controller
     public function cityVehicles(Request $request, City $city, VehicleFamilyImageService $imageService)
     {
         $data = $request->validate([
-            'vehicle_type_id' => ['required', 'integer', 'exists:vehicle_types,id'],
+            'mode' => ['sometimes', 'in:private'],
+            'vehicle_type_id' => ['required_unless:mode,private', 'integer', 'exists:vehicle_types,id'],
         ]);
 
         $requestedPlatform = $request->header('X-Platform') ?: $request->input('platform');
@@ -102,12 +103,16 @@ class CatalogController extends Controller
 
         $rows = CityVehicleType::query()
             ->where('city_id', $city->id)
-            ->where('vehicle_type_id', (int) $data['vehicle_type_id'])
+            ->when(isset($data['vehicle_type_id']), fn ($q) => $q->where('vehicle_type_id', $data['vehicle_type_id']))
+            ->when(isset($data['mode']), fn ($q) => $q->with('rideType', 'outstationPackages')
+                ->whereHas('vehicleType', fn ($type) => $type->where('is_active', true)))
             ->where('is_active', true)
             ->orderBy('display_order')
             ->orderBy('id')
             ->get(['id', 'city_id', 'ride_type_id', 'vehicle_type_id', 'display_name', 'max_people', 'luggage_capacity'])
-            ->map(function (CityVehicleType $row) use ($city, $requestedPlatform, $familyImagesMap, $imageService) {
+            ->filter(fn ($row) => !isset($data['mode']) || $row->rideType?->resolvedMode() === RideType::MODE_PRIVATE)
+            ->values()
+            ->map(function (CityVehicleType $row) use ($city, $requestedPlatform, $familyImagesMap, $imageService, $data) {
                 $displayName = trim($row->display_name);
                 $preloaded = $familyImagesMap->get(strtolower($displayName), collect());
                 $imagePayload = $imageService->resolveForVehicle(
@@ -119,6 +124,12 @@ class CatalogController extends Controller
 
                 return [
                     'id' => $row->id,
+                    ...(isset($data['mode']) ? [
+                        'local_enabled' => !$row->rideType->isOutstation() && $row->rideType->is_active_local,
+                        'outstation_enabled' => $row->rideType->is_active_outstation,
+                        'packages' => $row->outstationPackages->filter(fn ($p) => $p->is_active && $p->hasFare())
+                            ->map(fn ($p) => $p->only('id', 'name'))->values(),
+                    ] : []),
                     'city_id' => $row->city_id,
                     'ride_type_id' => $row->ride_type_id,
                     'vehicle_type_id' => $row->vehicle_type_id,

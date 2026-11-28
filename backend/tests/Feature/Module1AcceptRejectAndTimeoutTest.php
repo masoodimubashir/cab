@@ -301,6 +301,19 @@ class Module1AcceptRejectAndTimeoutTest extends TestCase
     /**
      * M1.02: Customer CANNOT pay before driver acceptance & confirmation.
      */
+    public function test_available_queue_excludes_this_drivers_decisions_and_keeps_new_requests(): void
+    {
+        $rejected = $this->createNegotiationTrip();
+        $answered = $this->createNegotiationTrip();
+        $fresh = $this->createNegotiationTrip();
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->getJson('/api/trips/available')->assertOk()->assertJsonCount(3, 'data');
+        $this->postJson("/api/trips/{$rejected->id}/driver-reject")->assertOk();
+        $answered->fareNegotiation->offers()->create(['from_user_id' => $this->driverUser->id,
+            'from_role' => 'driver', 'amount' => 150, 'status' => 'ACCEPTED']);
+        $this->getJson('/api/trips/available')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $fresh->id);
+    }
+
     public function test_customer_cannot_pay_before_driver_acceptance(): void
     {
         $trip = $this->createNegotiationTrip();

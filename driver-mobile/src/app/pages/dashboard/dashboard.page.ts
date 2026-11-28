@@ -302,6 +302,26 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   private syncTimer: ReturnType<typeof setInterval> | null = null;
+  rideRequests: { id: number; pickup_address?: string; drop_address?: string; customer_offer?: number; estimated_fare?: number }[] = [];
+  private requestsSub?: Subscription;
+
+  private refreshRideRequests(): void {
+    if (!this.isOnline || !this.isApproved || this.driveMode === 'fixed') {
+      this.requestsSub?.unsubscribe();
+      this.rideRequests = [];
+      return;
+    }
+    if (this.requestsSub && !this.requestsSub.closed) return;
+    this.requestsSub = this.api.get<{data: DashboardPage['rideRequests']}>('/trips/available').subscribe({
+      next: res => this.rideRequests = (res.data || []).filter(t => !this.homeSession.handledRequests.has(t.id)).sort((a, b) => a.id - b.id),
+      error: () => {},
+    });
+  }
+
+  openRideRequest(id: number): void {
+    this.homeSession.selectedRequestId = id;
+    this.navTo('/tabs/rides');
+  }
 
   ionViewWillEnter(): void {
     this.serviceCatalogCity = null;
@@ -313,6 +333,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.loadServiceAccess();
     void this.loadActiveFixedVehicleState();
     this.startSyncTimer();
+    this.refreshRideRequests();
     this.setupBannerSubscription();
     this.loadBanners();
   }
@@ -447,6 +468,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private startSyncTimer(): void {
     this.stopSyncTimer();
     this.syncTimer = setInterval(() => {
+      this.refreshRideRequests();
       this.refreshWalletBalance();
       if (Date.now() - this.lastDocumentCheck > 30000) this.checkDocumentRequirements();
       if (this.documentRequirements.length) void this.showDocumentRequirements();
@@ -454,6 +476,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   private stopSyncTimer(): void {
+    this.requestsSub?.unsubscribe();
     if (this.syncTimer) {
       clearInterval(this.syncTimer);
       this.syncTimer = null;

@@ -3,26 +3,19 @@ import { Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
 
 import { ApiService } from '../../../core/api.service';
+import { DrivingMetrics, PlacesService } from '../../../core/places.service';
 import { RealtimeService } from '../../../core/realtime.service';
-import { BookingService } from '../booking.service';
-import { Place } from '../booking.models';
+import { BookingService, pointInPolygon, resolveCity } from '../booking.service';
+import { City, Place, TripScope } from '../booking.models';
+import { fareLines, loadPrivateModels, PriceComponents, PrivateModel } from './private-ride-options';
 import { PlaceSearchComponent } from '../place-search.component';
 
 type Step = 'pickup' | 'drop' | 'car' | 'price';
 type Waiting = 'idle' | 'searching' | 'bids';
 
-interface VehicleType {
-  id: number;
-  name: string;
-  image_url?: string | null;
-  map_marker_url?: string | null;
-  images?: any;
-}
-
-interface CarouselVehicle { id: number | null; name: string; image_url?: string | null; }
-
 interface Estimate {
   estimated_fare?: number;
+  fare_breakdown?: PriceComponents;
   time_min?: number;
   city_vehicle_type_id?: number;
   vehicle_name?: string;
@@ -34,6 +27,7 @@ interface Estimate {
 }
 
 interface DriverOffer {
+  from_user_id?: number;
   id?: number;
   from_role: 'customer' | 'driver';
   amount: number;
@@ -64,26 +58,39 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   step: Step = 'pickup';
   readonly total = 5;
 
-  vehicleTypes: VehicleType[] = [];
+  vehicleTypes: PrivateModel[] = [];
   vehicleQuery = '';
-  readonly anyVehicle: CarouselVehicle = { id: null, name: 'Any car', image_url: 'assets/illustrations/any-car-collection.png' };
+  journeyScope: TripScope | null = null;
+  pickupCity: City | null = null;
+  destinationName = '';
+  manualScope = false;
+  catalogLoading = false;
+  catalogError = '';
+  routeMetrics: DrivingMetrics | null = null;
+  private routeRequest?: Promise<DrivingMetrics>;
+  private routeKey = '';
+  breakdownOpen = false;
+  private catalogRequest = 0;
+  get journeyLabel(): string { return this.journeyScope === 'outstation' ? 'Outstation' : 'Local'; }
+  get priceLines() { return this.estimate?.fare_breakdown ? fareLines(this.estimate.fare_breakdown) : []; }
   private swipeStart: { x: number; y: number; id: number } | null = null;
   carouselDrag = 0;
   carouselDragging = false;
   private ignoreCarouselClickUntil = 0;
-  get carouselVehicles(): CarouselVehicle[] { return [this.anyVehicle, ...this.vehicleTypes]; }
+  get carouselVehicles(): PrivateModel[] { return this.vehicleTypes; }
   get carouselIndex(): number { return Math.max(0, this.carouselVehicles.findIndex(v => v.id === this.vehicleTypeId)); }
-  get carouselSlots(): { vehicle: CarouselVehicle; offset: number }[] {
+  get carouselSlots(): { vehicle: PrivateModel; offset: number }[] {
     const vehicles = this.carouselVehicles;
+    if (!vehicles.length) return [];
     const offsets = vehicles.length >= 5 ? [-2, -1, 0, 1, 2]
       : vehicles.length === 4 ? [-1, 0, 1, 2] : vehicles.length === 3 ? [-1, 0, 1] : vehicles.length === 2 ? [0, 1] : [0];
     return offsets.map(offset => ({ vehicle: vehicles[(this.carouselIndex + offset + vehicles.length) % vehicles.length], offset }));
   }
-  get vehicleSearchResults(): CarouselVehicle[] {
+  get vehicleSearchResults(): PrivateModel[] {
     const query = this.vehicleQuery.trim().toLowerCase();
     return this.carouselVehicles.filter(vehicle => vehicle.name.toLowerCase().includes(query));
   }
-  trackCarouselSlot(_index: number, slot: { vehicle: CarouselVehicle }): string { return String(slot.vehicle.id); }
+  trackCarouselSlot(_index: number, slot: { vehicle: PrivateModel }): string { return String(slot.vehicle.id); }
   moveCarousel(direction: number): void {
     const vehicles = this.carouselVehicles;
     if (vehicles.length < 2) return;
@@ -129,22 +136,21 @@ export class PrivateBookPage implements OnInit, OnDestroy {
     event.preventDefault();
     this.moveCarousel(event.key === 'ArrowLeft' ? -1 : 1);
   }
-  get filteredVehicleTypes(): VehicleType[] {
-    const query = this.vehicleQuery.trim().toLowerCase();
-    return this.vehicleTypes.filter(vehicle => vehicle.name.toLowerCase().includes(query));
-  }
   vehicleIcon(name: string): string {
     if (/bike|motorcycle/i.test(name)) return 'bicycle-outline';
     if (/bus|tempo|traveller|shuttle/i.test(name)) return 'bus-outline';
     return 'car-sport-outline';
   }
-  /** null = "Any car" — the trip stays open to every driver. */
   vehicleTypeId: number | null = null;
   estimate: Estimate | null = null;
   estimating = false;
   vehicleUnavailable = false;
   availabilityMessage = '';
   private estimateRequest = 0;
+  private estimateTimer?: ReturnType<typeof setTimeout>;
+  private retryAfter = 0;
+  fareStatus = 'Checking fare…';
+  private readonly recentFares = new Map<string, { estimate: Estimate | null; unavailable: string; expires: number }>();
 
   offer: number | null = null;
   minFare = 0;
@@ -153,6 +159,7 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   tripId: number | null = null;
   secondsLeft = 60;
   offers: DriverOffer[] = [];
+  rejectedDrivers = new Set<number>();
   askedAmount: number | null = null;
   noAnswer = false;
 
@@ -181,6 +188,7 @@ export class PrivateBookPage implements OnInit, OnDestroy {
     private alertCtrl: AlertController,
     private toastCtrl: ToastController,
     private cdr: ChangeDetectorRef,
+    private places: PlacesService,
   ) {}
 
   ngOnInit(): void {
@@ -192,7 +200,6 @@ export class PrivateBookPage implements OnInit, OnDestroy {
     }
     this.booking.clearPlaces();
     this.step = 'pickup';
-    this.loadVehicleTypes();
   }
 
   ionViewWillEnter(): void {
@@ -209,6 +216,9 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   }
 
   ionViewWillLeave(): void {
+    this.catalogRequest++;
+    this.cancelEstimate();
+    this.recentFares.clear();
     this.locationViewActive = false;
     this.pickupSearchOpen = false;
     this.dropSearchOpen = false;
@@ -216,6 +226,8 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.catalogRequest++;
+    this.cancelEstimate();
     this.stopWatching();
   }
 
@@ -224,6 +236,7 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   get fromLabel(): string { return this.booking.trip.pickup?.address ?? ''; }
   get toLabel(): string { return this.booking.trip.drop?.address ?? ''; }
   get mapPickup(): Place | null { return this.booking.trip.pickup ?? null; }
+  get mapDestination(): Place | null { return this.booking.trip.drop ?? null; }
   get mapInitialPosition(): { lat: number; lng: number } | null { return this.booking.homeLocation?.fix ?? null; }
   get activeMapPlace(): Place | null { return this.step === 'drop' ? this.booking.trip.drop ?? null : this.mapPickup; }
   get placeConfirmed(): boolean { return this.step === 'drop' ? this.dropConfirmed : this.pickupConfirmed; }
@@ -295,60 +308,145 @@ export class PrivateBookPage implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  continueToCar(): void {
-    if (!this.booking.trip.drop) return;
+  async continueToCar(manual?: TripScope): Promise<void> {
+    const { pickup, drop } = this.booking.trip;
+    if (!pickup || !drop) return;
+    const request = ++this.catalogRequest;
+    this.cancelEstimate();
     this.step = 'car';
-    this.loadVehicleTypes();
-    void this.loadEstimate();
+    this.routeMetrics = null;
+    this.routeRequest = undefined;
+    this.recentFares.clear();
+    this.estimate = null;
+    this.journeyScope = null;
+    this.vehicleTypes = [];
+    this.vehicleTypeId = null;
+    this.vehicleQuery = '';
+    this.error = null;
+    this.offer = null;
+    this.catalogError = '';
+    this.manualScope = false;
+    this.catalogLoading = true;
     this.cdr.markForCheck();
-  }
-
-  // ---- step 3: choose car ----------------------------------------------
-
-  private loadVehicleTypes(): void {
-    const cityId = this.booking.trip.cityId;
-    const url = cityId ? `/pricing/vehicle-types?city_id=${cityId}` : '/pricing/vehicle-types';
-    this.api.get<{ data: VehicleType[] }>(url).subscribe({
-      next: (res) => { this.vehicleTypes = res?.data ?? []; this.cdr.markForCheck(); },
-      error: () => { this.vehicleTypes = []; },
-    });
+    try {
+      const cities = await this.booking.cities();
+      if (request !== this.catalogRequest) return;
+      const city = resolveCity(cities, pickup.lat, pickup.lng);
+      const polygon = city?.boundary_polygon;
+      if (!city || (polygon && polygon.length >= 3 && !pointInPolygon(pickup.lat, pickup.lng, polygon))) {
+        this.catalogError = 'Choose a pickup inside a supported city.';
+        return;
+      }
+      this.pickupCity = city;
+      this.manualScope = !polygon || polygon.length < 3;
+      this.journeyScope = this.manualScope ? manual ?? null : pointInPolygon(drop.lat, drop.lng, polygon!) ? 'local' : 'outstation';
+      const addressParts = drop.address.split(',').map(part => part.trim().toLowerCase());
+      this.destinationName = cities.find(c => c.boundary_polygon && c.boundary_polygon.length >= 3 &&
+        pointInPolygon(drop.lat, drop.lng, c.boundary_polygon))?.name
+        || cities.find(c => addressParts.includes(c.name.toLowerCase()))?.name || drop.label || drop.address;
+      if (!this.journeyScope) return;
+      this.booking.setCity(city.id);
+      this.booking.setScope(this.journeyScope);
+      const home = this.booking.homeLocation;
+      const catalog = home?.city.id === city.id ? home.catalog : await this.booking.catalog(city.id);
+      if (request !== this.catalogRequest) return;
+      const vehicles = await loadPrivateModels(this.api, city.id, this.journeyScope, catalog);
+      if (request !== this.catalogRequest) return;
+      this.vehicleTypes = vehicles;
+      if (vehicles.length) this.chooseVehicle(vehicles[0].id);
+    } catch {
+      if (request === this.catalogRequest) this.catalogError = 'Couldn’t load the vehicles for this pickup. Please try again.';
+    } finally {
+      if (request === this.catalogRequest) {
+        this.catalogLoading = false;
+        this.cdr.markForCheck();
+      }
+    }
   }
 
   chooseVehicle(id: number | null): void {
     this.vehicleTypeId = id;
-    void this.loadEstimate();
+    this.offer = null;
+    void this.loadEstimate(300);
   }
 
-  get selectedVehicle(): VehicleType | null {
+  get selectedVehicle(): PrivateModel | null {
     return this.vehicleTypes.find(vehicle => vehicle.id === this.vehicleTypeId) ?? null;
   }
 
   retryEstimate(): void { void this.loadEstimate(); }
 
-  private async loadEstimate(): Promise<void> {
+  private get fareSelection() {
+    return {
+      city_id: this.pickupCity?.id,
+      service_mode: 'private',
+      scope: this.journeyScope,
+      city_vehicle_type_id: this.selectedVehicle?.rateCardVehicleId,
+    };
+  }
+
+  private cancelEstimate(): void {
+    clearTimeout(this.estimateTimer);
+    this.estimateRequest++;
+    this.estimating = false;
+  }
+
+  private async loadEstimate(delay = 0, autoRetry = true): Promise<void> {
+    this.cancelEstimate();
     const { pickup, drop, cityId } = this.booking.trip;
     if (!pickup || !drop || !cityId) return;
 
+    this.breakdownOpen = false;
+    const selection = this.fareSelection;
+    if (!selection.city_vehicle_type_id || !selection.scope) {
+      this.error = null;
+      this.setVehicleUnavailable();
+      this.cdr.markForCheck();
+      return;
+    }
+    const payload = {
+      ...selection,
+      pickup_lat: pickup.lat,
+      pickup_lng: pickup.lng,
+      drop_lat: drop.lat,
+      drop_lng: drop.lng,
+    };
+    const key = JSON.stringify(payload);
+    const routeKey = JSON.stringify([pickup.lat, pickup.lng, drop.lat, drop.lng]);
+    if (routeKey !== this.routeKey) {
+      this.routeKey = routeKey;
+      this.routeRequest = undefined;
+      this.routeMetrics = null;
+      this.recentFares.clear();
+    }
+    const cached = this.recentFares.get(key);
     this.estimating = true;
-    const request = ++this.estimateRequest;
+    const request = this.estimateRequest;
     this.estimate = null;
     this.vehicleUnavailable = false;
     this.availabilityMessage = '';
     this.error = null;
+    this.fareStatus = 'Checking fare…';
     this.cdr.markForCheck();
 
+    if (delay > 0 && cached && cached.expires > Date.now()) {
+      this.estimate = cached.estimate;
+      if (cached.unavailable) this.setVehicleUnavailable(cached.unavailable);
+      this.estimating = false;
+      return;
+    }
+    const cooldown = this.retryAfter - Date.now();
+    if (delay > 0 || cooldown > 0) {
+      if (cooldown > 0) this.fareStatus = 'Fare checks are busy. Retrying shortly…';
+      this.estimateTimer = setTimeout(() => void this.loadEstimate(0, autoRetry), Math.max(delay, cooldown));
+      return;
+    }
     try {
-      const res = await this.api
-        .post<Estimate>('/pricing/estimate', {
-          city_id: cityId,
-          vehicle_type_id: this.vehicleTypeId,
-          ride_type_id: null,
-          pickup_lat: pickup.lat,
-          pickup_lng: pickup.lng,
-          drop_lat: drop.lat,
-          drop_lng: drop.lng,
-        })
-        .toPromise();
+      this.routeRequest ??= this.places.drivingMetrics(pickup, drop);
+      const metrics = await this.routeRequest;
+      if (request !== this.estimateRequest) return;
+      this.routeMetrics = metrics;
+      const res = await this.api.post<Estimate>('/pricing/estimate', { ...payload, ...metrics }).toPromise();
       if (request !== this.estimateRequest) return;
       this.estimate = res ?? null;
       if (res?.available === false || !Number.isFinite(res?.estimated_fare) || Number(res?.estimated_fare) <= 0) {
@@ -358,15 +456,29 @@ export class PrivateBookPage implements OnInit, OnDestroy {
       if (request !== this.estimateRequest) return;
       this.estimate = null;
       const message = failure?.error?.message;
-      if (failure?.status === 404 && ['No matching vehicle for this booking.', 'Pricing rule not set for this vehicle.'].includes(message)) {
+      if (!this.routeMetrics) {
+        this.routeRequest = undefined;
+        this.error = 'Couldn’t measure the driving route. Please try again.';
+      } else if (failure?.status === 404 && ['No matching vehicle for this booking.', 'Pricing rule not set for this vehicle.'].includes(message)) {
         this.setVehicleUnavailable();
       } else if (failure?.status === 422 && typeof message === 'string' && message.startsWith('Destination is outside the service area')) {
         this.setVehicleUnavailable('We don’t offer rides to this destination yet. Please choose a different destination.');
+      } else if (failure?.status === 429) {
+        const seconds = Number(failure.headers?.get('Retry-After'));
+        this.retryAfter = Date.now() + (seconds > 0 && Number.isFinite(seconds) ? seconds : 60) * 1000;
+        if (autoRetry) {
+          void this.loadEstimate(0, false);
+        } else {
+          this.error = 'Fare checks are busy. Please try again in a minute.';
+        }
       } else {
         this.error = 'We couldn’t check the fare. Please try again.';
       }
     } finally {
       if (request === this.estimateRequest) {
+        if (this.estimate || this.vehicleUnavailable) {
+          this.recentFares.set(key, { estimate: this.estimate, unavailable: this.availabilityMessage, expires: Date.now() + 60_000 });
+        }
         this.estimating = false;
         this.cdr.markForCheck();
       }
@@ -376,9 +488,7 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   private setVehicleUnavailable(message?: string): void {
     this.estimate = null;
     this.vehicleUnavailable = true;
-    this.availabilityMessage = message || (this.vehicleTypeId === null
-      ? 'A fare isn’t available for “Any car” on this journey. Please choose a specific vehicle.'
-      : 'This vehicle isn’t available for your journey. Please choose another vehicle.');
+    this.availabilityMessage = message || 'This vehicle isn’t available for your journey. Please choose another vehicle.';
   }
 
   get estimatedFare(): number | null {
@@ -392,14 +502,6 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   }
 
   // ---- step 4: name your price -----------------------------------------
-
-  get guideLine(): string {
-    const f = this.estimatedFare;
-    if (!f) return '';
-    const low = Math.round(f * 0.92 / 10) * 10;
-    const high = Math.round(f * 1.08 / 10) * 10;
-    return `Most riders pay ₹${low}–${high} for this trip`;
-  }
 
   get offerTooLow(): boolean {
     const a = Number(this.offer);
@@ -477,7 +579,7 @@ export class PrivateBookPage implements OnInit, OnDestroy {
     this.error = null;
     switch (this.step) {
       case 'drop': this.editPickup(); break;
-      case 'car': this.step = 'drop'; break;
+      case 'car': this.catalogRequest++; this.cancelEstimate(); this.step = 'drop'; break;
       case 'price': this.step = 'car'; break;
       default: void this.router.navigate(['/customer-tabs/go']);
     }
@@ -492,11 +594,12 @@ export class PrivateBookPage implements OnInit, OnDestroy {
     if (this.tripId) return;
     const { pickup, drop, cityId } = this.booking.trip;
     if (!pickup || !drop || !cityId) throw new Error('Tell us where you are going first.');
+    if (!this.routeMetrics) throw new Error('Check the driving route before sending an offer.');
 
     const res = await this.api
       .post<{ trip: { id: number } }>('/trips', {
-        city_id: cityId,
-        vehicle_type_id: this.vehicleTypeId,
+        ...this.fareSelection,
+        ...this.routeMetrics,
         pickup_address: pickup.address,
         pickup_lat: pickup.lat,
         pickup_lng: pickup.lng,
@@ -527,6 +630,7 @@ export class PrivateBookPage implements OnInit, OnDestroy {
     this.stopWatching();
     this.waiting = 'searching';
     this.offers = [];
+    this.rejectedDrivers = new Set();
     this.noAnswer = false;
     this.secondsLeft = 60;
     this.cdr.markForCheck();
@@ -552,13 +656,24 @@ export class PrivateBookPage implements OnInit, OnDestroy {
 
   private async pollNegotiation(): Promise<void> {
     if (!this.tripId) return;
+    const tripId = this.tripId;
     try {
       const res = await this.api
-        .get<{ offers?: DriverOffer[]; negotiation?: { status?: string } }>(
+        .get<{ rejected_driver_ids?: number[]; offers?: DriverOffer[]; negotiation?: { status?: string; offers?: DriverOffer[] } }>(
           `/trips/${this.tripId}/negotiation`,
         )
         .toPromise();
-      for (const o of res?.offers ?? []) this.onOffer(o);
+      if (tripId !== this.tripId || this.waiting === 'idle') return;
+      if (res?.rejected_driver_ids?.some(id => !this.rejectedDrivers.has(id))) {
+        this.rejectedDrivers = new Set([...this.rejectedDrivers, ...res.rejected_driver_ids]);
+        this.offers = this.offers.filter(o => !this.rejectedDrivers.has(Number(o.from_user_id)));
+        if (!this.offers.length) {
+          this.waiting = 'searching';
+          this.noAnswer = this.secondsLeft === 0;
+        }
+        this.cdr.markForCheck();
+      }
+      for (const o of res?.negotiation?.offers ?? res?.offers ?? []) this.onOffer(o);
       if (res?.negotiation?.status === 'LOCKED') this.onAgreed();
     } catch {
       // A dropped poll just retries on the next tick.
@@ -566,7 +681,8 @@ export class PrivateBookPage implements OnInit, OnDestroy {
   }
 
   private onOffer(o?: DriverOffer): void {
-    if (!o || o.from_role !== 'driver') return;
+    if (!o || o.from_role !== 'driver' || !['PENDING', 'ACCEPTED'].includes(o.status)
+        || this.rejectedDrivers.has(Number(o.from_user_id))) return;
     if (this.offers.some((x) => x.id != null && x.id === o.id)) return;
     this.offers = [...this.offers, o];
     this.noAnswer = false;

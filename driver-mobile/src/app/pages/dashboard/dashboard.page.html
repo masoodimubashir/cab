@@ -232,6 +232,15 @@
       <span>{{ registeredServiceMode === 'fixed' ? 'Choose route' : 'View ride requests' }}</span>
       <ion-icon name="chevron-forward-outline" aria-hidden="true"></ion-icon>
     </button>
+    <ng-container *ngIf="isOnline && driveMode !== 'fixed'">
+      <ng-container *ngFor="let request of rideRequests; index as i">
+        <h3 *ngIf="i === 2">More active ride requests</h3>
+        <button type="button" class="home-request-row" (click)="openRideRequest(request.id)">
+          <strong>Ride #{{ request.id }}</strong><b>₹{{ request.customer_offer ?? request.estimated_fare }}</b>
+          <span>{{ request.pickup_address || 'Pickup' }} → {{ request.drop_address || 'Destination' }}</span>
+        </button>
+      </ng-container>
+    </ng-container>
   </section>
 
   <section class="home-summaries" aria-label="Earnings and wallet">

@@ -1808,3 +1808,5 @@ app-driver-topbar .drv-menu { width: 40px; height: 40px; margin: 0; background: 
 .home-identity .drv-menu__img { width: 44px; height: 44px; }
 .home-identity h1 { margin: 0; font-size: 24px; }
 .home-identity p { margin: 0; }
+.home-request-row { display:grid; grid-template-columns:1fr auto; gap:4px 10px; width:100%; text-align:left; background:white; border:1px solid #dae6df; color:#17372d; border-radius:12px; margin-top:6px; padding:12px; }
+.home-request-row span { grid-column:1/-1; color:#54695e; font-size:13px; }

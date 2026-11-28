@@ -49,7 +49,7 @@ export class JourneyPreview {
   private layers: any[] = [];
   private generation = 0;
 
-  constructor(private map: any) {}
+  constructor(private map: any, private overview = false) {}
 
   start(pickup: JourneyPoint, drop: JourneyPoint, revealDrop: () => void): void {
     this.clear();
@@ -62,7 +62,7 @@ export class JourneyPreview {
     b.x = a.x + ((b.x - a.x + 1.5) % 1 - .5);
     const startZoom = this.map.getZoom() ?? target.zoom;
     const startTilt = this.map.getTilt() ?? 0, startHeading = this.map.getHeading() ?? 0;
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduced = this.overview || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const cameraMs = reduced ? 0 : 750, drawMs = reduced ? 0 : 1000;
     this.line = new google.maps.Polyline({ map: this.map, path: [], clickable: false, geodesic: false,
       strokeColor: '#008453', strokeOpacity: 1, strokeWeight: 7, zIndex: 30,

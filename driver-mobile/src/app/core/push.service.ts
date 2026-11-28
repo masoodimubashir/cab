@@ -7,6 +7,7 @@ import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { ApiService } from './api.service';
 import { AudioRingtoneService } from './audio-ringtone.service';
+import { HomeSessionService } from './home-session.service';
 import { environment } from '../../environments/environment';
 
 /** Real device name + OS version + app version for the admin detail pages. */
@@ -63,6 +64,7 @@ export class PushService {
     private api: ApiService,
     private nav: NavController,
     private ringtone: AudioRingtoneService,
+    private homeSession: HomeSessionService,
   ) {}
 
   async registerForUser(): Promise<void> {
@@ -228,7 +230,8 @@ export class PushService {
           remainingSec = Math.min(diff, 60);
         }
         this.ringtone.startRinging('push-seat-hold-' + (holdId || ''), remainingSec);
-      } else if (type === 'new_trip' || type === 'trip_requested' || data['trip_id'] != null) {
+      } else if (type === 'new_trip' || type === 'trip_requested' || (!type && data['trip_id'] != null)) {
+        if (this.homeSession.handledRequests.has(Number(data['trip_id']))) return;
         let remainingSec = 45;
         if (expiresAt) {
           const diff = Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000);

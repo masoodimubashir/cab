@@ -158,7 +158,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/me/notifications/{appNotification}/read', [NotificationsController::class, 'markRead']);
 });
 
-Route::post('/pricing/estimate', [PricingController::class, 'estimate'])->middleware('throttle:booking');
+Route::post('/pricing/estimate', [PricingController::class, 'estimate'])->middleware('throttle:fare-estimates');
 Route::post('/pricing/seat-estimate', [PricingController::class, 'seatEstimate'])->middleware('throttle:booking');
 Route::post('/shuttle/quote', [PricingController::class, 'shuttleQuote'])->middleware('throttle:booking');
 

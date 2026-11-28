@@ -23,6 +23,7 @@ export class CustomerTabsPage {
   onTabChange(ev: { tab?: string }): void {
     this.hideTabBar =
       ev?.tab === 'my-trips' || ev?.tab === 'shuttle-rides' ||
+      ev?.tab === 'trip' || this.router.url.includes('/customer-tabs/trip/') ||
       this.router.url.includes('/customer-tabs/my-trips') ||
       this.router.url.includes('/customer-tabs/shuttle-rides') ||
       this.router.url.includes('/customer-tabs/notifications') ||
@@ -34,6 +35,7 @@ export class CustomerTabsPage {
     // would collide with it — hidden, same as the old map-first 'book' home.
     this.hideTabBar =
       url.includes('/customer-tabs/go') ||
+      url.includes('/customer-tabs/trip/') ||
       url.includes('/customer-tabs/book') ||
       url.split('?')[0] === '/customer-tabs/trips' ||
       url.split('?')[0] === '/customer-tabs/support' ||

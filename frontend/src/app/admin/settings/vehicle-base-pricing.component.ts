@@ -96,6 +96,7 @@ const ALL_KEYS: string[] = FARE_SECTIONS.flatMap((s) => s.fields.map((f) => f.ke
   imports: [CommonModule, FormsModule, ButtonComponent, FareFieldHelpComponent],
   template: `
     <div class="bp" [class.bp--private]="privateRide">
+      <p class="bp__sub" *ngIf="privateRide && subtitle">{{ subtitle }}</p>
       <div class="bp__head" *ngIf="!privateRide">
         <div>
           <h3 class="bp__title">{{ title }}</h3>

@@ -38,6 +38,18 @@
       </header>
       <div class="pv-rides-progress" aria-label="Step 3 of 5"><span class="on"></span><span class="on"></span><span class="on"></span><span></span><span></span></div>
       <div class="pv-rides-body">
+        <p class="pv-journey" *ngIf="journeyScope"><strong>{{ journeyLabel }} private ride</strong><span>{{ pickupCity?.name }} → {{ destinationName }}</span></p>
+        <div class="pv-scope-choice" *ngIf="manualScope && !catalogLoading" role="group" aria-label="Journey category">
+          <strong>Is your ride local or outstation?</strong>
+          <button type="button" *ngFor="let scope of ['local', 'outstation']" [attr.aria-pressed]="journeyScope === scope"
+            (click)="continueToCar(scope === 'local' ? 'local' : 'outstation')">{{ scope | titlecase }}</button>
+        </div>
+        <p *ngIf="catalogLoading" role="status">Loading vehicles…</p>
+        <div class="pv-rides-error" *ngIf="catalogError" role="status">{{ catalogError }}
+          <button type="button" (click)="continueToCar(journeyScope || undefined)">Retry</button>
+        </div>
+        <p *ngIf="journeyScope && !vehicleTypes.length && !catalogError && !catalogLoading">No private vehicles are available in {{ pickupCity?.name }}.</p>
+        <ng-container *ngIf="vehicleTypes.length">
         <label class="pv-vehicle-search" *ngIf="vehicleTypes.length > 6"><ion-icon name="search-outline" aria-hidden="true"></ion-icon><input type="search" aria-label="Search vehicles" placeholder="Find a vehicle…" [(ngModel)]="vehicleQuery" /><button *ngIf="vehicleQuery" type="button" aria-label="Clear vehicle search" (click)="vehicleQuery = ''"><ion-icon name="close-outline"></ion-icon></button></label>
         <div class="pv-vehicle-results" *ngIf="vehicleQuery.trim()" aria-label="Matching vehicles">
           <button type="button" *ngFor="let v of vehicleSearchResults" (click)="selectCarouselVehicle(v.id)">{{ v.name }}<ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon></button>
@@ -59,15 +71,21 @@
         </div>
         <div class="pv-carousel-navigation">
           <button type="button" aria-label="Previous vehicle" [disabled]="carouselVehicles.length < 2" (click)="moveCarousel(-1)"><ion-icon name="chevron-back-outline" aria-hidden="true"></ion-icon></button>
-          <div aria-live="polite" aria-atomic="true"><strong>{{ carouselVehicles[carouselIndex].name }}</strong><span>{{ carouselIndex + 1 }} of {{ carouselVehicles.length }} · Swipe to explore</span></div>
+          <div aria-live="polite" aria-atomic="true"><strong>{{ carouselVehicles[carouselIndex].name }}</strong><span *ngIf="carouselVehicles.length > 1">{{ carouselIndex + 1 }} of {{ carouselVehicles.length }} · Swipe to explore</span></div>
           <button type="button" aria-label="Next vehicle" [disabled]="carouselVehicles.length < 2" (click)="moveCarousel(1)"><ion-icon name="chevron-forward-outline" aria-hidden="true"></ion-icon></button>
         </div>
-        <p class="pv-rides-price-note"><ion-icon name="pricetag-outline" aria-hidden="true"></ion-icon>Next, make an offer. You’re in control.</p>
+        </ng-container>
       </div>
-      <footer class="pv-rides-footer">
+      <footer class="pv-rides-footer" *ngIf="vehicleTypes.length && !catalogLoading">
         <div class="pv-rides-unavailable" *ngIf="vehicleUnavailable && !estimating" role="status"><ion-icon name="car-outline" aria-hidden="true"></ion-icon><div><strong>Ride not available</strong><p>{{ availabilityMessage }}</p></div></div>
         <div class="pv-rides-error" *ngIf="error && !estimating" role="status"><ion-icon name="information-circle-outline" aria-hidden="true"></ion-icon><span>{{ error }}</span><button type="button" (click)="retryEstimate()">Retry</button></div>
-        <div class="pv-rides-footer-row" *ngIf="!vehicleUnavailable || estimating"><div class="pv-rides-fare" aria-live="polite"><span>Estimated fare</span><strong *ngIf="!estimating && estimatedFare">~₹{{ estimatedFare | number:'1.0-0' }}</strong><strong *ngIf="estimating" class="is-loading">Checking fare…</strong><strong *ngIf="!estimating && !estimatedFare" class="is-unavailable">Unable to load</strong></div>
+        <div class="pv-breakdown" *ngIf="breakdownOpen && estimate?.fare_breakdown" id="pv-fare-details">
+          <p *ngIf="routeMetrics">Driving route · {{ routeMetrics.route_distance_km | number:'1.0-1' }} km · {{ routeMetrics.route_time_min | number:'1.0-0' }} min</p>
+          <dl><ng-container *ngFor="let line of priceLines"><dt>{{ line.label }}</dt><dd>₹{{ line.amount | number:'1.2-2' }}</dd></ng-container>
+          <dt class="pv-total">Estimated total</dt><dd class="pv-total">₹{{ estimatedFare | number:'1.2-2' }}</dd></dl>
+        </div>
+        <div class="pv-rides-footer-row" *ngIf="!vehicleUnavailable || estimating"><div class="pv-rides-fare" aria-live="polite"><span>Estimated fare</span><strong *ngIf="!estimating && estimatedFare">~₹{{ estimatedFare | number:'1.0-0' }}</strong><strong *ngIf="estimating" class="is-loading">{{ fareStatus }}</strong><strong *ngIf="!estimating && !estimatedFare" class="is-unavailable">Unable to load</strong>
+          <button class="pv-breakdown-toggle" type="button" *ngIf="estimatedFare && estimate?.fare_breakdown" [attr.aria-expanded]="breakdownOpen" aria-controls="pv-fare-details" (click)="breakdownOpen = !breakdownOpen">{{ breakdownOpen ? 'Hide price breakdown' : 'View price breakdown' }}</button></div>
           <button class="pv-rides-next" type="button" [disabled]="estimating || !estimatedFare" (click)="goToPrice()">Next<ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon></button>
         </div>
       </footer>
@@ -77,17 +95,24 @@
     <app-step-shell [reference]="true"
       *ngIf="step === 'price'"
       title="What will you pay?"
-      subtitle="Drivers nearby can take it or ask for more."
-      [from]="fromLabel" [to]="toLabel"
+      [mapLayout]="true" [mapHeader]="true" [compactTitle]="true" [actionArrow]="true"
+      [inlineSearch]="true" class="pv-offer-shell"
       [step]="4" [total]="total"
       cta="Send to drivers"
       [disabled]="!offerValid || busy"
       (back)="back()"
       (primary)="sendToDrivers()">
 
-      <p class="bk-lab" *ngIf="guideLine">{{ guideLine }}</p>
+      <div step-map class="pv-place-map">
+        <app-private-place-map *ngIf="locationViewActive" [place]="mapDestination" [initialPosition]="mapPickup"
+          [destinationMode]="true" [readOnly]="true"></app-private-place-map>
+        <header class="pv-offer-header">
+          <button type="button" class="pv-summary-back" aria-label="Go back" (click)="back()"><ion-icon name="arrow-back-outline"></ion-icon></button>
+          <p class="pv-journey"><strong>{{ journeyLabel }} private ride · {{ selectedVehicle?.name }}</strong><span>{{ pickupCity?.name }} → {{ destinationName }}</span></p>
+        </header>
+      </div>
 
-      <label class="pv-price" [class.pv-price--bad]="offerTooLow">
+      <label dock-search class="pv-price" [class.pv-price--bad]="offerTooLow">
         <span class="pv-price__cur" aria-hidden="true">₹</span>
         <input class="pv-price__in" type="number" inputmode="numeric" placeholder="0"
                aria-label="What you will pay" [(ngModel)]="offer" />
@@ -120,30 +145,24 @@
 
   <!-- Step 5a — searching -->
   <app-step-shell [reference]="true"
-    *ngIf="waiting === 'searching'"
-    title="Asking drivers nearby"
-    barLabel="Book a car"
+    *ngIf="waiting !== 'idle'"
+    [title]="waiting === 'searching' ? 'Searching for nearby drivers' : offers.length + (offers.length === 1 ? ' driver answered' : ' drivers answered')"
+    [mapLayout]="true" [mapHeader]="true" [compactTitle]="true"
     [step]="5" [total]="total"
     cta="Cancel" [ghost]="true"
     (back)="cancel()"
     (primary)="cancel()">
-    <div class="pv-wait">
-      <div class="pv-pulse" aria-hidden="true"><ion-icon name="car-outline"></ion-icon></div>
-      <p class="bk-sub pv-wait__t">Your price ₹{{ askedAmount }}<span *ngIf="!noAnswer"> · {{ secondsLeft }}s left</span></p>
+    <div step-map class="pv-place-map">
+      <app-driver-search-map *ngIf="locationViewActive && mapPickup as origin" [pickup]="origin" [scope]="journeyScope"
+        [rejectedDrivers]="rejectedDrivers" [class.answered]="waiting === 'bids'"></app-driver-search-map>
+      <header class="pv-offer-header">
+        <p class="pv-journey"><strong>{{ journeyLabel }} private ride · {{ selectedVehicle?.name }}</strong><span>{{ pickupCity?.name }} → {{ destinationName }}</span></p>
+      </header>
+    </div>
+    <div *ngIf="waiting === 'searching'">
+      <p class="bk-sub">Your price ₹{{ askedAmount }}<span *ngIf="!noAnswer"> · {{ secondsLeft }}s left</span></p>
       <p class="bk-note bk-note--warn" *ngIf="noAnswer">Nobody has answered yet. Keep waiting, or go back and offer a bit more.</p>
     </div>
-  </app-step-shell>
-
-  <!-- Step 5b — drivers answered -->
-  <app-step-shell [reference]="true"
-    *ngIf="waiting === 'bids'"
-    [title]="offers.length + (offers.length === 1 ? ' driver answered' : ' drivers answered')"
-    subtitle="Tap one to ride with them."
-    barLabel="Book a car"
-    [step]="5" [total]="total"
-    cta="Cancel this ride" [ghost]="true"
-    (back)="cancel()"
-    (primary)="cancel()">
 
     <div *ngFor="let o of offers; trackBy: trackByOffer" class="bk-opt pv-bid">
       <span class="bk-opt__ic" [class.bk-badge--amber]="!takesYourPrice(o)" aria-hidden="true"><ion-icon [name]="takesYourPrice(o) ? 'checkmark-outline' : 'trending-up-outline'"></ion-icon></span>

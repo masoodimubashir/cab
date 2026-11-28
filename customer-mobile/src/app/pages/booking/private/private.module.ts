@@ -8,6 +8,7 @@ import { PrivateBookPage } from './private.page';
 import { StepShellComponent } from '../step-shell.component';
 import { PlaceSearchComponent } from '../place-search.component';
 import { PrivatePlaceMapComponent } from './private-place-map.component';
+import { DriverSearchMapComponent } from './driver-search-map.component';
 
 const routes: Routes = [{ path: '', component: PrivateBookPage }];
 
@@ -20,6 +21,7 @@ const routes: Routes = [{ path: '', component: PrivateBookPage }];
     StepShellComponent,
     PlaceSearchComponent,
     PrivatePlaceMapComponent,
+    DriverSearchMapComponent,
   ],
   declarations: [PrivateBookPage],
 })

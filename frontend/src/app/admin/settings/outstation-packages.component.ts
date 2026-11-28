@@ -67,7 +67,7 @@ const FARE_SECTIONS: FareSection[] = [
     <div class="op">
       <div class="op__head">
         <div>
-          <h3 class="op__title">Fare Packages</h3>
+          <h3 class="op__title">Outstation fare packages</h3>
           <p class="op__sub">Named price lists for this outstation vehicle — e.g. One Way, Round Trip.</p>
         </div>
         <tm-button variant="green" size="sm" icon="plus" [disabled]="!vehicleTypeId" (clicked)="openCreate()">

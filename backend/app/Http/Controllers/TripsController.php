@@ -66,6 +66,7 @@ class TripsController extends Controller
             // when city tolls are enabled; absent/blank → 0.
             'toll_amount' => ['nullable', 'numeric', 'min:0', 'max:100000'],
             'scope' => ['nullable', 'in:local,outstation'],
+            'service_mode' => ['nullable', 'string'],
 
             // "Book a ride for a friend / family" — the booker still owns + pays
             // the trip; these identify the actual rider so the driver can reach
@@ -158,9 +159,7 @@ class TripsController extends Controller
         }
 
         $pricingRule = PricingRule::resolveFor($cityVehicleTypeId);
-        if (!$pricingRule) {
-            return response()->json(['message' => 'Pricing rule not set for this vehicle.'], 404);
-        }
+        $fareInput = $fareEstimationService->bookingFareInput($cvt, $pricingRule, $data);
 
         $dynamicRule = $dynamicPricingService->findApplicable(
             (float) $data['pickup_lat'],
@@ -177,10 +176,6 @@ class TripsController extends Controller
             'region_visible' => $dynamicPricingService->isFareVisibleToRider($dynamicRule),
         ] : null;
 
-        $fareInput = $fareEstimationService->fareInput(
-            $pricingRule->toArray(),
-            isset($data['outstation_package_id']) ? (int) $data['outstation_package_id'] : null,
-        );
         $estimate = $fareEstimationService->estimateFare(
             $fareInput,
             (float) $data['pickup_lat'],
@@ -193,6 +188,9 @@ class TripsController extends Controller
             isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
             $tollCharge,
         );
+
+        abort_if(($data['service_mode'] ?? null) === 'private' && $estimate['estimated_fare'] <= 0,
+            404, 'Pricing rule not set for this vehicle.');
 
         // "Any vehicle / ride now" mode — client sent only city info, no
         // vehicle preference. Keep requested_vehicle_type_id null so drivers
@@ -222,7 +220,7 @@ class TripsController extends Controller
             'outstation_package_id' => isset($data['outstation_package_id'])
                 ? (int) $data['outstation_package_id']
                 : null,
-            'pricing_rule_id' => $pricingRule->id,
+            'pricing_rule_id' => $pricingRule?->id,
             'scheduled_at' => $scheduledAt,
             'status' => 'REQUESTED',
             'estimated_fare' => $estimate['estimated_fare'],
@@ -316,6 +314,11 @@ class TripsController extends Controller
         // /select-driver. Drivers should only see live, biddable requests.
         $trips = Trip::query()
             ->where('status', 'NEGOTIATION')
+            ->whereNotIn('trips.id', \App\Models\TripAssignment::query()->select('trip_id')
+                ->where('driver_id', $user->id)->where('status', 'REJECTED'))
+            ->whereDoesntHave('fareNegotiation.offers', fn ($offer) => $offer
+                ->where('from_user_id', $user->id)->where('from_role', 'driver')
+                ->whereIn('status', ['ACCEPTED', 'PENDING']))
             ->when(
                 $driverProfile->active_service_scope === Driver::SERVICE_SCOPE_BOTH,
                 fn ($q) => $q->whereIn('scope', [Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_OUTSTATION]),

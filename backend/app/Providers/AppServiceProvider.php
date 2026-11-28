@@ -32,6 +32,11 @@ class AppServiceProvider extends ServiceProvider
             return [Limit::perMinute(5)->by($key)];
         });
 
+        RateLimiter::for('fare-estimates', function (Request $request) {
+            $user = $request->user('sanctum');
+            return Limit::perMinute(60)->by($user ? 'user:' . $user->id : 'ip:' . $request->ip());
+        });
+
         RateLimiter::for('booking', function (Request $request) {
             $userId = optional($request->user())->id;
             $key = 'booking:' . ($userId ?: $request->ip());

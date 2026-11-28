@@ -984,7 +984,7 @@ interface TabDef { key: string; label: string; count?: number; }
           <ng-container *ngIf="activeRow.is_outstation || !canManagePricing" [ngTemplateOutlet]="biddingOptions"></ng-container>
           <p *ngIf="!activeRow.is_outstation && !canManagePricing">Pricing permission is required to edit this fare card.</p>
           <div class="sec">
-            <app-vehicle-base-pricing *ngIf="!activeRow.is_outstation && canManagePricing" [cityId]="cityId" [cityVehicleTypeId]="activeRow.id" [privateRide]="activeKind === 'private'" [title]="(serviceLabel || activeRideType.name) + ' Fare Settings'" subtitle="">
+            <app-vehicle-base-pricing *ngIf="!activeRow.is_outstation && canManagePricing" [cityId]="cityId" [cityVehicleTypeId]="activeRow.id" [privateRide]="activeKind === 'private'" [title]="(serviceLabel || activeRideType.name) + ' Fare Settings'" [subtitle]="activeKind === 'private' ? 'This vehicle’s rates apply to both Local and Outstation private rides.' : ''">
               <ng-container *ngTemplateOutlet="biddingOptions"></ng-container>
             </app-vehicle-base-pricing>
             <app-outstation-packages *ngIf="activeRow.is_outstation && canManageVehicles" [cityId]="cityId" [vehicleTypeId]="activeRow.id"></app-outstation-packages>

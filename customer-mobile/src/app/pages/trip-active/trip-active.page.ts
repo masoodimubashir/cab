@@ -1,4 +1,6 @@
-import { watchMapCamera, releaseMapCamera } from '../../core/map-camera';
+import { buildPrivateOriginMarker } from '../../core/private-trip-pin';
+import { JourneyPreview } from '../booking/private/journey-preview';
+import { watchMapCamera, resumeMapCamera, releaseMapCamera } from '../../core/map-camera';
 import { CUSTOMER_MAP_STYLE, fitCustomerMap, focusCustomerNavigation } from '../../core/customer-map';
 import { Component, NgZone, OnDestroy, OnInit } from '@angular/core';
 import { Location } from '@angular/common';
@@ -207,6 +209,22 @@ export class TripActivePage implements OnInit, OnDestroy {
   private unsubscribeRealtime: (() => void) | null = null;
   private map: any | null = null;
   private driverMarker: any | null = null;
+  showOverview = false;
+  private preview: JourneyPreview | null = null;
+  private previewKey = '';
+  private mapResize?: ResizeObserver;
+  get canPreviewTrip(): boolean {
+    const t = this.trip;
+    return !!t && !this.isShuttleTrip && t.status === 'PAYMENT_PENDING' &&
+      t.pickup_lat != null && t.pickup_lng != null && t.drop_lat != null && t.drop_lng != null;
+  }
+
+  toggleMapView(): void {
+    this.showOverview = !this.showOverview;
+    resumeMapCamera(this.map);
+    this.fitMap();
+  }
+
   private pickupMarker: any | null = null;
   private dropMarker: any | null = null;
   private navRoute = new NavigationRouteRenderer();
@@ -384,6 +402,8 @@ export class TripActivePage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.mapResize?.disconnect();
+    this.preview?.clear();
     releaseMapCamera(this.map);
     if (this.poll) clearInterval(this.poll);
     if (this.shuttleCodePoll) clearInterval(this.shuttleCodePoll);
@@ -428,6 +448,8 @@ export class TripActivePage implements OnInit, OnDestroy {
         mapId: 'DEMO_MAP_ID',
       });
       watchMapCamera(this.map);
+      this.mapResize = new ResizeObserver(() => this.fitMap());
+      this.mapResize.observe(div);
 
       // Draw whatever we already have (markers + route); otherwise just frame.
       if (this.trip) this.updateRouteMarkers();
@@ -589,7 +611,7 @@ export class TripActivePage implements OnInit, OnDestroy {
           position: pos,
           map: this.map,
           title: 'Pickup',
-          content: buildPassengerMarkerElement({ kind: 'pickup', name: 'Pickup' }),
+          content: this.isShuttleTrip ? buildPassengerMarkerElement({ kind: 'pickup', name: 'Pickup' }) : buildPrivateOriginMarker('Pickup'),
         });
       } else {
         this.pickupMarker.position = pos;
@@ -602,7 +624,7 @@ export class TripActivePage implements OnInit, OnDestroy {
           position: pos,
           map: this.map,
           title: 'Drop',
-          content: buildPassengerMarkerElement({ kind: 'drop', name: 'Drop' }),
+          content: this.isShuttleTrip ? buildPassengerMarkerElement({ kind: 'drop', name: 'Drop' }) : buildPrivateOriginMarker('Destination', true),
         });
       } else {
         this.dropMarker.position = pos;
@@ -646,9 +668,25 @@ export class TripActivePage implements OnInit, OnDestroy {
   }
 
   private fitMap(): void {
-    if (this.navRoute.following) return;
     if (!this.map) return;
-    if (this.trip && this.shouldShowRoute()) {
+    if (this.canPreviewTrip && this.showOverview) {
+      const t = this.trip!;
+      const div = this.map.getDiv();
+      const key = [t.pickup_lat, t.pickup_lng, t.drop_lat, t.drop_lng, div.clientWidth, div.clientHeight].join(',');
+      if (key !== this.previewKey) {
+        this.previewKey = key;
+        this.preview ??= new JourneyPreview(this.map, true);
+        this.preview.start({ lat: Number(t.pickup_lat), lng: Number(t.pickup_lng) },
+          { lat: Number(t.drop_lat), lng: Number(t.drop_lng) }, () => {});
+      }
+      return;
+    }
+    this.preview?.clear();
+    this.preview = null;
+    this.previewKey = '';
+    this.showOverview = false;
+    if (this.navRoute.following) return;
+    if (this.trip && (this.shouldShowRoute() || (!this.isShuttleTrip && this.trip.status === 'PAYMENT_PENDING'))) {
       const boarded = this.trip.status === 'EN_ROUTE_DROP' || this.trip.status === 'ARRIVED_DROP';
       const lat = boarded ? this.trip.drop_lat : this.trip.pickup_lat;
       const lng = boarded ? this.trip.drop_lng : this.trip.pickup_lng;
@@ -668,14 +706,7 @@ export class TripActivePage implements OnInit, OnDestroy {
       }
     }
     if (any) {
-      // The sheet floats over the bottom of the map, so pad the framing to
-      // keep pins in the visible band above it.
-      const bottomPad = this.isCompleted()
-        ? Math.round(window.innerHeight * 0.5)
-        : this.sheetCollapsed
-          ? 130
-          : Math.round(window.innerHeight * 0.4);
-      fitCustomerMap(this.map, bounds, { top: 96, right: 56, bottom: bottomPad, left: 56 });
+      fitCustomerMap(this.map, bounds, { top: 80, right: 54, bottom: 28, left: 54 });
     }
   }
 

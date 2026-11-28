@@ -6,9 +6,11 @@
 }
 
 /* ============ Full-screen map ============ */
+.trip-layout { height: 100%; display: flex; flex-direction: column; position: relative; }
 .trip-map-wrap {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  min-height: 0;
+  flex: 1;
   background: #08090b;
   z-index: 0;
 
@@ -66,15 +68,14 @@
 
 /* ============ Floating sheet ============ */
 .trip-sheet {
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
+  position: relative;
   z-index: 2;
   background: var(--dc-canvas, #F4F6F8);
   border-top-left-radius: var(--dc-r-xl, 24px);
   border-top-right-radius: var(--dc-r-xl, 24px);
   box-shadow: 0 -12px 36px rgba(13, 27, 42, 0.12);
   padding: 6px 16px calc(18px + env(safe-area-inset-bottom));
-  max-height: 60vh;
+  max-height: 68%;
   overflow-y: auto;
   display: flex; flex-direction: column; gap: 14px;
   transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -83,15 +84,21 @@
   &.is-expanded { max-height: 82vh; }
 }
 
-.sheet-grab {
+.sheet-toggle {
   align-self: center;
-  background: none; border: none; cursor: pointer;
-  padding: 8px 24px 2px; margin: 0 auto;
-  .sheet-grab__bar {
-    display: block; width: 42px; height: 5px; border-radius: 999px; background: #D7DCE2;
-    transition: background 0.2s ease;
-  }
-  &:active .sheet-grab__bar { background: #B6BDC6; }
+  flex: none;
+  width: 56px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #284b40;
+  cursor: pointer;
+  ion-icon { font-size: 24px; }
+  &:focus-visible { outline: 2px solid #008453; }
 }
 
 /* Always-visible head (status + details button) */
@@ -112,7 +119,8 @@
 /* Collapsible body — hidden when the sheet is minimised. */
 .sheet-body {
   display: flex; flex-direction: column; gap: 14px;
-  overflow: hidden;
+  overflow-y: auto;
+  min-height: 0;
   transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease, margin 0.3s ease;
   max-height: 1600px; opacity: 1;
 }
@@ -204,13 +212,6 @@
 }
 
 /* Reassurance under the pay bar when the ride is being paid for up front. */
-.prepay-hint {
-  display: flex; align-items: center; gap: 7px;
-  margin: 8px 0 0; padding: 9px 11px;
-  background: rgba(18, 179, 91, 0.08); border-radius: var(--dc-r-md, 14px);
-  font-size: 12.5px; font-weight: 600; color: var(--dc-green-ink, #0B7A3E);
-  ion-icon { font-size: 17px; flex-shrink: 0; }
-}
 
 /* Coupon */
 .coupon-card {
@@ -315,15 +316,13 @@
   ion-icon { font-size: 18px; }
 }
 
-/* ============ Sticky pay bar (completed) ============ */
+/* Payment follows the coupon in the scrolling sheet. */
 .pay-bar {
-  position: sticky; bottom: 0;
   display: flex; align-items: center; gap: 14px;
-  margin: 4px -16px calc(-18px - env(safe-area-inset-bottom));
-  padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+  padding: 12px 16px;
   background: var(--dc-surface, #fff);
-  border-top: 1px solid var(--dc-hairline, #EEF0F2);
-  box-shadow: 0 -8px 24px rgba(13, 27, 42, 0.08);
+  border: 1px solid var(--dc-hairline, #EEF0F2);
+  border-radius: var(--dc-r-md, 14px);
 
   .pay-bar-info { display: flex; flex-direction: column; }
   .pay-bar-label { font-size: 12px; font-weight: 600; color: var(--dc-ink-faint, #9AA3AE); }
